@@ -1,6 +1,11 @@
 import { hash } from 'bcryptjs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
+
+const workDirectory = process.env.TAGSTASH_DEMO_WORK_DIR
+if (!workDirectory) throw new Error('Set TAGSTASH_DEMO_WORK_DIR to a project working directory outside the source checkout')
+const demoPath = name => resolve(workDirectory, name)
 
 // Deliberately local-only. Never use this fixture account in a deployed database.
 const email = 'features-demo@example.test'
@@ -37,10 +42,10 @@ for (const [index, [title, url, description, tags, favorite, privateFlag]] of bo
   }
 }
 statements.push(`INSERT OR IGNORE INTO favorite_tags (user_id, tag_id) VALUES (${uid}, (SELECT id FROM tags WHERE name = 'design'));`)
-await mkdir('.tmp/feature-demo', { recursive: true })
-await writeFile('.tmp/feature-demo/seed.sql', statements.join('\n'))
-execFileSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'd1', 'execute', 'tagstash-db', '--local', '--file', '.tmp/feature-demo/seed.sql'], { stdio: 'pipe' })
-await writeFile('.tmp/feature-demo/import.html', `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+await mkdir(workDirectory, { recursive: true })
+await writeFile(demoPath('seed.sql'), statements.join('\n'))
+execFileSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'd1', 'execute', 'tagstash-db', '--local', '--file', demoPath('seed.sql')], { stdio: 'pipe' })
+await writeFile(demoPath('import.html'), `<!DOCTYPE NETSCAPE-Bookmark-file-1>
 <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">
 <TITLE>Weekend reading</TITLE>
 <H1>Weekend reading</H1>

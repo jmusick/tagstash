@@ -84,7 +84,7 @@ Migrations are sequential numbered files in `d1/migrations/`, applied via `npm r
 
 `tags` (`d1/migrations/0001_initial.sql`) has a single global `UNIQUE` `name` column and **no `user_id`** — it was never made per-user in any later migration. One tag row (e.g. id 15, `gaming`) can be shared by many users' bookmarks simultaneously; per-user scoping exists only one level down, via `bookmark_tags` joined to `bookmarks.user_id`. This matters for any endpoint that mutates or deletes a `tags` row directly (rename, delete, merge — see `POST /bookmarks/tags/merge` for the reference pattern):
 
-- Never trust a client-supplied tag id as "belongs to this user" — verify with `SELECT COUNT(*) FROM bookmark_tags bt JOIN bookmarks b ON bt.bookmark_id = b.id WHERE bt.tag_id = ? AND b.user_id = ?` before acting on it. (`POST /bookmarks/tags/:id/favorite` skips this check — a known gap, not a pattern to copy.)
+- Never trust a client-supplied tag id as "belongs to this user" — verify with `SELECT COUNT(*) FROM bookmark_tags bt JOIN bookmarks b ON bt.bookmark_id = b.id WHERE bt.tag_id = ? AND b.user_id = ?` before acting on it. `POST /bookmarks/tags/:id/favorite` enforces this scope; it also permits removal of the requesting user's stale favorite without disclosing a foreign tag name.
 - Only remove the user's *own* `bookmark_tags` rows, never `DELETE FROM tags WHERE id = ?` unconditionally. Delete the `tags` row only when orphaned: `DELETE FROM tags WHERE id = ? AND NOT EXISTS (SELECT 1 FROM bookmark_tags WHERE tag_id = ?)`.
 - `favorite_tags` is already per-user (`user_id, tag_id` PK), so clean up the requesting user's row there regardless of whether the global `tags` row gets deleted.
 
@@ -143,7 +143,7 @@ The whole tree is wrapped in an `ErrorBoundary` (`src/components/ErrorBoundary.j
 
 `App.jsx`'s bookmark list has a manual refresh button plus a silent 5-minute `setInterval` poll (mirroring the extension sidebar's interval). There is **no** push/webhook/websocket between a bookmark save (e.g. from the extension) and an already-open web app tab — both are plain re-fetches of `GET /bookmarks` + `GET /bookmarks/tags/all`. Don't assume the UI reflects extension-side changes immediately.
 
-`normalizeBookmarkUrl` is duplicated three times — `src/App.jsx`, `functions/api/[[path]].js`, and `TagstashExtension/popup.js` — rather than shared, since the extension is a separate deployable with its own bundling. It prefixes a missing `https://` and keeps a trailing slash on bare roots (`https://example.com` → `https://example.com/`); deeper paths are left alone. The "Base URL" button (`handleBaseUrl`/`handleEditBaseUrl` in `App.jsx`, `handleBaseUrl` in the extension's `popup.js`) relies on the same root selection via `new URL(...).origin + "/"`. **Change one copy, change all three**, or site and extension will silently disagree on what gets stored for the same pasted URL.
+`normalizeBookmarkUrl` is duplicated three times — `src/App.jsx`, `functions/api/[[path]].js`, and `../tagstash-extension/lib/bookmark-url.js` — rather than shared, since the extension is a separate deployable with its own bundling. It prefixes a missing `https://` and keeps a trailing slash on bare roots (`https://example.com` → `https://example.com/`); deeper paths are left alone. The "Base URL" button (`handleBaseUrl`/`handleEditBaseUrl` in `App.jsx`, `toBaseUrl` in the extension's `lib/bookmark-url.js`) relies on the same root selection via `new URL(...).origin + "/"`. **Change one copy, change all three**, or site and extension will silently disagree on what gets stored for the same pasted URL.
 
 `src/components/AppHeader.jsx`/`AppFooter.jsx` are the shared page chrome (logo, tagline, theme selector, footer copyright) used by every full-page view. `AppHeader` takes an optional `onLogoClick` — pass it for the authenticated button-based "back to bookmarks" behavior, omit it for a plain `<a href="/">` logo link on anonymous/public pages. Page-specific actions (welcome text, nav buttons, logout, footer links) go through each component's `children`, not by forking the markup.
 
@@ -185,3 +185,18 @@ Gotchas:
 - **Auth regression checks:** `npm run test:auth` (Node 22.13+), using isolated in-memory SQLite with the real migrations and API handlers. General verification remains `npm run build` plus driving the app. Pure helpers in `functions/api/[[path]].js` (extractors, normalizers) can be exercised without a Worker by slicing the function out of the file into a temp `.mjs` and importing it — cheap way to check parsing changes against real fetched HTML.
 - This environment has a working local Playwright setup (Chromium cached under `%LOCALAPPDATA%\ms-playwright\chromium-<rev>\chrome-win64\chrome.exe` — note `chrome-win64`, not `chrome-win`), usable via `playwright-core` installed ad hoc in the scratchpad. Useful for screenshotting/regression-checking both owner and public-profile views. For authenticated flows, drive login or call `/auth/login` with the web-client header and cookie-aware request context. Setting `localStorage['token']` now only exercises the legacy upgrade path.
 - Windows Git Bash and Node resolve `/tmp` differently (`/tmp/x` from bash isn't `C:\tmp\x` from Node) — write files Node needs to read into the scratchpad directory instead of `/tmp`.
+
+
+## Repository scope and work tracking
+
+GitHub Issues is the active backlog: https://github.com/jmusick/tagstash/issues.
+Use category and priority labels; link extension work to its tracker at
+https://github.com/jmusick/tagstash-extension/issues. Preserve historical audit
+dates and distinguish confirmed current behavior from carried-forward observations.
+
+Keep executable website code, runtime assets, developer tooling, and canonical
+technical Markdown here. Original artwork, social graphics, raw demo captures,
+backups, and historical audit evidence belong outside the source checkout.
+The demo seed/render tools require `TAGSTASH_DEMO_WORK_DIR`; pass that same directory
+to the recorder. The seed remains local-only. Deployment expectations and the
+latest dated integration check live in [docs/deployment.md](docs/deployment.md).

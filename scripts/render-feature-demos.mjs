@@ -2,12 +2,15 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 
-const ffmpeg = process.env.FFMPEG_PATH || resolve('.tmp/feature-demo/tools/node_modules/ffmpeg-static/ffmpeg.exe')
-const recordings = JSON.parse(await readFile('.tmp/feature-demo/recordings.json', 'utf8'))
+const workDirectory = process.env.TAGSTASH_DEMO_WORK_DIR
+if (!workDirectory) throw new Error('Set TAGSTASH_DEMO_WORK_DIR to the project working directory containing recordings.json')
+const demoPath = name => resolve(workDirectory, name).replaceAll('\\', '/')
+const ffmpeg = process.env.FFMPEG_PATH || demoPath('tools/node_modules/ffmpeg-static/ffmpeg.exe')
+const recordings = JSON.parse(await readFile(demoPath('recordings.json'), 'utf8'))
 const outputWidth = 1120
 const outputHeight = 704
 const appHeight = 630
-await mkdir('.tmp/feature-demo/render', { recursive: true })
+await mkdir(demoPath('render'), { recursive: true })
 await mkdir('public/feature-demos', { recursive: true })
 const number = value => Number(value).toFixed(4)
 
@@ -35,7 +38,7 @@ for (const recording of recordings) {
   const viewport = recording.viewport || { width: 1280, height: 720 }
   if (viewport.width !== 1280 || viewport.height !== 720) throw new Error('Record at the default 1280 by 720 viewport')
   const scale = outputWidth / viewport.width
-  const stem = `.tmp/feature-demo/render/${recording.name}`
+  const stem = demoPath(`render/${recording.name}`)
   const concat = ['ffconcat version 1.0']
   for (let i = 0; i < recording.frames.length; i++) {
     const frame = recording.frames[i]
@@ -49,7 +52,8 @@ for (const recording of recordings) {
     await writeFile(file, caption.text)
     const end = recording.captions[index + 1]?.time ?? recording.duration
     const font = process.platform === 'win32' ? "fontfile='C\\:/Windows/Fonts/segoeui.ttf'" : 'font=Sans'
-    captions.push(`drawtext=${font}:textfile='${file}':fontcolor=white:fontsize=22:x=24:y=654:enable='gte(t,${number(caption.time)})*lt(t,${number(end)})'`)
+    const captionPath = file.replaceAll(':', '\\:').replaceAll("'", "'\\''")
+    captions.push(`drawtext=${font}:textfile='${captionPath}':fontcolor=white:fontsize=22:x=24:y=654:enable='gte(t,${number(caption.time)})*lt(t,${number(end)})'`)
   }
   const x = pointerExpression(recording.events, 'x', scale, recording.duration)
   const y = pointerExpression(recording.events, 'y', scale, recording.duration)

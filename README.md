@@ -17,7 +17,7 @@ Current status at a glance:
 - Admin controls exist for managing user roles and membership tiers
 - Bookmark CRUD, tag cloud filtering, import flow, and search are in place
 - Opt-in public profiles let users share a read-only, tag-filterable view of their bookmarks
-- Browser extension support exists in the companion TagstashExtension project
+- Browser extension support exists in the companion [tagstash-extension repository](https://github.com/jmusick/tagstash-extension)
 - Manual and background refresh keep the bookmark list in sync with saves made via the browser extension
 - A dedicated Tag Management page supports merging tags together
 
@@ -83,23 +83,26 @@ Each section loads its selected clip when visible;
 visitors can pause playback, switch clips, open a larger view, or read the text
 walkthrough. Reduced-motion preferences default to paused playback.
 
+Set `TAGSTASH_DEMO_WORK_DIR` to a working directory outside the source checkout
+for import fixtures, SQL, capture manifests, raw frames, and render intermediates.
 To prepare a local demo collection after applying migrations, run
 `node scripts/seed-feature-demo.mjs`. It uses **only local D1** and creates the
 verified `features-demo@example.test` account (password `TagstashDemo2026!`) with
 overlapping tags, favorites, and private bookmarks. Use `http://localhost:3000`
 for login: that origin is allowed by the local web-session checks. An HTML import
-fixture is written to `.tmp/feature-demo/import.html`.
+fixture is written to `import.html` in that working directory.
 
 `scripts/capture-feature-demo.mjs` accepts an authorized @Browser tab handle and
 captures frames while that tab is driven through the demonstrations. Its `start`,
-`action`, `hold`, and `stop` helpers write `.tmp/feature-demo/recordings.json` with
+`action`, `hold`, and `stop` helpers write `recordings.json` in the directory passed
+to `createDemoRecorder(tab, directory)` (use the same working directory), with
 frame timestamps, captions, and click target coordinates. Use `stop` in a `finally`
 block so failures do not leave capture running. Keep the default 1280 × 720 viewport
 and bring each target into view before recording its coordinates.
 
 `node scripts/render-feature-demos.mjs` renders that capture manifest with FFmpeg;
 set `FFMPEG_PATH` to a local executable, or install `ffmpeg-static` in
-`.tmp/feature-demo/tools`. Output is H.264 at 24 fps, 1120 × 704, with captions
+the working directory's `tools` folder. Output is H.264 at 24 fps, 1120 × 704, with captions
 below the app. Pointer motion is an editorial overlay between real click targets,
 rather than an operating-system cursor track. The extension clip
 shows install options, and the merge clip previews tag selection before confirmation.
@@ -117,15 +120,15 @@ shows install options, and the merge clip previews tag selection before confirma
 
 ### Prerequisites
 
-- Node.js 18+
+- Node.js 22.13+ (the regression suite uses built-in SQLite)
 - npm
 - Wrangler / Cloudflare account for deployment workflows
 
 ### Install
 
 ```bash
-git clone https://github.com/jmusick/Tagstash.git
-cd Tagstash
+git clone https://github.com/jmusick/tagstash.git
+cd tagstash
 npm install
 ```
 
@@ -181,6 +184,10 @@ Default local URLs:
 ## Deployment Notes
 
 Tagstash is designed for Cloudflare Pages + D1.
+
+The GitHub integration deploys `master` from `jmusick/tagstash` to the `tagstash`
+Pages project. Its build command is `npm run build`, output directory is `dist`,
+and repository root is the build root. See [deployment configuration and checks](docs/deployment.md).
 
 Production setup includes:
 
@@ -353,6 +360,19 @@ tagstash/
 - `npm run build` - Create a production build
 - `npm run preview` - Preview the production build locally
 - `npm run lint` - Run ESLint
+
+## Backlog and documentation
+
+[GitHub Issues](https://github.com/jmusick/tagstash/issues) owns actionable work,
+with `category:*` and `priority:P1|P2|P3` labels. The
+[October 10 migration record](https://github.com/jmusick/tagstash/issues/1)
+preserves the earlier audit scope, dates, and original requirements. Extension
+work belongs in [its issue tracker](https://github.com/jmusick/tagstash-extension/issues).
+
+Keep setup, architecture, deployment, and contributor conventions in this
+repository. Keep original artwork, social media graphics, raw captures, backups,
+and historical audit evidence outside the deployable source tree; only runtime
+assets and repeatable development tools belong here.
 
 ## License
 
