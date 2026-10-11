@@ -1081,8 +1081,11 @@ a.btn-field-action,
   box-shadow: none;
 }
 
-.tag-input-shell input:focus {
+/* The shell draws the focus ring via :focus-within; suppress the inner input's own ring. */
+.tag-input-shell input:focus,
+.tag-input-shell input:focus-visible {
   box-shadow: none;
+  outline: none;
 }
 
 .tag-input-suggestion {
