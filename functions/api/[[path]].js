@@ -703,11 +703,13 @@ const AUTH_EVENT_RETENTION_DAYS = 30;
 
 const getClientIp = (request) => request.headers.get('CF-Connecting-IP') || null;
 
-// Appends to auth_events (and the Worker log). Never throws: a logging failure, including
-// auth_events not existing yet before migration 0012, must not break the auth flow itself.
+// Appends to auth_events. Never throws: a logging failure, including auth_events not existing
+// yet before migration 0012, must not break the auth flow itself. The email and IP go only to
+// that access-controlled, 30-day table (Settings -> Admin); the Worker log line carries the
+// event type and internal user id, never the raw email or IP.
 const recordAuthEvent = async (db, request, eventType, { email = null, userId = null } = {}) => {
   const ip = getClientIp(request);
-  console.warn(`[auth] ${eventType}`, JSON.stringify({ email, userId, ip }));
+  console.warn(`[auth] ${eventType}`, JSON.stringify({ userId }));
   try {
     await db.batch([
       db
@@ -2243,11 +2245,8 @@ async function handleAuth(request, env, segments) {
     const { email } = await parseBody(request);
     const normalizedEmail = normalizeEmail(email);
 
-    console.log('[forgot-password] hit, raw email:', email, '| normalized:', normalizedEmail);
-
     // Always return success to prevent email enumeration
     if (!normalizedEmail) {
-      console.log('[forgot-password] empty email, returning early');
       return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
     }
 
@@ -2267,19 +2266,14 @@ async function handleAuth(request, env, segments) {
     }
     await recordAuthEvent(db, request, 'password_reset_requested', { email: normalizedEmail });
 
-    console.log('[forgot-password] lookup for:', normalizedEmail);
-
     const user = await db
       .prepare('SELECT id, username FROM users WHERE LOWER(email) = LOWER(?)')
       .bind(normalizedEmail)
       .first();
 
     if (!user) {
-      console.log('[forgot-password] no user found');
       return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
     }
-
-    console.log('[forgot-password] user found, id:', user.id);
 
     // Rate-limit: one request per 60 seconds
     const recent = await db
@@ -2293,7 +2287,6 @@ async function handleAuth(request, env, segments) {
       .first();
 
     if (recent) {
-      console.log('[forgot-password] rate limited');
       return jsonResponse({ error: 'Please wait a moment before requesting another reset link.' }, 429);
     }
 
@@ -2308,11 +2301,8 @@ async function handleAuth(request, env, segments) {
 
     await storeEmailToken(db, 'password_reset_tokens', user.id, resetToken, expiresAt);
 
-    console.log('[forgot-password] token inserted, sending email...');
-
     try {
       await sendPasswordResetEmail(normalizedEmail, user.username, resetToken, env);
-      console.log('[forgot-password] email sent successfully');
     } catch (err) {
       // Don't reveal failure to the caller, but log it for debugging
       console.error('[forgot-password] Failed to send reset email:', err?.message ?? err);

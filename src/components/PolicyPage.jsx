@@ -58,6 +58,14 @@ function PolicyPage({ logoSrc, onBack }) {
               <strong>Usage data:</strong> standard server logs including IP addresses, browser
               type, and pages accessed, used solely for operating and improving the service.
             </li>
+            <li>
+              <strong>Security log:</strong> sign-ups, sign-in attempts (including failed ones
+              and account lockouts), and password-reset and verification-email requests are
+              recorded with the email address involved and the IP address the request came
+              from. This log is used only to detect and block abuse such as password guessing,
+              is visible only to Tagstash administrators, and its entries are deleted
+              automatically after 30 days.
+            </li>
           </ul>
         </section>
 
@@ -140,7 +148,9 @@ function PolicyPage({ logoSrc, onBack }) {
           <p>
             Your data is retained as long as your account is active. You may delete individual
             bookmarks at any time. To request full account deletion and removal of all associated
-            data, use the in-app Support form (see Contact below).
+            data, use the in-app Support form (see Contact below). Security log entries
+            (email address and IP address, described above) are kept for 30 days and then
+            deleted automatically.
           </p>
         </section>
 
