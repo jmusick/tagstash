@@ -3,7 +3,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import bcrypt from 'bcryptjs';
 
 // Run the real queries and migrations against isolated in-memory SQLite, with D1's API shape.
-export async function createAuthEnv({ emailTokenHashes = true } = {}) {
+// `queryLatency` makes every query wait a macrotask first, like a real D1 round trip, so
+// concurrent requests interleave between queries (otherwise they tend to run back to back and
+// check-then-act races go unnoticed).
+export async function createAuthEnv({ emailTokenHashes = true, queryLatency = false } = {}) {
+  const roundTrip = () => (queryLatency ? new Promise((resolve) => setImmediate(resolve)) : undefined);
   const sqlite = new DatabaseSync(':memory:');
   const migrations = new URL('../../d1/migrations/', import.meta.url);
   for (const file of readdirSync(migrations).filter((name) => name.endsWith('.sql') && (emailTokenHashes || name !== '0013_email_token_hashes.sql')).sort()) {
@@ -17,20 +21,23 @@ export async function createAuthEnv({ emailTokenHashes = true } = {}) {
       let args = [];
       return {
         bind(...values) { args = values; return this; },
-        async first() { return sqlite.prepare(sql).get(...args) || null; },
-        async all() { return { results: sqlite.prepare(sql).all(...args) }; },
-        async run() {
+        async first() { await roundTrip(); return sqlite.prepare(sql).get(...args) || null; },
+        async all() { await roundTrip(); return { results: sqlite.prepare(sql).all(...args) }; },
+        execute() {
           const result = sqlite.prepare(sql).run(...args);
           return { success: true, meta: { changes: result.changes, last_row_id: result.lastInsertRowid } };
         },
+        async run() { await roundTrip(); return this.execute(); },
       };
     },
-    // D1 batches run in order inside one transaction; mirror that so atomicity is really tested.
+    // D1 batches run in order inside one transaction (one round trip, nothing interleaved);
+    // mirror that so atomicity is really tested.
     async batch(statements) {
+      await roundTrip();
       sqlite.exec('BEGIN');
       try {
         const results = [];
-        for (const statement of statements) results.push(await statement.run());
+        for (const statement of statements) results.push(statement.execute());
         sqlite.exec('COMMIT');
         return results;
       } catch (error) {

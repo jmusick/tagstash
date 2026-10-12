@@ -1580,15 +1580,25 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'This verification link has expired. Please request a new one.' }, 400);
     }
 
-    await db
-      .prepare('UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(record.user_id)
-      .run();
-
-    await db
-      .prepare('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(record.id)
-      .run();
+    // Atomic single-use claim, as for email-change and reset links: the token update only
+    // matches while the token is still unused and unexpired, so of any number of simultaneous
+    // redemptions exactly one wins (and gets the session below). Both statements run in one
+    // D1 batch (a transaction), and the user is only marked verified if this claim won.
+    const nowIso = new Date().toISOString();
+    const [claim] = await db.batch([
+      db
+        .prepare('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL AND expires_at > ?')
+        .bind(record.id, nowIso),
+      db
+        .prepare(
+          `UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND EXISTS (SELECT 1 FROM email_verification_tokens WHERE id = ? AND used_at IS NOT NULL)`
+        )
+        .bind(record.user_id, record.id),
+    ]);
+    if (!claim?.meta?.changes) {
+      return jsonResponse({ error: 'This verification link has already been used or has expired.' }, 400);
+    }
 
     const hasProfilePublicColumnForVerify = await usersTableHasColumn(db, 'profile_public');
     const hasThemeColumnForVerify = await usersTableHasColumn(db, 'theme');
@@ -1600,6 +1610,9 @@ async function handleAuth(request, env, segments) {
       .bind(record.user_id)
       .first();
 
+    if (!verifiedUser) {
+      return jsonResponse({ error: 'Invalid or expired verification link.' }, 400);
+    }
     verifiedUser.profile_public = Number(verifiedUser.profile_public || 0);
 
     const authToken = await signUserToken(verifiedUser, env, request);
