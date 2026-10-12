@@ -73,6 +73,9 @@ HTML and page metadata to `dist/features.html`, including the styles needed
 before JavaScript loads. Feature copy lives in `src/components/FeaturesPage.jsx`.
 Cloudflare Pages serves the file at `/features`; the middleware must also list that
 path as an indexable page. `/features/` and `/features.html` redirect to `/features`.
+`/privacy` and `/support` get the same treatment for their `<head>` only (`dist/privacy.html`,
+`dist/support.html`), so crawlers see each page's own title, description and canonical
+without running JavaScript; their titles/descriptions live in `src/utils/pageMeta.js`.
 Homepage feature/FAQ copy and page-specific structured data are shared between
 React and Pages Functions in `src/content/` to keep crawler and browser content aligned.
 

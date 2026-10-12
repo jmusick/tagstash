@@ -12,6 +12,21 @@ const usersTableHasColumn = async (db, columnName) => {
   return result.results.some((col) => col.name === columnName);
 };
 
+const bookmarksTableHasColumn = async (db, columnName) => {
+  const result = await db.prepare('PRAGMA table_info(bookmarks)').all();
+  return result.results.some((col) => col.name === columnName);
+};
+
+// D1 stores UTC as 'YYYY-MM-DD HH:MM:SS' (or ISO); take the date part directly so the
+// server's timezone can't shift it. Anything unparseable yields no lastmod.
+const toLastmodDay = (value) => {
+  if (!value) return '';
+  const direct = /^(\d{4}-\d{2}-\d{2})/.exec(String(value));
+  if (direct) return direct[1];
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
+};
+
 const xmlEscape = (value) =>
   String(value).replace(/[<>&'"]/g, (c) => ({
     '<': '&lt;',
@@ -31,15 +46,23 @@ export async function onRequestGet({ request, env }) {
   );
 
   if (db && (await usersTableHasColumn(db, 'profile_public'))) {
+    // lastmod is the newest *public* bookmark change, not users.updated_at (which logins
+    // and preference changes bump). Profiles with no public bookmarks omit lastmod.
+    // is_private is guarded like everywhere else: before its migration every bookmark counts.
+    const publicOnly = (await bookmarksTableHasColumn(db, 'is_private')) ? ' AND b.is_private = 0' : '';
     const { results } = await db
-      .prepare('SELECT username, updated_at FROM users WHERE profile_public = 1')
+      .prepare(
+        `SELECT u.username AS username, MAX(MAX(b.created_at, b.updated_at)) AS last_content_at
+         FROM users u LEFT JOIN bookmarks b ON b.user_id = u.id${publicOnly}
+         WHERE u.profile_public = 1
+         GROUP BY u.id`
+      )
       .all();
 
-    for (const { username, updated_at: updatedAt } of results) {
-      const lastmod = updatedAt ? `<lastmod>${new Date(updatedAt).toISOString().slice(0, 10)}</lastmod>` : '';
-      urlEntries.push(
-        `<url><loc>${xmlEscape(`${origin}/u/${username}`)}</loc>${lastmod}<changefreq>weekly</changefreq><priority>0.6</priority></url>`
-      );
+    for (const { username, last_content_at: lastContentAt } of results) {
+      const day = toLastmodDay(lastContentAt);
+      const lastmod = day ? `<lastmod>${day}</lastmod>` : '';
+      urlEntries.push(`<url><loc>${xmlEscape(`${origin}/u/${encodeURIComponent(username)}`)}</loc>${lastmod}</url>`);
     }
   }
 

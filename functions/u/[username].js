@@ -44,16 +44,24 @@ export async function onRequestGet({ request, env, params, next }) {
     // Malformed percent-encoding can't name a profile; render the not-found metadata.
     rawUsername = '';
   }
-  const pageUrl = `${origin}/u/${encodeURIComponent(rawUsername)}`;
   const imageUrl = `${origin}/og-image.jpg`;
 
   let title = 'Profile Not Found - Tagstash';
   let description = "This profile doesn't exist or isn't public.";
   let found = false;
+  // Stored casing of the matched user. Lookup is case-insensitive, so /u/jd and /u/JD
+  // both resolve to one profile; canonical, og:url and JSON-LD must name that one
+  // address (the stored casing) rather than echoing whatever casing the URL used.
+  let canonicalUsername = rawUsername;
+  // 404 when the profile doesn't exist or isn't public (so crawlers don't index a
+  // soft-404); 503 when the lookup itself failed, so a transient D1 error isn't
+  // mistaken for a missing profile.
+  let status = 404;
 
   try {
     const db = env.DB;
-    if (db && rawUsername) {
+    if (rawUsername) {
+      if (!db) throw new Error('DB binding is not configured');
       const hasProfilePublicColumn = await usersTableHasColumn(db, 'profile_public');
       if (hasProfilePublicColumn) {
         const user = await db
@@ -63,6 +71,8 @@ export async function onRequestGet({ request, env, params, next }) {
 
         if (user) {
           found = true;
+          status = 200;
+          canonicalUsername = user.username;
           const hasIsPrivateColumn = await bookmarksTableHasColumn(db, 'is_private');
           const tagsQuery = hasIsPrivateColumn
             ? `SELECT t.name AS name, COUNT(*) AS cnt FROM bookmark_tags bt
@@ -92,7 +102,10 @@ export async function onRequestGet({ request, env, params, next }) {
     title = 'Profile Not Found - Tagstash';
     description = "This profile doesn't exist or isn't public.";
     found = false;
+    status = 503;
   }
+
+  const pageUrl = `${origin}/u/${encodeURIComponent(canonicalUsername)}`;
 
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(description);
@@ -101,7 +114,7 @@ export async function onRequestGet({ request, env, params, next }) {
     ? {
         '@context': 'https://schema.org',
         '@type': 'ProfilePage',
-        mainEntity: { '@type': 'Person', name: rawUsername, url: pageUrl },
+        mainEntity: { '@type': 'Person', name: canonicalUsername, url: pageUrl },
       }
     : null;
 
@@ -157,5 +170,16 @@ ${jsonLd ? `<script type="application/ld+json">${serializeJsonLd(jsonLd)}</scrip
     });
   }
 
-  return rewriter.transform(response);
+  const transformed = await rewriter.transform(response);
+  if (status === 200) return transformed;
+
+  // Keep the SPA shell as the body so the app still renders its not-found UI, but
+  // answer with a real error status (the noindex meta above stays as belt and braces).
+  const headers = new Headers(transformed.headers);
+  headers.set('X-Robots-Tag', 'noindex');
+  if (status === 503) headers.set('Retry-After', '60');
+  return new Response(transformed.body, { status, headers });
 }
+
+// HEAD probes (link checkers, some crawlers) must see the same status as GET.
+export const onRequestHead = onRequestGet;

@@ -29,7 +29,8 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
       : topTagNames.length
         ? `Browse ${profile?.username}'s public bookmarks on Tagstash, tagged with ${topTagNames.join(', ')}.`
         : `Browse ${profile?.username}'s public bookmarks on Tagstash.`,
-    path: `/u/${username}`,
+    // Stored casing (not the URL's) so the client canonical matches the server-rendered one.
+    path: `/u/${encodeURIComponent(profile?.username || username)}`,
     noindex: notFound || !!error,
   })
 
