@@ -1,13 +1,10 @@
 import Logo from './Logo'
 import { useDocumentMeta } from '../utils/useDocumentMeta';
+import { PRIVACY_META } from '../utils/pageMeta';
 import './PolicyPage.css';
 
 function PolicyPage({ logoSrc, onBack }) {
-  useDocumentMeta({
-    title: 'Privacy Policy - Tagstash',
-    description: 'How Tagstash collects, uses, and protects your account and bookmark data.',
-    path: '/privacy',
-  });
+  useDocumentMeta(PRIVACY_META);
 
   return (
     <div className="privacy-page">

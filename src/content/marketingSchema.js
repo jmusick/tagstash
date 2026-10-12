@@ -41,6 +41,7 @@ export function getFeaturesStructuredData(origin) {
     '@graph': [
       {
         '@type': 'WebPage', '@id': `${url}#webpage`, url,
+        isPartOf: { '@id': `${origin}/#website` },
         name: FEATURES_META.title, description: FEATURES_META.description,
         dateModified: FEATURES_UPDATED,
         about: { '@type': 'SoftwareApplication', name: 'Tagstash', url: `${origin}/` },

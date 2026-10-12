@@ -2,16 +2,13 @@ import Logo from './Logo'
 import { useEffect, useRef, useState } from 'react';
 import { supportAPI } from '../api/api';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
+import { SUPPORT_META } from '../utils/pageMeta';
 import './SupportPage.css';
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
 function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
-  useDocumentMeta({
-    title: 'Support - Tagstash',
-    description: 'Get help with your Tagstash account or send the team a message.',
-    path: '/support',
-  });
+  useDocumentMeta(SUPPORT_META);
 
   const [email, setEmail] = useState(prefillEmail);
   const [message, setMessage] = useState('');

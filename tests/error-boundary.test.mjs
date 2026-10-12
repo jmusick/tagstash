@@ -54,7 +54,7 @@ test('malformed percent-encoding in a profile name is a 404, not a crash', async
     params: { username: '%E0%A4%A' },
     next: async () => new Response('<html><head></head></html>', { headers: { 'Content-Type': 'text/html' } }),
   });
-  assert.equal(page.status, 200);
+  assert.equal(page.status, 404);
   assert.match(await page.text(), /<meta name="robots" content="noindex" \/>/);
 });
 

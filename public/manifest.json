@@ -4,7 +4,7 @@
   "description": "A tag-based bookmark manager for saving links and organizing bookmarks.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#1b1a20",
   "theme_color": "#6d45ff",
   "icons": [
     {
