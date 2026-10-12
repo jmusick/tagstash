@@ -1779,9 +1779,16 @@ const findExistingBookmarkUrls = async (db, userId, urls) => {
 };
 
 // Three statements per chunk regardless of size: upsert the chunk's tag names, insert its
-// bookmarks in order, then link tags. The link step finds each new bookmark by position:
-// inside the batch's transaction AUTOINCREMENT hands the chunk consecutive ids ending at
-// MAX(id), and the join re-checks owner and URL so a link can never land elsewhere.
+// bookmarks, then link tags.
+// - The insert enforces the plan atomically, like insertBookmarkWithinPlanStatement: a paid
+//   owner gets every row; a free one only rows with key < limit - (current count), so
+//   concurrent imports can't each spend the same remaining slots. Because the SELECT reads
+//   the table it inserts into, SQLite evaluates it completely (count included) before the
+//   first row goes in, so the admitted rows are exactly keys 0..k-1.
+// - Rows go in by DESCENDING key, so inside the batch's transaction AUTOINCREMENT gives
+//   key 0 the highest id and each row's id is MAX(id) - key, whatever k turned out to be.
+// - The link step runs straight after the insert, so changes() is k: only admitted rows are
+//   linked, and the join re-checks owner and URL so a link can never land elsewhere.
 const importChunkStatements = (db, userId, chunk) => {
   const payload = JSON.stringify(chunk);
   return [
@@ -1794,21 +1801,25 @@ const importChunkStatements = (db, userId, chunk) => {
     db
       .prepare(
         `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
-         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
-         FROM json_each(?) ORDER BY key`
+         SELECT ?1, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
+         FROM json_each(?2)
+         WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?3
+            OR key < ?4 - (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1)
+         ORDER BY key DESC`
       )
-      .bind(userId, payload),
+      .bind(userId, payload, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT),
     db
       .prepare(
         `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
          SELECT b.id, t.id
-         FROM json_each(?) AS bm
-         JOIN bookmarks b ON b.id = (SELECT MAX(id) FROM bookmarks) - ? + 1 + bm.key
-           AND b.user_id = ? AND b.url = json_extract(bm.value, '$[1]')
+         FROM json_each(?1) AS bm
+         JOIN bookmarks b ON b.id = (SELECT MAX(id) FROM bookmarks) - bm.key
+           AND b.user_id = ?2 AND b.url = json_extract(bm.value, '$[1]')
          JOIN json_each(bm.value, '$[4]') AS tag
-         JOIN tags t ON t.name = tag.value`
+         JOIN tags t ON t.name = tag.value
+         WHERE bm.key < changes()`
       )
-      .bind(payload, chunk.length, userId),
+      .bind(payload, userId),
   ];
 };
 
@@ -1853,6 +1864,7 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
     accepted.push(bookmark);
   }
 
+  // Fast path from the plan status read earlier; the chunk insert re-checks atomically.
   let overLimit = 0;
   if (remainingSlots !== null && accepted.length > remainingSlots) {
     overLimit = accepted.length - remainingSlots;
@@ -1868,19 +1880,29 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
     getFaviconUrl(bookmark.url),
     bookmark.tags,
   ]);
+  let pending = records.length;
   for (const chunk of chunkByJsonSize(records, IMPORT_CHUNK_ROWS, IMPORT_CHUNK_BYTES)) {
     let results;
     try {
       results = await db.batch(importChunkStatements(db, userId, chunk));
     } catch (error) {
       console.error('[import] chunk failed; earlier chunks were kept:', error?.message ?? error);
-      summary.skipped += records.length - summary.imported;
+      summary.skipped += pending;
       return { summary, failed: true };
     }
-    summary.imported += Number(results[1]?.meta?.changes || 0);
-    const expectedLinks = chunk.reduce((total, record) => total + record[4].length, 0);
+    pending -= chunk.length;
+    const inserted = Number(results[1]?.meta?.changes || 0);
+    summary.imported += inserted;
+    const expectedLinks = chunk.slice(0, inserted).reduce((total, record) => total + record[4].length, 0);
     if (Number(results[2]?.meta?.changes || 0) !== expectedLinks) {
       console.warn('[import] tag link count mismatch', JSON.stringify({ expectedLinks, linked: results[2]?.meta?.changes }));
+    }
+    if (inserted < chunk.length) {
+      // The free limit was reached inside the transaction (e.g. by a concurrent save or import):
+      // the rest of this chunk and every later one are skipped.
+      summary.limitReached = true;
+      summary.skipped += chunk.length - inserted + pending;
+      break;
     }
   }
 

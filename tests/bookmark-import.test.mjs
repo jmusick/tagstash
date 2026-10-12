@@ -66,7 +66,7 @@ test('2000 bookmarks with shared tags import correctly in a handful of batched q
     assert.deepEqual(log.batches.slice(-8), Array(8).fill(3));
     assert.equal(log.batches.length, 9); // plus the rate-limit event write
     assert.ok(log.standalone <= 12, `${log.standalone} standalone queries`);
-    assert.ok(log.maxBinds <= 3, `a statement bound ${log.maxBinds} values`);
+    assert.ok(log.maxBinds <= 4, `a statement bound ${log.maxBinds} values`); // D1 allows 100
 
     const count = (sql) => env.sqlite.prepare(sql).get().n;
     assert.equal(count('SELECT COUNT(*) AS n FROM bookmarks WHERE user_id = 1'), 2000);
@@ -192,6 +192,84 @@ test('a failing chunk rolls back alone; earlier chunks stay and a retry finishes
     assert.equal(count(), 600);
     assert.deepEqual(tagsOf(env, 'https://chunk.example/599'), ['tag-599']);
   } finally { console.error = realError; env.sqlite.close(); }
+});
+
+// Issue #18: the free-plan limit must hold even when imports (and single saves) race. With
+// queryLatency every query yields, so the requests all read the same stale plan status and
+// only the in-transaction guard can stop them overshooting.
+async function racingSetup(existing) {
+  const env = await createAuthEnv({ queryLatency: true });
+  const headers = await loginHeaders(env);
+  const insert = env.sqlite.prepare('INSERT INTO bookmarks (user_id, url, title) VALUES (1, ?, ?)');
+  for (let i = 0; i < existing; i += 1) insert.run(`https://mine.example/${i}`, `mine ${i}`);
+  return { env, headers };
+}
+const fileOf = (name, count) => Array.from({ length: count }, (_, i) => ({
+  title: `${name} ${i}`, url: `https://${name}.example/${i}`, tags: [name, `${name}-${i}`],
+}));
+const userBookmarks = (env) => env.sqlite.prepare('SELECT COUNT(*) AS n FROM bookmarks WHERE user_id = 1').get().n;
+
+test('concurrent imports cannot push a free account past its limit (#18)', async () => {
+  const { env, headers } = await racingSetup(40);
+  try {
+    const files = ['alpha', 'beta', 'gamma', 'delta'].map((name) => fileOf(name, 10));
+    const responses = await Promise.all(files.map((file) => importRows(env, headers, file)));
+    const summaries = await Promise.all(responses.map((r) => r.json()));
+    assert.ok(responses.every((r) => r.status === 200));
+
+    assert.equal(userBookmarks(env), 50);
+    assert.equal(summaries.reduce((total, s) => total + s.imported, 0), 10);
+    for (const s of summaries) {
+      assert.equal(s.imported + s.skipped, 10);
+      if (s.imported < 10) assert.equal(s.limitReached, true);
+    }
+    // Every saved bookmark has exactly its own two tags; refused rows linked nothing.
+    const rows = env.sqlite.prepare(
+      `SELECT b.url, GROUP_CONCAT(t.name) AS tags FROM bookmarks b
+       LEFT JOIN bookmark_tags bt ON bt.bookmark_id = b.id LEFT JOIN tags t ON t.id = bt.tag_id
+       WHERE b.user_id = 1 AND b.url NOT LIKE 'https://mine.example/%' GROUP BY b.id`).all();
+    assert.equal(rows.length, 10);
+    for (const { url, tags } of rows) {
+      const [, name, i] = /^https:\/\/(\w+)\.example\/(\d+)$/.exec(url);
+      assert.deepEqual(tags.split(',').sort(), [name, `${name}-${i}`].sort(), url);
+    }
+    assert.equal(env.sqlite.prepare('SELECT COUNT(*) AS n FROM bookmark_tags').get().n, 20);
+  } finally { env.sqlite.close(); }
+});
+
+test('imports racing single saves share the same limit', async () => {
+  const { env, headers } = await racingSetup(45);
+  try {
+    const saves = Array.from({ length: 4 }, (_, n) => call(env, 'bookmarks', {
+      method: 'POST', headers, body: { title: `save ${n}`, url: `https://save.example/${n}`, tags: ['solo'] },
+    }));
+    const imports = [importRows(env, headers, fileOf('alpha', 6)), importRows(env, headers, fileOf('beta', 6))];
+    const [saveResults, importResults] = await Promise.all([Promise.all(saves), Promise.all(imports)]);
+    const saved = saveResults.filter((r) => r.status === 201).length;
+    assert.ok(saveResults.every((r) => r.status === 201 || r.status === 403));
+    const imported = (await Promise.all(importResults.map((r) => r.json()))).reduce((total, s) => total + s.imported, 0);
+    assert.equal(saved + imported, 5);
+    assert.equal(userBookmarks(env), 50);
+    // No tag link points at a bookmark that wasn't created with it.
+    const stray = env.sqlite.prepare(
+      `SELECT COUNT(*) AS n FROM bookmark_tags bt JOIN bookmarks b ON b.id = bt.bookmark_id
+       JOIN tags t ON t.id = bt.tag_id
+       WHERE NOT ((t.name = 'solo' AND b.url LIKE 'https://save.example/%')
+               OR (b.url LIKE 'https://' || t.name || '.example/%')
+               OR (b.url LIKE 'https://' || substr(t.name, 1, instr(t.name, '-') - 1) || '.example/%'))`).get().n;
+    assert.equal(stray, 0);
+  } finally { env.sqlite.close(); }
+});
+
+test('paid accounts import concurrently without a limit', async () => {
+  const { env, headers } = await racingSetup(45);
+  try {
+    env.sqlite.exec("UPDATE users SET membership_tier = 'paid'");
+    const summaries = await Promise.all(['alpha', 'beta', 'gamma'].map(async (name) => (await importRows(env, headers, fileOf(name, 300))).json()));
+    assert.deepEqual(summaries.map((s) => s.imported), [300, 300, 300]);
+    assert.equal(userBookmarks(env), 945);
+    assert.equal(env.sqlite.prepare('SELECT COUNT(*) AS n FROM bookmark_tags').get().n, 1800);
+  } finally { env.sqlite.close(); }
 });
 
 test('imports are rate limited per account', async () => {
