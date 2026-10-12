@@ -4,6 +4,21 @@
   "version": "1.30.3",
   "type": "module",
   "description": "A tag-based bookmarking web application",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.13.0",
+      "onFail": "warn"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": ">=11.19.0",
+      "onFail": "warn"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "dev:api": "wrangler pages dev . --local --port 5000 --proxy 3010",
@@ -36,5 +51,9 @@
     "globals": "^17.4.0",
     "vite": "^6.4.3",
     "wrangler": "^4.147.0"
+  },
+  "allowScripts": {
+    "esbuild": false,
+    "workerd": false
   }
 }

@@ -121,7 +121,7 @@ shows install options, and the merge clip previews tag selection before confirma
 ### Prerequisites
 
 - Node.js 22.13+ (the regression suite uses built-in SQLite)
-- npm
+- npm 11.19+ (supply-chain install policy; see [dependency safeguards](docs/supply-chain.md))
 - Wrangler / Cloudflare account for deployment workflows
 
 ### Install
@@ -129,7 +129,7 @@ shows install options, and the merge clip previews tag selection before confirma
 ```bash
 git clone https://github.com/jmusick/tagstash.git
 cd tagstash
-npm install
+npm ci
 ```
 
 ### Configure local secrets
