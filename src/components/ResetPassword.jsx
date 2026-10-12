@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { authAPI } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
+import { INPUT_LIMITS } from '../utils/inputLimits';
 import './Auth.css';
 
 function ResetPassword({ logoSrc }) {
@@ -81,6 +82,7 @@ function ResetPassword({ logoSrc }) {
                   onChange={(e) => { setPassword(e.target.value); setStatus('form'); }}
                   required
                   minLength={6}
+                  maxLength={INPUT_LIMITS.password}
                   aria-describedby="rp-password-hint"
                   autoFocus
                 />
@@ -95,6 +97,7 @@ function ResetPassword({ logoSrc }) {
                   onChange={(e) => { setConfirm(e.target.value); setStatus('form'); }}
                   required
                   minLength={6}
+                  maxLength={INPUT_LIMITS.password}
                   placeholder="Repeat your password"
                   aria-invalid={status === 'error' ? 'true' : undefined}
                   aria-describedby={status === 'error' ? 'rp-error' : undefined}

@@ -6,6 +6,7 @@ import Import from './Import';
 import Export from './Export';
 import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../utils/linkTarget';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
+import { INPUT_LIMITS } from '../utils/inputLimits';
 import './Settings.css';
 
 function Settings({
@@ -650,7 +651,7 @@ function Settings({
                 onChange={handleUsernameChange}
                 required
                 minLength={2}
-                maxLength={50}
+                maxLength={INPUT_LIMITS.username}
                 placeholder="Enter your new username"
                 pattern="\S+"
                 title="Username cannot contain spaces"
@@ -698,6 +699,7 @@ function Settings({
                 value={emailForm.newEmail}
                 onChange={handleEmailChange}
                 required
+                maxLength={INPUT_LIMITS.email}
                 placeholder="Enter your new email"
               />
             </div>
@@ -748,6 +750,7 @@ function Settings({
                 placeholder="Enter your new password"
                 aria-describedby="new-password-hint"
                 minLength={6}
+                maxLength={INPUT_LIMITS.password}
               />
               <small id="new-password-hint" className="form-hint">At least 6 characters</small>
             </div>
@@ -763,6 +766,7 @@ function Settings({
                 required
                 placeholder="Confirm your new password"
                 minLength={6}
+                maxLength={INPUT_LIMITS.password}
               />
             </div>
 
@@ -886,7 +890,7 @@ function Settings({
                   id="api-key-name"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
-                  maxLength={100}
+                  maxLength={INPUT_LIMITS.apiKeyName}
                   placeholder="e.g. Chrome extension"
                 />
               </div>

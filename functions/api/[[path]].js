@@ -581,12 +581,155 @@ const generateApiKeyValue = () => {
   return `tsk_${toHex(bytes)}`;
 };
 
-const parseBody = async (request) => {
-  try {
-    return await request.json();
-  } catch {
-    return {};
+// Server-side input limits (characters unless noted). The web UI mirrors the user-facing ones
+// in src/utils/inputLimits.js as maxLength/tag-count checks — change both together.
+const INPUT_LIMITS = {
+  title: 1000,
+  url: 8192,
+  description: 10000,
+  tagName: 100,
+  tagsPerBookmark: 50,
+  username: 50,
+  email: 254,
+  password: 256,
+  apiKeyName: 100,
+  importBookmarks: 2000,
+};
+
+// Request bodies are streamed and abandoned past these sizes (413). The default fits the
+// largest valid bookmark even with every character escaped; import carries up to 2000.
+const MAX_JSON_BODY_BYTES = 256 * 1024;
+
+// Thrown by request-parsing helpers; routeRequest turns it into a JSON error response.
+class HttpError extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
   }
+}
+
+const readBodyBytes = async (request, maxBytes) => {
+  const declared = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new HttpError(413, 'Request body is too large');
+  }
+  if (!request.body) return new Uint8Array(0);
+
+  const reader = request.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      reader.cancel().catch(() => {});
+      throw new HttpError(413, 'Request body is too large');
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+};
+
+// Reads a JSON object body. An empty body is `{}` so routes keep reporting missing fields
+// themselves; anything else must be a JSON object sent as application/json.
+const parseBody = async (request, { maxBytes = MAX_JSON_BODY_BYTES } = {}) => {
+  const text = new TextDecoder().decode(await readBodyBytes(request, maxBytes));
+  if (!text.trim()) return {};
+
+  const contentType = (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (contentType !== 'application/json' && !contentType.endsWith('+json')) {
+    throw new HttpError(415, 'Request body must be application/json');
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new HttpError(400, 'Request body is not valid JSON');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new HttpError(400, 'Request body must be a JSON object');
+  }
+  return parsed;
+};
+
+const isOptionalString = (value) => value === undefined || value === null || typeof value === 'string';
+
+// Keeps at most `max` UTF-16 units without leaving half a surrogate pair behind.
+const clampText = (value, max) =>
+  value.length <= max ? value : value.slice(0, max).replace(/[\uD800-\uDBFF]$/, '');
+
+const quoteForError = (value) => `"${clampText(value, 40)}${value.length > 40 ? '…' : ''}"`;
+
+// Normalizes a create/update `tags` field. `undefined` means "leave tags alone", `null` an
+// empty list. Every entry must be a single-word string; blanks are dropped and duplicates
+// merged, and the limits apply after that.
+const normalizeTagList = (tags) => {
+  if (tags === undefined) return { tags: undefined };
+  if (tags === null) return { tags: [] };
+  if (!Array.isArray(tags)) return { error: 'Tags must be an array of strings' };
+
+  const names = new Set();
+  for (const tag of tags) {
+    if (typeof tag !== 'string') return { error: 'Tags must be an array of strings' };
+    const name = tag.trim().toLowerCase();
+    if (!name) continue;
+    if (/\s/.test(name)) return { error: `Tag ${quoteForError(tag)} must be a single word with no spaces` };
+    if (name.length > INPUT_LIMITS.tagName) {
+      return { error: `Tag ${quoteForError(name)} must be ${INPUT_LIMITS.tagName} characters or less` };
+    }
+    names.add(name);
+  }
+  if (names.size > INPUT_LIMITS.tagsPerBookmark) {
+    return { error: `A bookmark can have at most ${INPUT_LIMITS.tagsPerBookmark} tags` };
+  }
+  return { tags: [...names] };
+};
+
+// Validates a whole create/update payload before anything is written, so a bad field can
+// never leave a half-applied change behind.
+const validateBookmarkInput = ({ title, url, description, tags }) => {
+  if (!isOptionalString(title) || !isOptionalString(url)) {
+    return { error: 'Title and URL must be strings' };
+  }
+  const trimmedTitle = (title || '').trim();
+  const normalizedUrl = normalizeBookmarkUrl(url);
+  if (!trimmedTitle || !normalizedUrl) {
+    return { error: 'Title and URL are required' };
+  }
+  if (trimmedTitle.length > INPUT_LIMITS.title) {
+    return { error: `Title must be ${INPUT_LIMITS.title} characters or less` };
+  }
+  if (normalizedUrl.length > INPUT_LIMITS.url) {
+    return { error: `URL must be ${INPUT_LIMITS.url} characters or less` };
+  }
+  if (!isValidHttpUrl(normalizedUrl)) {
+    return { error: 'Invalid URL format' };
+  }
+  if (!isOptionalString(description)) {
+    return { error: 'Description must be a string' };
+  }
+  if (description && description.length > INPUT_LIMITS.description) {
+    return { error: `Description must be ${INPUT_LIMITS.description} characters or less` };
+  }
+  const tagResult = normalizeTagList(tags);
+  if (tagResult.error) return { error: tagResult.error };
+
+  return {
+    value: {
+      title: trimmedTitle,
+      url: normalizedUrl,
+      description: description || null,
+      tags: tagResult.tags,
+    },
+  };
 };
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -1073,20 +1216,18 @@ const getUserPlanStatus = async (db, userId) => {
 
 // Inserts a bookmark only while the owner is on the paid tier or still under the free limit.
 // The plan/count check and the insert are ONE statement, so simultaneous saves can't all pass
-// the same stale count (count-then-insert let parallel requests overshoot the limit). Returns
-// the new id, or null when the free limit is reached.
-const insertBookmarkWithinPlan = async (db, userId, { title, url, description, faviconUrl }) => {
-  const result = await db
+// the same stale count (count-then-insert let parallel requests overshoot the limit). Built as
+// a statement for the caller's db.batch: meta.changes is 0 when the free limit refused it.
+// The bulk-import equivalent is importChunkStatements.
+const insertBookmarkWithinPlanStatement = (db, userId, { title, url, description, faviconUrl }) =>
+  db
     .prepare(
       `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
        SELECT ?1, ?2, ?3, ?4, ?5
        WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?6
           OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1) < ?7`
     )
-    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT)
-    .run();
-  return result.meta?.changes ? result.meta.last_row_id : null;
-};
+    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT);
 
 const freeLimitResponse = () =>
   jsonResponse(
@@ -1176,32 +1317,34 @@ const ensureTag = async (db, tagName) => {
   return tag;
 };
 
-const setBookmarkTags = async (db, bookmarkId, tags) => {
-  await db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id = ?').bind(bookmarkId).run();
+// Tag writes are built as statements for the caller's db.batch(), so a bookmark row and its
+// tag links commit or roll back together. `tags` is the global name table (see AGENTS.md):
+// names are upserted, then links resolve names through its UNIQUE index.
+const upsertTagNamesStatement = (db, names) =>
+  db.prepare('INSERT OR IGNORE INTO tags (name) SELECT value FROM json_each(?)').bind(JSON.stringify(names));
 
-  const bookmarkTags = [];
-  for (const tagName of tags) {
-    if (typeof tagName !== 'string') {
-      continue;
-    }
-    const trimmed = tagName.trim().toLowerCase();
-    if (!trimmed) {
-      continue;
-    }
-    if (/\s/.test(trimmed)) {
-      throw new Error(`INVALID_TAG:${tagName}`);
-    }
+// `bookmarkIdSql` is a trusted SQL expression (a placeholder or a subquery) with its binds.
+// With `afterGuardedInsert`, the statement must come straight after a plan-guarded insert in
+// the same batch: SQLite's changes() still reports that insert, so a refused insert links
+// nothing (otherwise MAX(id) would point at an older bookmark).
+const linkTagNamesStatement = (db, bookmarkIdSql, bookmarkIdBinds, names, { afterGuardedInsert = false } = {}) =>
+  db
+    .prepare(
+      `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
+       SELECT ${bookmarkIdSql}, t.id FROM tags t
+       WHERE ${afterGuardedInsert ? 'changes() > 0 AND ' : ''}t.name IN (SELECT value FROM json_each(?))`
+    )
+    .bind(...bookmarkIdBinds, JSON.stringify(names));
 
-    const tag = await ensureTag(db, trimmed);
-    await db
-      .prepare('INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id) VALUES (?, ?)')
-      .bind(bookmarkId, tag.id)
-      .run();
-
-    bookmarkTags.push(tag);
-  }
-
-  return bookmarkTags;
+// [{ id, name }] for the given tag names, in the same order.
+const loadTagsInOrder = async (db, names) => {
+  if (!names.length) return [];
+  const rows = await db
+    .prepare('SELECT id, name FROM tags WHERE name IN (SELECT value FROM json_each(?))')
+    .bind(JSON.stringify(names))
+    .all();
+  const byName = new Map((rows.results || []).map((row) => [row.name, { id: row.id, name: row.name }]));
+  return names.map((name) => byName.get(name)).filter(Boolean);
 };
 
 const normalizeBookmarkUrl = (value) => {
@@ -1550,6 +1693,14 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'Password must be at least 6 characters' }, 400);
     }
 
+    if (password.length > INPUT_LIMITS.password) {
+      return jsonResponse({ error: `Password must be ${INPUT_LIMITS.password} characters or less` }, 400);
+    }
+
+    if (normalizedEmail.length > INPUT_LIMITS.email || !isValidEmail(normalizedEmail)) {
+      return jsonResponse({ error: 'Please provide a valid email address' }, 400);
+    }
+
     // Every registration sends an email to an arbitrary address, so cap attempts per IP.
     if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.registrationsPerIp, 'ip', getClientIp(request))) {
       await recordAuthEvent(db, request, 'register_rate_limited', { email: normalizedEmail });
@@ -1860,7 +2011,7 @@ async function handleAuth(request, env, segments) {
     const { newUsername, password } = await parseBody(request);
     const trimmedUsername = typeof newUsername === 'string' ? newUsername.trim() : '';
 
-    if (!trimmedUsername || !password) {
+    if (!trimmedUsername || !password || typeof password !== 'string') {
       return jsonResponse({ error: 'Username and password are required' }, 400);
     }
 
@@ -1918,8 +2069,12 @@ async function handleAuth(request, env, segments) {
     const { newEmail, password } = await parseBody(request);
     const normalizedNewEmail = normalizeEmail(newEmail);
 
-    if (!normalizedNewEmail || !password) {
+    if (!normalizedNewEmail || !password || typeof password !== 'string') {
       return jsonResponse({ error: 'Email and password are required' }, 400);
+    }
+
+    if (normalizedNewEmail.length > INPUT_LIMITS.email || !isValidEmail(normalizedNewEmail)) {
+      return jsonResponse({ error: 'Please provide a valid email address' }, 400);
     }
 
     const emailCheck = await db
@@ -1982,12 +2137,16 @@ async function handleAuth(request, env, segments) {
 
     const { currentPassword, newPassword, confirmPassword } = await parseBody(request);
 
-    if (!currentPassword || !newPassword || !confirmPassword) {
+    if (![currentPassword, newPassword, confirmPassword].every((value) => typeof value === 'string' && value)) {
       return jsonResponse({ error: 'All fields are required' }, 400);
     }
 
     if (newPassword.length < 6) {
       return jsonResponse({ error: 'New password must be at least 6 characters' }, 400);
+    }
+
+    if (newPassword.length > INPUT_LIMITS.password) {
+      return jsonResponse({ error: `New password must be ${INPUT_LIMITS.password} characters or less` }, 400);
     }
 
     if (newPassword !== confirmPassword) {
@@ -2039,6 +2198,9 @@ async function handleAuth(request, env, segments) {
     }
 
     const { profilePublic } = await parseBody(request);
+    if (typeof profilePublic !== 'boolean') {
+      return jsonResponse({ error: 'profilePublic must be true or false' }, 400);
+    }
     const nextValue = profilePublic ? 1 : 0;
 
     // A suspended account can still turn its profile off, but not back on.
@@ -2132,11 +2294,13 @@ async function handleAuth(request, env, segments) {
     if (auth.error) return auth.error;
 
     const { name } = await parseBody(request);
-    const trimmedName = typeof name === 'string' ? name.trim() : '';
-    const keyName = trimmedName || 'Default API Key';
+    if (!isOptionalString(name)) {
+      return jsonResponse({ error: 'API key name must be a string' }, 400);
+    }
+    const keyName = (name || '').trim() || 'Default API Key';
 
-    if (keyName.length > 100) {
-      return jsonResponse({ error: 'API key name must be 100 characters or less' }, 400);
+    if (keyName.length > INPUT_LIMITS.apiKeyName) {
+      return jsonResponse({ error: `API key name must be ${INPUT_LIMITS.apiKeyName} characters or less` }, 400);
     }
 
     const activeCount = await db
@@ -2580,12 +2744,16 @@ async function handleAuth(request, env, segments) {
 
     const { token, password } = await parseBody(request);
 
-    if (!token || !password) {
+    if (!token || !password || typeof token !== 'string' || token.length > 512) {
       return jsonResponse({ error: 'Token and new password are required.' }, 400);
     }
 
     if (typeof password !== 'string' || password.length < 6) {
       return jsonResponse({ error: 'Password must be at least 6 characters.' }, 400);
+    }
+
+    if (password.length > INPUT_LIMITS.password) {
+      return jsonResponse({ error: `Password must be ${INPUT_LIMITS.password} characters or less.` }, 400);
     }
 
     const record = await db
@@ -3019,15 +3187,9 @@ async function handleBookmarks(request, env, segments) {
   }
 
   if (request.method === 'POST' && segments.length === 1) {
-    const { title, url, description, tags } = await parseBody(request);
-    const normalizedUrl = normalizeBookmarkUrl(url);
-
-    if (!title || !normalizedUrl) {
-      return jsonResponse({ error: 'Title and URL are required' }, 400);
-    }
-
-    if (!isValidHttpUrl(normalizedUrl)) {
-      return jsonResponse({ error: 'Invalid URL format' }, 400);
+    const input = validateBookmarkInput(await parseBody(request));
+    if (input.error) {
+      return jsonResponse({ error: input.error }, 400);
     }
 
     const planStatus = await getUserPlanStatus(db, auth.user.id);
@@ -3035,38 +3197,42 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: 'User not found' }, 404);
     }
 
-    // Fast path for the common case; insertBookmarkWithinPlan re-checks atomically.
+    // Fast path for the common case; insertBookmarkWithinPlanStatement re-checks atomically.
     if (!planStatus.paidTier && planStatus.bookmarkCount >= FREE_BOOKMARK_LIMIT) {
       return freeLimitResponse();
     }
 
-    const bookmarkId = await insertBookmarkWithinPlan(db, auth.user.id, {
+    const { title, url, description } = input.value;
+    const tagNames = input.value.tags || [];
+    // One transaction: the plan-guarded insert and its tag links land together or not at all.
+    // The new row is the user's highest id inside the batch, which is how the link step finds
+    // it; the link is gated on that insert having happened.
+    const insertStatement = insertBookmarkWithinPlanStatement(db, auth.user.id, {
       title,
-      url: normalizedUrl,
-      description: description || null,
-      faviconUrl: getFaviconUrl(normalizedUrl),
+      url,
+      description,
+      faviconUrl: getFaviconUrl(url),
     });
-    if (!bookmarkId) {
+    const statements = tagNames.length
+      ? [
+          upsertTagNamesStatement(db, tagNames),
+          insertStatement,
+          linkTagNamesStatement(db, '(SELECT MAX(id) FROM bookmarks WHERE user_id = ?)', [auth.user.id], tagNames, {
+            afterGuardedInsert: true,
+          }),
+        ]
+      : [insertStatement];
+    const insert = (await db.batch(statements))[tagNames.length ? 1 : 0];
+    if (!insert?.meta?.changes) {
       return freeLimitResponse();
     }
+    const bookmarkId = insert.meta.last_row_id;
 
     const bookmark = await db
       .prepare('SELECT * FROM bookmarks WHERE id = ?')
       .bind(bookmarkId)
       .first();
-
-    let bookmarkTags = [];
-    if (Array.isArray(tags) && tags.length > 0) {
-      try {
-        bookmarkTags = await setBookmarkTags(db, bookmark.id, tags);
-      } catch (error) {
-        if (String(error.message || '').startsWith('INVALID_TAG:')) {
-          const invalidTag = error.message.replace('INVALID_TAG:', '');
-          return jsonResponse({ error: `Tag "${invalidTag}" must be a single word with no spaces` }, 400);
-        }
-        throw error;
-      }
-    }
+    const bookmarkTags = await loadTagsInOrder(db, tagNames);
 
     return jsonResponse(
       {
@@ -3104,8 +3270,7 @@ async function handleBookmarks(request, env, segments) {
     }
 
     if (request.method === 'PUT') {
-      const { title, url, description, tags } = await parseBody(request);
-      const normalizedUrl = normalizeBookmarkUrl(url);
+      const body = await parseBody(request);
 
       const existing = await db
         .prepare('SELECT * FROM bookmarks WHERE id = ? AND user_id = ?')
@@ -3116,18 +3281,29 @@ async function handleBookmarks(request, env, segments) {
         return jsonResponse({ error: 'Bookmark not found' }, 404);
       }
 
-      if (!title || !normalizedUrl) {
-        return jsonResponse({ error: 'Title and URL are required' }, 400);
+      // Validate everything first: a bad field must leave the row and its tags untouched.
+      const input = validateBookmarkInput(body);
+      if (input.error) {
+        return jsonResponse({ error: input.error }, 400);
       }
+      const { title, url, description, tags: tagNames } = input.value;
 
-      if (!isValidHttpUrl(normalizedUrl)) {
-        return jsonResponse({ error: 'Invalid URL format' }, 400);
+      // One transaction for the row and (when `tags` was sent) the full tag replacement.
+      const statements = [
+        db
+          .prepare('UPDATE bookmarks SET title = ?, url = ?, description = ?, favicon_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
+          .bind(title, url, description, getFaviconUrl(url), bookmarkId, auth.user.id),
+      ];
+      if (tagNames !== undefined) {
+        statements.push(db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id = ?').bind(bookmarkId));
+        if (tagNames.length) {
+          statements.push(
+            upsertTagNamesStatement(db, tagNames),
+            linkTagNamesStatement(db, '?', [bookmarkId], tagNames)
+          );
+        }
       }
-
-      await db
-        .prepare('UPDATE bookmarks SET title = ?, url = ?, description = ?, favicon_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
-        .bind(title, normalizedUrl, description || null, getFaviconUrl(normalizedUrl), bookmarkId, auth.user.id)
-        .run();
+      await db.batch(statements);
 
       const bookmark = await db
         .prepare('SELECT * FROM bookmarks WHERE id = ? AND user_id = ?')
@@ -3135,16 +3311,8 @@ async function handleBookmarks(request, env, segments) {
         .first();
 
       let bookmarkTags = [];
-      if (tags !== undefined) {
-        try {
-          bookmarkTags = await setBookmarkTags(db, bookmark.id, Array.isArray(tags) ? tags : []);
-        } catch (error) {
-          if (String(error.message || '').startsWith('INVALID_TAG:')) {
-            const invalidTag = error.message.replace('INVALID_TAG:', '');
-            return jsonResponse({ error: `Tag "${invalidTag}" must be a single word with no spaces` }, 400);
-          }
-          throw error;
-        }
+      if (tagNames !== undefined) {
+        bookmarkTags = await loadTagsInOrder(db, tagNames);
       } else {
         const tagsByBookmark = await getTagsByBookmarkId(db, auth.user.id);
         bookmarkTags = tagsByBookmark.get(bookmark.id) || [];
@@ -3623,6 +3791,7 @@ async function routeRequest(context) {
 
     return jsonResponse({ error: 'Route not found' }, 404);
   } catch (error) {
+    if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status);
     if (error instanceof UpstreamError) {
       console.error(`[upstream] ${error.service} failed:`, error.status ?? '', error.message);
       return jsonResponse({ error: UPSTREAM_ERROR_MESSAGES[error.service] || 'An upstream service failed. Please try again later.' }, 502);

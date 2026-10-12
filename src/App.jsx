@@ -32,6 +32,7 @@ import { decodeHtmlEntities } from './utils/decodeHtmlEntities'
 import { THEME_STORAGE_KEY, isValidTheme } from './utils/theme'
 import { LINK_TARGET_STORAGE_KEY, getInitialLinkTarget, isValidLinkTarget, linkTargetProps } from './utils/linkTarget'
 import { getRegistrableDomain } from './utils/domain'
+import { INPUT_LIMITS } from './utils/inputLimits'
 import { BookmarkTagList } from './components/BookmarkParts'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Info, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
@@ -295,19 +296,28 @@ function App() {
 
   const joinTags = (tags) => tags.join(', ')
 
+  // Mirrors the server's tag rules so problems show up while typing, not on save.
   const buildTagList = (rawTags, rawDraft) => {
     const allTags = [...parseTags(rawTags), ...parseTags(rawDraft)]
     const invalidTag = allTags.find((tag) => tag.includes(' '))
     if (invalidTag) {
-      return { tags: [], invalidTag }
+      return { tags: [], error: `Tag "${invalidTag}" must be a single word with no spaces` }
     }
-    return { tags: Array.from(new Set(allTags)), invalidTag: null }
+    const longTag = allTags.find((tag) => tag.length > INPUT_LIMITS.tagName)
+    if (longTag) {
+      return { tags: [], error: `Tags must be ${INPUT_LIMITS.tagName} characters or less` }
+    }
+    const tags = Array.from(new Set(allTags))
+    if (tags.length > INPUT_LIMITS.tagsPerBookmark) {
+      return { tags: [], error: `A bookmark can have at most ${INPUT_LIMITS.tagsPerBookmark} tags` }
+    }
+    return { tags, error: null }
   }
 
   const lockAddDraftTags = (draft = tagDraft) => {
-    const { tags, invalidTag } = buildTagList(formData.tags, draft)
-    if (invalidTag) {
-      setError(`Tag "${invalidTag}" must be a single word with no spaces`)
+    const { tags, error: tagError } = buildTagList(formData.tags, draft)
+    if (tagError) {
+      setError(tagError)
       return false
     }
     setFormData((prev) => ({ ...prev, tags: joinTags(tags) }))
@@ -316,9 +326,9 @@ function App() {
   }
 
   const lockEditDraftTags = (draft = editTagDraft) => {
-    const { tags, invalidTag } = buildTagList(editFormData.tags, draft)
-    if (invalidTag) {
-      setError(`Tag "${invalidTag}" must be a single word with no spaces`)
+    const { tags, error: tagError } = buildTagList(editFormData.tags, draft)
+    if (tagError) {
+      setError(tagError)
       return false
     }
     setEditFormData((prev) => ({ ...prev, tags: joinTags(tags) }))
@@ -489,9 +499,9 @@ function App() {
     }
 
     try {
-      const { tags, invalidTag } = buildTagList(formData.tags, tagDraft)
-      if (invalidTag) {
-        setError(`Tag "${invalidTag}" must be a single word with no spaces`)
+      const { tags, error: tagError } = buildTagList(formData.tags, tagDraft)
+      if (tagError) {
+        setError(tagError)
         return
       }
 
@@ -613,9 +623,9 @@ function App() {
     }
 
     try {
-      const { tags, invalidTag } = buildTagList(editFormData.tags, editTagDraft)
-      if (invalidTag) {
-        setError(`Tag "${invalidTag}" must be a single word with no spaces`)
+      const { tags, error: tagError } = buildTagList(editFormData.tags, editTagDraft)
+      if (tagError) {
+        setError(tagError)
         return
       }
 
@@ -795,6 +805,7 @@ function App() {
                 name="title"
                 value={editFormData.title}
                 onChange={handleEditInputChange}
+                maxLength={INPUT_LIMITS.title}
                 required
               />
             </div>
@@ -828,6 +839,7 @@ function App() {
                 name="url"
                 value={editFormData.url}
                 onChange={handleEditInputChange}
+                maxLength={INPUT_LIMITS.url}
                 required
               />
             </div>
@@ -849,6 +861,7 @@ function App() {
                 name="description"
                 value={editFormData.description}
                 onChange={handleEditInputChange}
+                maxLength={INPUT_LIMITS.description}
                 rows="3"
               />
             </div>
@@ -872,6 +885,7 @@ function App() {
                   id={`edit-tags-${bookmark.id}`}
                   type="text"
                   value={editTagDraft}
+                  maxLength={INPUT_LIMITS.tagName}
                   onChange={(e) => setEditTagDraft(e.target.value)}
                   onKeyDown={handleEditTagDraftKeyDown}
                   aria-describedby={`edit-tags-hint-${bookmark.id}`}
@@ -1164,6 +1178,7 @@ function App() {
                     value={formData.url}
                     onChange={handleInputChange}
                     onBlur={() => handleFetchDescription(false)}
+                    maxLength={INPUT_LIMITS.url}
                     placeholder="https://example.com"
                     required
                   />
@@ -1176,6 +1191,7 @@ function App() {
                     name="title"
                     value={formData.title}
                     onChange={handleInputChange}
+                    maxLength={INPUT_LIMITS.title}
                     placeholder="My Awesome Bookmark"
                     required
                   />
@@ -1200,6 +1216,7 @@ function App() {
                       type="text"
                       id="tags"
                       value={tagDraft}
+                      maxLength={INPUT_LIMITS.tagName}
                       onChange={(e) => setTagDraft(e.target.value)}
                       onKeyDown={handleAddTagDraftKeyDown}
                       aria-describedby="tags-hint"
@@ -1231,6 +1248,7 @@ function App() {
                     name="description"
                     value={formData.description}
                     onChange={handleInputChange}
+                    maxLength={INPUT_LIMITS.description}
                     rows="3"
                     placeholder="Brief description of this bookmark"
                   ></textarea>
