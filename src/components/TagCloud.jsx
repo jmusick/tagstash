@@ -93,47 +93,41 @@ function TagCloud({ tags: providedTags, selectedTags = [], onTagSelect, onTagAdd
             return (
               <div
                 key={tag.id ?? tag.name}
-                className={`tag-stock tag-cloud-item tag-size-${getTagSize(tag.count)} ${isSelected ? 'tag-stock--active active' : ''} ${isFavorite ? 'is-favorite' : ''}`}
+                className={`tag-stock tag-cloud-item tag-size-${getTagSize(tag.count)} ${showActions ? 'tag-cloud-item--actions' : ''} ${isSelected ? 'tag-stock--active active' : ''} ${isFavorite ? 'is-favorite' : ''}`}
                 title={`${tag.name}: ${tag.count} bookmark${tag.count !== 1 ? 's' : ''}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => onTagSelect?.(tag.name)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onTagSelect?.(tag.name);
-                  }
-                }}
               >
-                <span className="tag-name">{tag.name}</span>
-                <span className="tag-badge">{tag.count}</span>
+                <button
+                  type="button"
+                  className="tag-cloud-chip-name"
+                  aria-pressed={isSelected}
+                  aria-label={`${tag.name}, ${tag.count} bookmark${tag.count !== 1 ? 's' : ''}`}
+                  onClick={() => onTagSelect?.(tag.name)}
+                >
+                  <span className="tag-name">{tag.name}</span>
+                  <span className="tag-badge">{tag.count}</span>
+                </button>
                 {showActions && (
                   <span className="tag-chip-actions">
                     <button
                       type="button"
                       className={`tag-cloud-chip-plus ${isSelected ? 'active' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTagAdd?.(tag.name);
-                      }}
+                      onClick={() => onTagAdd?.(tag.name)}
                       title={isSelected ? 'Already in filter' : `Add ${tag.name} to filter`}
                       aria-label={isSelected ? `${tag.name} already in filter` : `Add ${tag.name} to filter`}
                       disabled={isSelected}
                     >
-                      <Plus size="0.85em" />
+                      <Plus size="0.85em" aria-hidden="true" />
                     </button>
                     {onTagFavoriteToggle && (
                       <button
                         type="button"
                         className={`tag-cloud-chip-star ${isFavorite ? 'active' : ''}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onTagFavoriteToggle(tag);
-                        }}
+                        onClick={() => onTagFavoriteToggle(tag)}
                         title={isFavorite ? `Remove ${tag.name} from favorites` : `Mark ${tag.name} as a favorite`}
-                        aria-label={isFavorite ? `Remove ${tag.name} from favorites` : `Mark ${tag.name} as a favorite`}
+                        aria-label={`Favorite ${tag.name}`}
+                        aria-pressed={isFavorite}
                       >
-                        <Star size="0.85em" fill={isFavorite ? 'currentColor' : 'none'} />
+                        <Star size="0.85em" fill={isFavorite ? 'currentColor' : 'none'} aria-hidden="true" />
                       </button>
                     )}
                   </span>

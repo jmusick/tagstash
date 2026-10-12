@@ -631,8 +631,8 @@
   border: none;
   background: transparent;
   color: inherit;
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.5rem;
+  height: 1.5rem;
   padding: 0;
   border-radius: 999px;
   display: inline-flex;
@@ -651,7 +651,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
-  padding: 0.25rem 0.35rem 0.25rem 0.65rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.65rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 999px;
   color: var(--color-text);
@@ -1436,8 +1436,8 @@ a.btn-field-action,
   border: none;
   background: transparent;
   color: inherit;
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1.5rem;
+  height: 1.5rem;
   border-radius: 999px;
   display: inline-flex;
   align-items: center;
