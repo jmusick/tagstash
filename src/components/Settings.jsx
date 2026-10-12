@@ -502,11 +502,68 @@ function Settings({
     }
   };
 
+  const settingsTabs = [
+    { id: 'username', label: 'Username', onSelect: () => setGeneratedApiKey('') },
+    { id: 'email', label: 'Email', onSelect: () => setGeneratedApiKey('') },
+    { id: 'password', label: 'Password', onSelect: () => setGeneratedApiKey('') },
+    { id: 'publicProfile', label: 'Public Profile' },
+    { id: 'preferences', label: 'Preferences' },
+    // The API Keys tab is hidden for now (its panel below is kept):
+    // { id: 'apiKeys', label: 'API Keys', onSelect: fetchApiKeys },
+    {
+      id: 'billing',
+      label: 'Billing',
+      onSelect: () => {
+        fetchPlans();
+        syncBillingStatus();
+      },
+    },
+    { id: 'extensions', label: 'Extensions' },
+    { id: 'import', label: 'Import / Export' },
+    ...(isSuperAdmin
+      ? [{
+          id: 'admin',
+          label: 'Admin',
+          onSelect: () => {
+            fetchAdminUsers();
+            fetchAuthEvents();
+          },
+        }]
+      : []),
+  ];
+  const activeTabLabel = settingsTabs.find((tab) => tab.id === activeTab)?.label;
+
+  const selectTab = (tab) => {
+    setActiveTab(tab.id);
+    setError('');
+    setSuccess('');
+    tab.onSelect?.();
+  };
+
+  // WAI-ARIA tabs pattern: arrow keys / Home / End move between tabs (automatic
+  // activation, so the panel always matches the focused tab). Only the selected
+  // tab is in the Tab order (roving tabindex), so Tab moves on into the panel.
+  const handleTabKeyDown = (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const tabEls = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
+    const current = tabEls.indexOf(document.activeElement);
+    if (current === -1) return;
+
+    e.preventDefault();
+    let next = current;
+    if (e.key === 'ArrowRight') next = (current + 1) % tabEls.length;
+    else if (e.key === 'ArrowLeft') next = (current - 1 + tabEls.length) % tabEls.length;
+    else if (e.key === 'Home') next = 0;
+    else next = tabEls.length - 1;
+    tabEls[next].focus();
+    tabEls[next].click();
+  };
+
   return (
     <div className={pageMode ? 'settings-page' : 'settings-container'}>
       <div className={`settings-panel${pageMode ? ' settings-panel-page' : ''}`}>
         <div className="settings-header">
-          <h2>Account Settings</h2>
+          <h1>Account Settings</h1>
           {!pageMode && (
             <button onClick={onClose} className="close-btn" title="Close settings">
               <X size={18} />
@@ -514,124 +571,37 @@ function Settings({
           )}
         </div>
 
-        <div className="settings-tabs">
-          <button
-            className={`tab-btn ${activeTab === 'username' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('username');
-              setError('');
-              setSuccess('');
-              setGeneratedApiKey('');
-            }}
-          >
-            Username
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'email' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('email');
-              setError('');
-              setSuccess('');
-              setGeneratedApiKey('');
-            }}
-          >
-            Email
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'password' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('password');
-              setError('');
-              setSuccess('');
-              setGeneratedApiKey('');
-            }}
-          >
-            Password
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'publicProfile' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('publicProfile');
-              setError('');
-              setSuccess('');
-            }}
-          >
-            Public Profile
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'preferences' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('preferences');
-              setError('');
-              setSuccess('');
-            }}
-          >
-            Preferences
-          </button>
-          {/* API Keys tab hidden
-          <button
-            className={`tab-btn ${activeTab === 'apiKeys' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('apiKeys');
-              setError('');
-              setSuccess('');
-              fetchApiKeys();
-            }}
-          >
-            API Keys
-          </button>
-          */}
-          <button
-            className={`tab-btn ${activeTab === 'billing' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('billing');
-              setError('');
-              setSuccess('');
-              fetchPlans();
-              syncBillingStatus();
-            }}
-          >
-            Billing
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'extensions' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('extensions');
-              setError('');
-              setSuccess('');
-            }}
-          >
-            Extensions
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'import' ? 'active' : ''}`}
-            onClick={() => {
-              setActiveTab('import');
-              setError('');
-              setSuccess('');
-            }}
-          >
-            Import / Export
-          </button>
-          {isSuperAdmin && (
-            <button
-              className={`tab-btn ${activeTab === 'admin' ? 'active' : ''}`}
-              onClick={() => {
-                setActiveTab('admin');
-                setError('');
-                setSuccess('');
-                fetchAdminUsers();
-                fetchAuthEvents();
-              }}
-            >
-              Admin
-            </button>
-          )}
+        <div
+          className="settings-tabs"
+          role="tablist"
+          aria-label="Settings sections"
+          onKeyDown={handleTabKeyDown}
+        >
+          {settingsTabs.map((tab) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`settings-tab-${tab.id}`}
+                aria-selected={selected}
+                aria-controls="settings-tabpanel"
+                tabIndex={selected ? 0 : -1}
+                className={`tab-btn ${selected ? 'active' : ''}`}
+                onClick={() => selectTab(tab)}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
 
         {error && <div className="settings-error">{error}</div>}
         {success && <div className="settings-success">{success}</div>}
 
+        <div role="tabpanel" id="settings-tabpanel" aria-labelledby={`settings-tab-${activeTab}`}>
+        <h2 className="sr-only">{activeTabLabel}</h2>
         {activeTab === 'username' && (
           <form onSubmit={handleUsernameSubmit} className="settings-form">
             <div className="form-field">
@@ -1255,6 +1225,7 @@ function Settings({
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   );

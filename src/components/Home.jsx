@@ -115,15 +115,15 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   if (forgotMode) {
     return (
       <div className="home-container home-container--centered">
-        <div className="home-topbar">
+        <header className="home-topbar">
           <Logo src={logoSrc} className="home-logo" />
           <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </div>
+        </header>
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
             {forgotStatus === 'sent' ? (
               <>
-                <h2 className="auth-card-title">Check your email</h2>
+                <h1 className="auth-card-title">Check your email</h1>
                 <p className="auth-description">
                   If <strong>{forgotEmail}</strong> is registered, a password reset link has been sent.
                 </p>
@@ -136,7 +136,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
               </>
             ) : (
               <>
-                <h2 className="auth-card-title">Reset your password</h2>
+                <h1 className="auth-card-title">Reset your password</h1>
                 <p className="auth-description">
                   Enter your email address and we&rsquo;ll send you a link to choose a new password.
                 </p>
@@ -178,13 +178,13 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   if (pendingEmail) {
     return (
       <div className="home-container home-container--centered">
-        <div className="home-topbar">
+        <header className="home-topbar">
           <Logo src={logoSrc} className="home-logo" />
           <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </div>
+        </header>
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
-            <h2 className="auth-card-title">Check your email</h2>
+            <h1 className="auth-card-title">Check your email</h1>
             <p className="auth-description">
               We sent a verification link to <strong>{pendingEmail}</strong>. Click the link to activate
               your account.
@@ -207,17 +207,18 @@ function Home({ logoSrc, theme, onSelectTheme }) {
 
   return (
     <div className="home-container">
-      <div className="home-topbar">
+      <header className="home-topbar">
         <Logo src={logoSrc} className="home-logo" />
-        <Link className="home-features-link" to="/features">Features</Link>
+        <nav className="home-topnav" aria-label="Main">
+          <Link className="home-features-link" to="/features">Features</Link>
+        </nav>
         <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-      </div>
+      </header>
 
       <main id="main" tabIndex={-1}>
       <section className="hero-section">
         <div className="hero-content">
-          <h1 className="sr-only">Tagstash - Tag-Based Bookmark Manager</h1>
-          <p className="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</p>
+          <h1 className="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</h1>
           <p className="hero-lede">
             Save links in a bookmark manager built around tags. Give each link every tag that fits, and find it again from any of them.
             Free for your first 50 bookmarks.

@@ -71,6 +71,9 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
         <AppHeader logoSrc={logoSrc} tagline="Public bookmarks" theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="app-main">
           <div className="main-content">
+            <h1 className="sr-only">
+              {loading ? 'Loading profile' : notFound ? 'Profile not found' : 'Profile unavailable'}
+            </h1>
             {loading ? (
               <div className="loading-message">Loading profile...</div>
             ) : notFound ? (

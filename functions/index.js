@@ -42,8 +42,7 @@ export async function onRequestGet({ request, next }) {
 <div class="home-container">
   <section class="hero-section">
     <div class="hero-content">
-      <h1 class="sr-only">Tagstash - Tag-Based Bookmark Manager</h1>
-      <p class="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</p>
+      <h1 class="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</h1>
       <p class="hero-lede">Save links in a bookmark manager built around tags. Give each link every tag that fits, and find it again from any of them. Free for your first 50 bookmarks.</p>
     </div>
   </section>

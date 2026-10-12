@@ -111,6 +111,7 @@ function TagsPage() {
 
   return (
     <div className="tags-page">
+      <h1 className="sr-only">Manage tags</h1>
       {error && (
         <div className="error-message">
           {error}
