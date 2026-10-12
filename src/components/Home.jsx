@@ -10,6 +10,7 @@ import ThemeSelector from './ThemeSelector';
 import HomeTagDemo from './HomeTagDemo';
 import { version } from '../../package.json';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
+import { INPUT_LIMITS } from '../utils/inputLimits';
 import './Home.css';
 
 function Home({ logoSrc, theme, onSelectTheme }) {
@@ -254,6 +255,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                   required
                   aria-describedby="username-hint"
                   autoComplete="username"
+                  maxLength={INPUT_LIMITS.username}
                   pattern="\S+"
                   title="Username cannot contain spaces"
                 />
@@ -271,6 +273,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                 onChange={handleChange}
                 required
                 autoComplete="email"
+                maxLength={INPUT_LIMITS.email}
                 placeholder="you@example.com"
               />
             </div>
@@ -298,6 +301,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
                 aria-describedby={isLogin ? undefined : 'password-hint'}
                 minLength={6}
+                maxLength={isLogin ? undefined : INPUT_LIMITS.password}
               />
               {!isLogin && <small id="password-hint" className="form-hint">At least 6 characters</small>}
             </div>

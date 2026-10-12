@@ -72,7 +72,7 @@ test('non-string passwords are rejected as bad input', async () => {
   } finally { env.sqlite.close(); }
 });
 
-test('non-string tags are skipped on import and on create', async () => {
+test('non-string tags are dropped on import and rejected on create', async () => {
   const env = await createAuthEnv();
   try {
     const login = await call(env, 'auth/login', {
@@ -86,16 +86,20 @@ test('non-string tags are skipped on import and on create', async () => {
       body: { bookmarks: [{ title: 'Example', url: 'https://example.com/', tags: [42, null, 'kept'] }] },
     });
     assert.equal(imported.status, 200, await imported.clone().text());
-    assert.equal((await imported.json()).imported, 1);
+    const summary = await imported.json();
+    assert.equal(summary.imported, 1);
+    assert.equal(summary.droppedTags, 2);
 
+    // Create validates the whole payload first, so a bad tag rejects it and writes nothing.
     const created = await call(env, 'bookmarks', {
       method: 'POST', headers,
-      body: { title: 'Other', url: 'https://example.org/', tags: [{}, 'also-kept'] },
+      body: { title: 'Other', url: 'https://example.org/', tags: [{}, 'never-written'] },
     });
-    assert.equal(created.status, 201, await created.clone().text());
+    assert.equal(created.status, 400, await created.clone().text());
+    assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM bookmarks WHERE url = 'https://example.org/'").get().n, 0);
 
     const names = env.sqlite.prepare('SELECT name FROM tags ORDER BY name').all().map((row) => row.name);
-    assert.deepEqual(names, ['also-kept', 'kept']);
+    assert.deepEqual(names, ['kept']);
   } finally { env.sqlite.close(); }
 });
 
