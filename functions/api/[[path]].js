@@ -613,6 +613,29 @@ const getBearerToken = (request) => {
   return token;
 };
 
+// Every token signUserToken has ever issued carries iat + exp (7d originally, 60d bearer since
+// v1.5.2, 7d web cookies since v1.28.0), so requiring them logs no live session out. Beyond the
+// signature, a token must look like one we issue: an integer user id, a numeric token version
+// if present, a known session type, and a lifetime no longer than that type is ever given.
+// iss/aud were added to issued tokens later; until every token issued without them has expired
+// they are checked only when present (see the JWT note in AGENTS.md).
+const JWT_ISSUER = 'tagsta.sh';
+const JWT_AUDIENCE = 'tagstash-api';
+const BEARER_SESSION_SECONDS = 60 * 24 * 60 * 60;
+const JWT_CLOCK_SKEW_SECONDS = 60;
+const hasValidSessionClaims = (payload) => {
+  if (!Number.isInteger(payload.id) || payload.id <= 0) return false;
+  if (payload.tv !== undefined && !Number.isInteger(payload.tv)) return false;
+  if (payload.session !== undefined && payload.session !== 'web') return false;
+  if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) return false;
+  const maxLifetime = payload.session === 'web' ? WEB_SESSION_SECONDS : BEARER_SESSION_SECONDS;
+  if (payload.exp - payload.iat > maxLifetime + JWT_CLOCK_SKEW_SECONDS) return false;
+  if (payload.iat > Math.floor(Date.now() / 1000) + JWT_CLOCK_SKEW_SECONDS) return false;
+  if (payload.iss !== undefined && payload.iss !== JWT_ISSUER) return false;
+  if (payload.aud !== undefined && payload.aud !== JWT_AUDIENCE) return false;
+  return true;
+};
+
 const requireAuth = async (request, env) => {
   const bearerToken = getBearerToken(request);
   const token = bearerToken || getSessionCookie(request);
@@ -622,7 +645,8 @@ const requireAuth = async (request, env) => {
 
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'] }));
+    ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'], requiredClaims: ['exp', 'iat'] }));
+    if (!hasValidSessionClaims(payload)) throw new Error('Unexpected token claims');
     // A web session is only valid as an HttpOnly cookie; legacy/extension JWTs only as bearer tokens.
     if (bearerToken ? payload.session === 'web' : payload.session !== 'web') throw new Error('Wrong token type');
   } catch {
@@ -664,8 +688,10 @@ const signUserToken = async (user, env, request) => {
     ...(request && isWebClient(request) ? { session: 'web' } : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(JWT_ISSUER)
+    .setAudience(JWT_AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(request && isWebClient(request) ? `${WEB_SESSION_SECONDS}s` : '60d')
+    .setExpirationTime(request && isWebClient(request) ? `${WEB_SESSION_SECONDS}s` : `${BEARER_SESSION_SECONDS}s`)
     .sign(getJwtSecret(env));
 };
 
