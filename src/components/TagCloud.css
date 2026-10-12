@@ -73,8 +73,8 @@
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
@@ -132,6 +132,43 @@
   font-weight: 700;
 }
 
+/* The tag is a noninteractive wrapper holding sibling buttons: the name (select)
+   and, optionally, add-to-filter and favorite. The name button absorbs the tag's
+   own padding so the whole label is the click target. */
+.tag-cloud-items .tag-cloud-item {
+  gap: 0;
+  padding: 0;
+}
+
+.tag-cloud-chip-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  align-self: stretch;
+  padding: 0 0.7em 0 1.05em;
+  border: none;
+  border-radius: 0 0.3em 0.3em 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.tag-cloud-item--actions .tag-cloud-chip-name {
+  padding-right: 0.3em;
+}
+
+.tag-cloud-items .tag-cloud-item--actions {
+  padding-right: 0.45em;
+}
+
+.tag-cloud-chip-name:focus-visible,
+.tag-cloud-chip-plus:focus-visible,
+.tag-cloud-chip-star:focus-visible {
+  outline-offset: 1px;
+}
+
 .tag-name {
   white-space: nowrap;
 }
@@ -148,18 +185,18 @@
 .tag-chip-actions {
   display: inline-flex;
   align-items: center;
-  gap: 0.15rem;
-  margin-right: -0.25em;
+  gap: 0;
 }
 
+/* At least 24x24 CSS px (WCAG 2.5.8) even at the smallest tag size. */
 .tag-cloud-chip-plus,
 .tag-cloud-chip-star {
   border: none;
   background: transparent;
   color: inherit;
   border-radius: 999px;
-  width: 1.35em;
-  height: 1.35em;
+  width: max(1.35em, 24px);
+  height: max(1.35em, 24px);
   display: inline-flex;
   align-items: center;
   justify-content: center;
