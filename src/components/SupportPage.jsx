@@ -150,14 +150,18 @@ function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
             />
           </div>
 
-          <div className="support-turnstile" ref={widgetContainerRef} aria-label="CAPTCHA verification" />
+          <div className="support-turnstile" ref={widgetContainerRef} role="group" aria-label="CAPTCHA verification" />
 
           {!TURNSTILE_SITE_KEY && (
             <p className="support-warning">CAPTCHA site key is not configured.</p>
           )}
 
-          {error && <div className="support-error">{error}</div>}
-          {success && <div className="support-success">{success}</div>}
+          <div role="alert" className="live-region">
+            {error && <div className="support-error">{error}</div>}
+          </div>
+          <div role="status" className="live-region">
+            {success && <div className="support-success">{success}</div>}
+          </div>
 
           <button type="submit" className="btn-primary" disabled={loading}>
             {loading ? 'Sending...' : 'Send Support Request'}

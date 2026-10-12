@@ -50,6 +50,15 @@ function ResetPassword({ logoSrc }) {
           <Logo src={logoSrc} className="auth-title-logo" />
         </h1>
 
+        <div role="status" className="live-region">
+          {token && status === 'success' && (
+            <>
+              <p className="auth-subtitle">Password updated!</p>
+              <p className="auth-description">You are now signed in. Redirecting…</p>
+            </>
+          )}
+        </div>
+
         {!token ? (
           <>
             <p className="auth-subtitle">Invalid link</p>
@@ -58,12 +67,7 @@ function ResetPassword({ logoSrc }) {
               Back to sign in
             </a>
           </>
-        ) : status === 'success' ? (
-          <>
-            <p className="auth-subtitle">Password updated!</p>
-            <p className="auth-description">You are now signed in. Redirecting…</p>
-          </>
-        ) : (
+        ) : status === 'success' ? null : (
           <>
             <p className="auth-subtitle">Choose a new password</p>
 
@@ -77,9 +81,10 @@ function ResetPassword({ logoSrc }) {
                   onChange={(e) => { setPassword(e.target.value); setStatus('form'); }}
                   required
                   minLength={6}
-                  placeholder="At least 6 characters"
+                  aria-describedby="rp-password-hint"
                   autoFocus
                 />
+                <small id="rp-password-hint" className="form-hint">At least 6 characters</small>
               </div>
               <div className="form-field">
                 <label htmlFor="rp-confirm">Confirm new password</label>
@@ -91,10 +96,14 @@ function ResetPassword({ logoSrc }) {
                   required
                   minLength={6}
                   placeholder="Repeat your password"
+                  aria-invalid={status === 'error' ? 'true' : undefined}
+                  aria-describedby={status === 'error' ? 'rp-error' : undefined}
                 />
               </div>
 
-              {status === 'error' && <div className="auth-error">{message}</div>}
+              <div role="alert" className="live-region">
+                {status === 'error' && <div id="rp-error" className="auth-error">{message}</div>}
+              </div>
 
               <button type="submit" className="auth-button" disabled={status === 'loading'}>
                 {status === 'loading' ? 'Resetting…' : 'Reset password'}

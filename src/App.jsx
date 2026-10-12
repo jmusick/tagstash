@@ -874,6 +874,7 @@ function App() {
                   value={editTagDraft}
                   onChange={(e) => setEditTagDraft(e.target.value)}
                   onKeyDown={handleEditTagDraftKeyDown}
+                  aria-describedby={`edit-tags-hint-${bookmark.id}`}
                   placeholder="Type tag, press comma"
                 />
               </div>
@@ -882,7 +883,7 @@ function App() {
                   Press Tab to use <strong>{editTagSuggestion}</strong>
                 </div>
               )}
-              <small>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
+              <small id={`edit-tags-hint-${bookmark.id}`}>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
             </div>
             <div className="bookmark-edit-actions">
               <button
@@ -1101,31 +1102,35 @@ function App() {
           )}
         >
           <h1 className="sr-only">Your bookmarks</h1>
-          {billingMessage === 'success' && (
-            <div className="billing-banner billing-banner--success">
-              <span>Your subscription is active. Welcome to Pro.</span>
-              <button type="button" onClick={() => setBillingMessage('')} aria-label="Dismiss">
-                <X size={14} />
-              </button>
-            </div>
-          )}
-          {billingMessage === 'cancelled' && (
-            <div className="billing-banner billing-banner--info">
-              <span>Checkout cancelled. You can upgrade anytime from Settings.</span>
-              <button type="button" onClick={() => setBillingMessage('')} aria-label="Dismiss">
-                <X size={14} />
-              </button>
-            </div>
-          )}
+          <div role="status" className="live-region">
+            {billingMessage === 'success' && (
+              <div className="billing-banner billing-banner--success">
+                <span>Your subscription is active. Welcome to Pro.</span>
+                <button type="button" onClick={() => setBillingMessage('')} aria-label="Dismiss">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+            {billingMessage === 'cancelled' && (
+              <div className="billing-banner billing-banner--info">
+                <span>Checkout cancelled. You can upgrade anytime from Settings.</span>
+                <button type="button" onClick={() => setBillingMessage('')} aria-label="Dismiss">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+          </div>
 
-          {error && (
-            <div className="error-message">
-              {error}
-              <button onClick={() => setError('')} className="error-close" aria-label="Dismiss error">
-                <X size={16} />
-              </button>
-            </div>
-          )}
+          <div role="alert" className="live-region">
+            {error && (
+              <div className="error-message">
+                {error}
+                <button onClick={() => setError('')} className="error-close" aria-label="Dismiss error">
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+          </div>
 
           {showAddForm && (
             <div className="add-bookmark-form" id="add-bookmark-form">
@@ -1197,6 +1202,7 @@ function App() {
                       value={tagDraft}
                       onChange={(e) => setTagDraft(e.target.value)}
                       onKeyDown={handleAddTagDraftKeyDown}
+                      aria-describedby="tags-hint"
                       placeholder="Type tag, press comma"
                     />
                   </div>
@@ -1205,7 +1211,7 @@ function App() {
                       Press Tab to use <strong>{addTagSuggestion}</strong>
                     </div>
                   )}
-                  <small>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
+                  <small id="tags-hint">Press Comma or Space to lock in a new tag &middot; Enter to save</small>
                 </div>
                 <div className="form-group">
                   <div className="field-header">
