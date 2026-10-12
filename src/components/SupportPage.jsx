@@ -31,6 +31,8 @@ function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
 
       widgetIdRef.current = window.turnstile.render(widgetContainerRef.current, {
         sitekey: TURNSTILE_SITE_KEY,
+        // Must match TURNSTILE_SUPPORT_ACTION in functions/api/[[path]].js.
+        action: 'support',
         theme: 'auto',
         callback: (token) => setCaptchaToken(token),
         'expired-callback': () => setCaptchaToken(''),

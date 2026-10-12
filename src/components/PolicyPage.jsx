@@ -21,7 +21,7 @@ function PolicyPage({ logoSrc, onBack }) {
       </header>
 
       <main id="main" tabIndex={-1} className="privacy-content">
-        <p className="privacy-effective">Effective date: September 23, 2026</p>
+        <p className="privacy-effective">Effective date: October 12, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -57,6 +57,14 @@ function PolicyPage({ logoSrc, onBack }) {
             <li>
               <strong>Usage data:</strong> standard server logs including IP addresses, browser
               type, and pages accessed, used solely for operating and improving the service.
+            </li>
+            <li>
+              <strong>Security log:</strong> sign-ups, sign-in attempts (including failed ones
+              and account lockouts), and password-reset and verification-email requests are
+              recorded with the email address involved and the IP address the request came
+              from. This log is used only to detect and block abuse such as password guessing,
+              is visible only to Tagstash administrators, and its entries are deleted
+              automatically after 30 days.
             </li>
           </ul>
         </section>
@@ -140,21 +148,26 @@ function PolicyPage({ logoSrc, onBack }) {
           <p>
             Your data is retained as long as your account is active. You may delete individual
             bookmarks at any time. To request full account deletion and removal of all associated
-            data, use the in-app Support form (see Contact below).
+            data, use the in-app Support form (see Contact below). Security log entries
+            (email address and IP address, described above) are kept for 30 days and then
+            deleted automatically.
           </p>
         </section>
 
         <section>
           <h2>Cookies &amp; Local Storage</h2>
           <p>
-            We do not set any cookies ourselves. On your first visit, a banner asks whether
+            The only cookie we set ourselves is a strictly necessary session cookie: when you
+            log in to the web app, we store an HttpOnly, secure cookie that keeps you signed in
+            for up to 7 days. It holds a signed session token, not tracking data, and is
+            deleted when you log out. On your first visit, a banner asks whether
             you'd like to allow Google Analytics; if you accept, it sets its own cookies to
             distinguish visitors and measure usage (see the Third-Party Services section
             above). If you decline or don't respond, no analytics cookies are set. Your
             choice is remembered in local storage, not a cookie, and you can revisit it
             anytime using the "Cookie Choices" link in the footer. The web app also uses
-            browser local storage to remember your theme and link-opening preferences and to
-            keep you logged in between sessions. If you're logged in, those preferences are
+            browser local storage to remember your theme and link-opening preferences. If
+            you're logged in, those preferences are
             also saved to your account so they follow you to other browsers and devices. If you use the
             Tagstash browser extension, it similarly stores your session and basic profile
             info locally in your browser (not on any other site) so you stay logged in

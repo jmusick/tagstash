@@ -115,15 +115,77 @@ const withCors = (response, request, env) => {
   return response;
 };
 
+// public/_headers only reaches static assets, so every Worker response (success, error and
+// preflight alike) gets its own hardening here. The API only ever answers JSON or empty
+// bodies, so nothing may sniff, frame or render it as a document. HSTS mirrors _headers and
+// is sent only over HTTPS (browsers ignore it on plain HTTP anyway); no `preload`.
+const API_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+};
+
+const withApiHeaders = (response, request, env) => {
+  response.headers.set('Cache-Control', 'no-store');
+  for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
+    response.headers.set(name, value);
+  }
+  if (new URL(request.url).protocol === 'https:') {
+    response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
+  return withCors(response, request, env);
+};
+
 const encoder = new TextEncoder();
+
+// --- Fixed upstream calls (email, Turnstile, Stripe) ---
+
+// Explicit deadlines so a hung upstream can't hold a request (and the user) open indefinitely.
+const UPSTREAM_TIMEOUT_MS = {
+  email: 10000,
+  turnstile: 5000,
+  stripe: 15000,
+};
+
+// A fixed upstream service failed, timed out or was unreachable. routeRequest answers it with a
+// 502 (503 is reserved for "not configured"), never the generic 500.
+class UpstreamError extends Error {
+  constructor(service, message, { status = null, cause } = {}) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'UpstreamError';
+    this.service = service;
+    this.status = status;
+  }
+}
+
+const UPSTREAM_ERROR_MESSAGES = {
+  email: 'Email delivery is temporarily unavailable. Please try again later.',
+  turnstile: 'Could not verify CAPTCHA. Please try again.',
+  stripe: 'The billing provider is temporarily unavailable. Please try again later.',
+};
+
+// fetch with a hard deadline. Network failures and timeouts become UpstreamError; HTTP error
+// statuses are returned for the caller to interpret.
+const fetchUpstream = async (service, url, options) => {
+  try {
+    return await fetch(url, { ...options, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS[service]) });
+  } catch (error) {
+    const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+    throw new UpstreamError(service, timedOut ? `${service} request timed out` : `${service} request failed`, { cause: error });
+  }
+};
 
 // --- Email sending (Cloudflare Email Sending REST API) ---
 
-const sendEmail = async ({ to, from, subject, text, html, replyTo }, env) => {
-  if (!env.CLOUDFLARE_API_TOKEN) throw new Error('Missing CLOUDFLARE_API_TOKEN');
-  if (!env.CLOUDFLARE_ACCOUNT_ID) throw new Error('Missing CLOUDFLARE_ACCOUNT_ID');
+class EmailNotConfiguredError extends Error {}
 
-  const response = await fetch(
+const sendEmail = async ({ to, from, subject, text, html, replyTo }, env) => {
+  if (!env.CLOUDFLARE_API_TOKEN) throw new EmailNotConfiguredError('Missing CLOUDFLARE_API_TOKEN');
+  if (!env.CLOUDFLARE_ACCOUNT_ID) throw new EmailNotConfiguredError('Missing CLOUDFLARE_ACCOUNT_ID');
+
+  const response = await fetchUpstream(
+    'email',
     `https://api.cloudflare.com/client/v4/accounts/${env.CLOUDFLARE_ACCOUNT_ID}/email/sending/send`,
     {
       method: 'POST',
@@ -145,9 +207,13 @@ const sendEmail = async ({ to, from, subject, text, html, replyTo }, env) => {
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.success) {
     const message = data?.errors?.[0]?.message || `Cloudflare Email Sending error: ${response.status}`;
-    throw new Error(message);
+    throw new UpstreamError('email', message, { status: response.status });
   }
 };
+
+// Status for a failed send on routes that report it: 503 when sending isn't configured, 502
+// when the provider failed or timed out.
+const emailFailureStatus = (error) => (error instanceof EmailNotConfiguredError ? 503 : 502);
 
 // --- Email verification helpers ---
 
@@ -524,7 +590,22 @@ const parseBody = async (request) => {
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
-const verifyTurnstile = async (request, env, captchaToken) => {
+// Hostnames a Turnstile token may have been solved on: the configured app and the host serving
+// this request (the form posts to its own origin, which covers Pages preview deployments).
+// Local development (http://localhost, where test sitekeys report a placeholder hostname) skips
+// the hostname check.
+const turnstileHostnames = (request, env) => {
+  const hostnames = new Set([new URL(request.url).hostname.toLowerCase()]);
+  try {
+    if (env.APP_URL) hostnames.add(new URL(env.APP_URL).hostname.toLowerCase());
+  } catch {}
+  return hostnames;
+};
+
+// The support form's widget renders with this action (SupportPage.jsx).
+const TURNSTILE_SUPPORT_ACTION = 'support';
+
+const verifyTurnstile = async (request, env, captchaToken, expectedAction = null) => {
   if (!env.TURNSTILE_SECRET_KEY) {
     return { ok: false, status: 503, error: 'Support form is not configured.' };
   }
@@ -543,22 +624,32 @@ const verifyTurnstile = async (request, env, captchaToken) => {
     payload.set('remoteip', remoteIp);
   }
 
+  let verifyData;
   try {
-    const verifyResponse = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    const verifyResponse = await fetchUpstream('turnstile', 'https://challenges.cloudflare.com/turnstile/v0/siteverify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: payload.toString(),
     });
-    const verifyData = await verifyResponse.json();
-
-    if (!verifyData?.success) {
-      return { ok: false, status: 400, error: 'CAPTCHA verification failed. Please try again.' };
-    }
-
-    return { ok: true };
+    verifyData = await verifyResponse.json();
   } catch {
-    return { ok: false, status: 502, error: 'Could not verify CAPTCHA. Please try again.' };
+    return { ok: false, status: 502, error: UPSTREAM_ERROR_MESSAGES.turnstile };
   }
+
+  const failed = { ok: false, status: 400, error: 'CAPTCHA verification failed. Please try again.' };
+  if (verifyData?.success !== true) {
+    return failed;
+  }
+  // `success` alone only proves the token was solved for this sitekey, on any hostname the
+  // sitekey allows. Require it to have been solved on this site, for the expected widget.
+  if (!isLocalRequest(request) && !turnstileHostnames(request, env).has(String(verifyData.hostname || '').toLowerCase())) {
+    return failed;
+  }
+  if (expectedAction && verifyData.action !== expectedAction) {
+    return failed;
+  }
+
+  return { ok: true };
 };
 
 const getBearerToken = (request) => {
@@ -570,6 +661,29 @@ const getBearerToken = (request) => {
   return token;
 };
 
+// Every token signUserToken has ever issued carries iat + exp (7d originally, 60d bearer since
+// v1.5.2, 7d web cookies since v1.28.0), so requiring them logs no live session out. Beyond the
+// signature, a token must look like one we issue: an integer user id, a numeric token version
+// if present, a known session type, and a lifetime no longer than that type is ever given.
+// iss/aud were added to issued tokens later; until every token issued without them has expired
+// they are checked only when present (see the JWT note in AGENTS.md).
+const JWT_ISSUER = 'tagsta.sh';
+const JWT_AUDIENCE = 'tagstash-api';
+const BEARER_SESSION_SECONDS = 60 * 24 * 60 * 60;
+const JWT_CLOCK_SKEW_SECONDS = 60;
+const hasValidSessionClaims = (payload) => {
+  if (!Number.isInteger(payload.id) || payload.id <= 0) return false;
+  if (payload.tv !== undefined && !Number.isInteger(payload.tv)) return false;
+  if (payload.session !== undefined && payload.session !== 'web') return false;
+  if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) return false;
+  const maxLifetime = payload.session === 'web' ? WEB_SESSION_SECONDS : BEARER_SESSION_SECONDS;
+  if (payload.exp - payload.iat > maxLifetime + JWT_CLOCK_SKEW_SECONDS) return false;
+  if (payload.iat > Math.floor(Date.now() / 1000) + JWT_CLOCK_SKEW_SECONDS) return false;
+  if (payload.iss !== undefined && payload.iss !== JWT_ISSUER) return false;
+  if (payload.aud !== undefined && payload.aud !== JWT_AUDIENCE) return false;
+  return true;
+};
+
 const requireAuth = async (request, env) => {
   const bearerToken = getBearerToken(request);
   const token = bearerToken || getSessionCookie(request);
@@ -579,7 +693,8 @@ const requireAuth = async (request, env) => {
 
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'] }));
+    ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'], requiredClaims: ['exp', 'iat'] }));
+    if (!hasValidSessionClaims(payload)) throw new Error('Unexpected token claims');
     // A web session is only valid as an HttpOnly cookie; legacy/extension JWTs only as bearer tokens.
     if (bearerToken ? payload.session === 'web' : payload.session !== 'web') throw new Error('Wrong token type');
   } catch {
@@ -621,8 +736,10 @@ const signUserToken = async (user, env, request) => {
     ...(request && isWebClient(request) ? { session: 'web' } : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
+    .setIssuer(JWT_ISSUER)
+    .setAudience(JWT_AUDIENCE)
     .setIssuedAt()
-    .setExpirationTime(request && isWebClient(request) ? `${WEB_SESSION_SECONDS}s` : '60d')
+    .setExpirationTime(request && isWebClient(request) ? `${WEB_SESSION_SECONDS}s` : `${BEARER_SESSION_SECONDS}s`)
     .sign(getJwtSecret(env));
 };
 
@@ -660,11 +777,13 @@ const AUTH_EVENT_RETENTION_DAYS = 30;
 
 const getClientIp = (request) => request.headers.get('CF-Connecting-IP') || null;
 
-// Appends to auth_events (and the Worker log). Never throws: a logging failure, including
-// auth_events not existing yet before migration 0012, must not break the auth flow itself.
+// Appends to auth_events. Never throws: a logging failure, including auth_events not existing
+// yet before migration 0012, must not break the auth flow itself. The email and IP go only to
+// that access-controlled, 30-day table (Settings -> Admin); the Worker log line carries the
+// event type and internal user id, never the raw email or IP.
 const recordAuthEvent = async (db, request, eventType, { email = null, userId = null } = {}) => {
   const ip = getClientIp(request);
-  console.warn(`[auth] ${eventType}`, JSON.stringify({ email, userId, ip }));
+  console.warn(`[auth] ${eventType}`, JSON.stringify({ userId }));
   try {
     await db.batch([
       db
@@ -922,6 +1041,29 @@ const getUserPlanStatus = async (db, userId) => {
   };
 };
 
+// Inserts a bookmark only while the owner is on the paid tier or still under the free limit.
+// The plan/count check and the insert are ONE statement, so simultaneous saves can't all pass
+// the same stale count (count-then-insert let parallel requests overshoot the limit). Returns
+// the new id, or null when the free limit is reached.
+const insertBookmarkWithinPlan = async (db, userId, { title, url, description, faviconUrl }) => {
+  const result = await db
+    .prepare(
+      `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
+       SELECT ?1, ?2, ?3, ?4, ?5
+       WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?6
+          OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1) < ?7`
+    )
+    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT)
+    .run();
+  return result.meta?.changes ? result.meta.last_row_id : null;
+};
+
+const freeLimitResponse = () =>
+  jsonResponse(
+    { error: `Free users can save up to ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks.` },
+    403
+  );
+
 const getTagsByBookmarkId = async (db, userId, { publicOnly = false, hasIsPrivateColumn } = {}) => {
   let whereClause = 'WHERE b.user_id = ?';
   if (publicOnly) {
@@ -1159,7 +1301,9 @@ const listBookmarks = async (db, userId) => {
 
 // --- Stripe helpers ---
 
-const stripeRequest = async (method, path, params, env) => {
+// Failures (including timeouts and Stripe's own error responses) throw UpstreamError, which
+// carries Stripe's message so isStripeMissingResourceError can still recognize it.
+const stripeRequest = async (method, path, params, env, { idempotencyKey } = {}) => {
   const url = `https://api.stripe.com/v1${path}`;
   const auth = btoa(`${env.STRIPE_SECRET_KEY}:`);
   const options = {
@@ -1167,32 +1311,45 @@ const stripeRequest = async (method, path, params, env) => {
     headers: {
       Authorization: `Basic ${auth}`,
       'Content-Type': 'application/x-www-form-urlencoded',
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
     },
   };
   if (params) {
     options.body = new URLSearchParams(params).toString();
   }
-  const response = await fetch(url, options);
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.error?.message || `Stripe API error: ${response.status}`);
+  const response = await fetchUpstream('stripe', url, options);
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data) {
+    throw new UpstreamError('stripe', data?.error?.message || `Stripe API error: ${response.status}`, { status: response.status });
   }
   return data;
 };
 
+// Idempotency keys for object-creating Stripe POSTs, so a retry after a timeout (where Stripe
+// may already have created the object) gets the original object back instead of a duplicate
+// customer or a second open checkout. The key covers the exact parameters, so a request with
+// different parameters never collides with an earlier one (Stripe rejects reused keys with
+// changed parameters), and an hourly bucket bounds how long an old result can be replayed.
+const stripeIdempotencyKey = async (purpose, userId, parts) => {
+  const hourBucket = Math.floor(Date.now() / 3600000);
+  const digest = (await hashApiKey(JSON.stringify(parts))).slice(0, 32);
+  return `tagstash-${purpose}-${userId}-${hourBucket}-${digest}`;
+};
+
 const isStripeMissingResourceError = (error) => /No such (customer|subscription)/i.test(error?.message || '');
 
-const createStripeCustomer = async (dbUser, env) =>
-  stripeRequest(
-    'POST',
-    '/customers',
-    {
-      email: dbUser.email,
-      name: dbUser.username,
-      'metadata[userId]': String(dbUser.id),
-    },
-    env
-  );
+// `replacingCustomerId` is set when recreating a customer Stripe no longer knows, so that
+// request can't replay the (deleted) customer created under the same key earlier.
+const createStripeCustomer = async (dbUser, env, replacingCustomerId = null) => {
+  const params = {
+    email: dbUser.email,
+    name: dbUser.username,
+    'metadata[userId]': String(dbUser.id),
+  };
+  return stripeRequest('POST', '/customers', params, env, {
+    idempotencyKey: await stripeIdempotencyKey('customer', dbUser.id, [params, replacingCustomerId]),
+  });
+};
 
 const updateStripeCustomer = async (customerId, dbUser, env) =>
   stripeRequest(
@@ -1398,10 +1555,10 @@ async function handleAuth(request, env, segments) {
 
     try {
       await sendVerificationEmail(normalizedEmail, trimmedUsername, verificationToken, env);
-    } catch {
+    } catch (error) {
       // Roll back user creation if email fails so they can try again
       await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
-      return jsonResponse({ error: 'Failed to send verification email. Please try again.' }, 500);
+      return jsonResponse({ error: 'Failed to send verification email. Please try again.' }, emailFailureStatus(error));
     }
 
     return jsonResponse(
@@ -1535,15 +1692,25 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'This verification link has expired. Please request a new one.' }, 400);
     }
 
-    await db
-      .prepare('UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(record.user_id)
-      .run();
-
-    await db
-      .prepare('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ?')
-      .bind(record.id)
-      .run();
+    // Atomic single-use claim, as for email-change and reset links: the token update only
+    // matches while the token is still unused and unexpired, so of any number of simultaneous
+    // redemptions exactly one wins (and gets the session below). Both statements run in one
+    // D1 batch (a transaction), and the user is only marked verified if this claim won.
+    const nowIso = new Date().toISOString();
+    const [claim] = await db.batch([
+      db
+        .prepare('UPDATE email_verification_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL AND expires_at > ?')
+        .bind(record.id, nowIso),
+      db
+        .prepare(
+          `UPDATE users SET email_verified = 1, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ? AND EXISTS (SELECT 1 FROM email_verification_tokens WHERE id = ? AND used_at IS NOT NULL)`
+        )
+        .bind(record.user_id, record.id),
+    ]);
+    if (!claim?.meta?.changes) {
+      return jsonResponse({ error: 'This verification link has already been used or has expired.' }, 400);
+    }
 
     const hasProfilePublicColumnForVerify = await usersTableHasColumn(db, 'profile_public');
     const hasThemeColumnForVerify = await usersTableHasColumn(db, 'theme');
@@ -1555,6 +1722,9 @@ async function handleAuth(request, env, segments) {
       .bind(record.user_id)
       .first();
 
+    if (!verifiedUser) {
+      return jsonResponse({ error: 'Invalid or expired verification link.' }, 400);
+    }
     verifiedUser.profile_public = Number(verifiedUser.profile_public || 0);
 
     const authToken = await signUserToken(verifiedUser, env, request);
@@ -2193,11 +2363,8 @@ async function handleAuth(request, env, segments) {
     const { email } = await parseBody(request);
     const normalizedEmail = normalizeEmail(email);
 
-    console.log('[forgot-password] hit, raw email:', email, '| normalized:', normalizedEmail);
-
     // Always return success to prevent email enumeration
     if (!normalizedEmail) {
-      console.log('[forgot-password] empty email, returning early');
       return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
     }
 
@@ -2217,19 +2384,14 @@ async function handleAuth(request, env, segments) {
     }
     await recordAuthEvent(db, request, 'password_reset_requested', { email: normalizedEmail });
 
-    console.log('[forgot-password] lookup for:', normalizedEmail);
-
     const user = await db
       .prepare('SELECT id, username FROM users WHERE LOWER(email) = LOWER(?)')
       .bind(normalizedEmail)
       .first();
 
     if (!user) {
-      console.log('[forgot-password] no user found');
       return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
     }
-
-    console.log('[forgot-password] user found, id:', user.id);
 
     // Rate-limit: one request per 60 seconds
     const recent = await db
@@ -2243,7 +2405,6 @@ async function handleAuth(request, env, segments) {
       .first();
 
     if (recent) {
-      console.log('[forgot-password] rate limited');
       return jsonResponse({ error: 'Please wait a moment before requesting another reset link.' }, 429);
     }
 
@@ -2258,11 +2419,8 @@ async function handleAuth(request, env, segments) {
 
     await storeEmailToken(db, 'password_reset_tokens', user.id, resetToken, expiresAt);
 
-    console.log('[forgot-password] token inserted, sending email...');
-
     try {
       await sendPasswordResetEmail(normalizedEmail, user.username, resetToken, env);
-      console.log('[forgot-password] email sent successfully');
     } catch (err) {
       // Don't reveal failure to the caller, but log it for debugging
       console.error('[forgot-password] Failed to send reset email:', err?.message ?? err);
@@ -2733,25 +2891,24 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: 'User not found' }, 404);
     }
 
+    // Fast path for the common case; insertBookmarkWithinPlan re-checks atomically.
     if (!planStatus.paidTier && planStatus.bookmarkCount >= FREE_BOOKMARK_LIMIT) {
-      return jsonResponse(
-        {
-          error: `Free users can save up to ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks.`,
-        },
-        403
-      );
+      return freeLimitResponse();
     }
 
-    const insert = await db
-      .prepare(
-        'INSERT INTO bookmarks (user_id, title, url, description, favicon_url) VALUES (?, ?, ?, ?, ?)'
-      )
-      .bind(auth.user.id, title, normalizedUrl, description || null, getFaviconUrl(normalizedUrl))
-      .run();
+    const bookmarkId = await insertBookmarkWithinPlan(db, auth.user.id, {
+      title,
+      url: normalizedUrl,
+      description: description || null,
+      faviconUrl: getFaviconUrl(normalizedUrl),
+    });
+    if (!bookmarkId) {
+      return freeLimitResponse();
+    }
 
     const bookmark = await db
       .prepare('SELECT * FROM bookmarks WHERE id = ?')
-      .bind(insert.meta.last_row_id)
+      .bind(bookmarkId)
       .first();
 
     let bookmarkTags = [];
@@ -3014,26 +3171,28 @@ async function handleBilling(request, env, segments) {
       cancel_url: `${appUrl}/?billing=cancelled`,
       'metadata[userId]': String(dbUser.id),
     };
+    // users.updated_at moves when the webhook changes the plan (and on login), so a completed
+    // checkout is never replayed to a user starting a new one.
+    const createCheckoutSession = async (params) =>
+      stripeRequest('POST', '/checkout/sessions', params, env, {
+        idempotencyKey: await stripeIdempotencyKey('checkout', dbUser.id, [params, dbUser.updated_at]),
+      });
     let session;
     try {
-      session = await stripeRequest('POST', '/checkout/sessions', checkoutParams, env);
+      session = await createCheckoutSession(checkoutParams);
     } catch (error) {
       if (!customerId || !isStripeMissingResourceError(error)) {
         throw error;
       }
 
-      const customer = await createStripeCustomer(dbUser, env);
+      const staleCustomerId = customerId;
+      const customer = await createStripeCustomer(dbUser, env, staleCustomerId);
       customerId = customer.id;
       await saveStripeCustomerId(db, dbUser.id, customerId);
-      session = await stripeRequest(
-        'POST',
-        '/checkout/sessions',
-        {
-          ...checkoutParams,
-          customer: customerId,
-        },
-        env
-      );
+      session = await createCheckoutSession({
+        ...checkoutParams,
+        customer: customerId,
+      });
     }
     return jsonResponse({ url: session.url });
   }
@@ -3185,7 +3344,7 @@ async function handleSupport(request, env, segments) {
     return jsonResponse({ error: 'Message must be 4000 characters or less.' }, 400);
   }
 
-  const captcha = await verifyTurnstile(request, env, captchaToken);
+  const captcha = await verifyTurnstile(request, env, captchaToken, TURNSTILE_SUPPORT_ACTION);
   if (!captcha.ok) {
     return jsonResponse({ error: captcha.error }, captcha.status);
   }
@@ -3256,15 +3415,15 @@ async function handleSupport(request, env, segments) {
       },
       env
     );
-  } catch {
-    return jsonResponse({ error: 'Failed to send support request. Please try again.' }, 500);
+  } catch (error) {
+    return jsonResponse({ error: 'Failed to send support request. Please try again.' }, emailFailureStatus(error));
   }
 
   return jsonResponse({ message: 'Support request sent successfully.' }, 201);
 }
 
 export const onRequestOptions = async ({ request, env }) =>
-  new Response(null, { status: 204, headers: corsHeadersFor(request, env) });
+  withApiHeaders(new Response(null, { status: 204 }), request, env);
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -3277,8 +3436,7 @@ export async function onRequest(context) {
   const response = needsProof && !hasWebRequestProof(request, env)
     ? jsonResponse({ error: 'Invalid web request origin' }, 403)
     : await routeRequest(context);
-  response.headers.set('Cache-Control', 'no-store');
-  return withCors(response, request, env);
+  return withApiHeaders(response, request, env);
 }
 
 async function routeRequest(context) {
@@ -3321,6 +3479,10 @@ async function routeRequest(context) {
 
     return jsonResponse({ error: 'Route not found' }, 404);
   } catch (error) {
+    if (error instanceof UpstreamError) {
+      console.error(`[upstream] ${error.service} failed:`, error.status ?? '', error.message);
+      return jsonResponse({ error: UPSTREAM_ERROR_MESSAGES[error.service] || 'An upstream service failed. Please try again later.' }, 502);
+    }
     console.error('API handler error:', error);
     return jsonResponse({ error: 'Something went wrong!' }, 500);
   }
