@@ -1052,6 +1052,9 @@ const setBookmarkTags = async (db, bookmarkId, tags) => {
 
   const bookmarkTags = [];
   for (const tagName of tags) {
+    if (typeof tagName !== 'string') {
+      continue;
+    }
     const trimmed = tagName.trim().toLowerCase();
     if (!trimmed) {
       continue;
@@ -1383,7 +1386,7 @@ async function handleAuth(request, env, segments) {
     const trimmedUsername = typeof username === 'string' ? username.trim() : '';
     const normalizedEmail = normalizeEmail(email);
 
-    if (!trimmedUsername || !normalizedEmail || !password) {
+    if (!trimmedUsername || !normalizedEmail || !password || typeof password !== 'string') {
       return jsonResponse({ error: 'All fields are required' }, 400);
     }
 
@@ -1457,7 +1460,7 @@ async function handleAuth(request, env, segments) {
     const { email, password } = await parseBody(request);
     const normalizedEmail = normalizeEmail(email);
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmail || !password || typeof password !== 'string') {
       return jsonResponse({ error: 'Email and password are required' }, 400);
     }
 
@@ -1656,7 +1659,13 @@ async function handleAuth(request, env, segments) {
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     await storeEmailToken(db, 'email_verification_tokens', unverifiedUser.id, verificationToken, expiresAt);
 
-    await sendVerificationEmail(normalizedEmail, unverifiedUser.username, verificationToken, env);
+    try {
+      await sendVerificationEmail(normalizedEmail, unverifiedUser.username, verificationToken, env);
+    } catch (error) {
+      // Answer with the generic message anyway: a distinct error would reveal that the
+      // address belongs to an account awaiting verification.
+      console.error('Resend verification email failed:', error);
+    }
 
     return jsonResponse({ message: 'If that address is awaiting verification, a new link has been sent.' });
   }
@@ -2539,6 +2548,7 @@ async function handleBookmarks(request, env, segments) {
 
       if (Array.isArray(tags) && tags.length > 0) {
         for (const tagName of tags) {
+          if (typeof tagName !== 'string') continue;
           const sanitized = tagName.trim().toLowerCase().replace(/\s+/g, '-');
           if (!sanitized) continue;
           const tag = await ensureTag(db, sanitized);
@@ -2925,7 +2935,12 @@ async function handleProfiles(request, env, segments) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
-  const username = decodeURIComponent(segments[1]);
+  let username;
+  try {
+    username = decodeURIComponent(segments[1]);
+  } catch {
+    return jsonResponse({ error: 'Not found' }, 404);
+  }
 
   const user = await db
     .prepare('SELECT id, username, profile_public, created_at FROM users WHERE LOWER(username) = LOWER(?)')
@@ -3335,23 +3350,23 @@ async function routeRequest(context) {
     }
 
     if (segments[1] === 'auth') {
-      return handleAuth(request, env, segments.slice(1));
+      return await handleAuth(request, env, segments.slice(1));
     }
 
     if (segments[1] === 'bookmarks') {
-      return handleBookmarks(request, env, segments.slice(1));
+      return await handleBookmarks(request, env, segments.slice(1));
     }
 
     if (segments[1] === 'profiles') {
-      return handleProfiles(request, env, segments.slice(1));
+      return await handleProfiles(request, env, segments.slice(1));
     }
 
     if (segments[1] === 'billing') {
-      return handleBilling(request, env, segments.slice(1));
+      return await handleBilling(request, env, segments.slice(1));
     }
 
     if (segments[1] === 'support') {
-      return handleSupport(request, env, segments.slice(1));
+      return await handleSupport(request, env, segments.slice(1));
     }
 
     return jsonResponse({ error: 'Route not found' }, 404);

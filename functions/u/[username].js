@@ -37,7 +37,13 @@ export async function onRequestGet({ request, env, params, next }) {
   }
 
   const origin = new URL(request.url).origin;
-  const rawUsername = decodeURIComponent(params.username || '');
+  let rawUsername;
+  try {
+    rawUsername = decodeURIComponent(params.username || '');
+  } catch {
+    // Malformed percent-encoding can't name a profile; render the not-found metadata.
+    rawUsername = '';
+  }
   const pageUrl = `${origin}/u/${encodeURIComponent(rawUsername)}`;
   const imageUrl = `${origin}/og-image.jpg`;
 

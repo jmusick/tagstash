@@ -60,7 +60,11 @@ test('a failed batch leaves the password, session version and token untouched', 
     const before = state(env);
     const realBatch = env.DB.batch.bind(env.DB);
     env.DB.batch = async (statements) => realBatch([...statements, { run: async () => { throw new Error('simulated D1 failure'); } }]);
-    await assert.rejects(() => reset(env, 'fail-token', 'brand-new-password'));
+    const realError = console.error;
+    console.error = () => {};
+    try {
+      assert.equal((await reset(env, 'fail-token', 'brand-new-password')).status, 500);
+    } finally { console.error = realError; }
     assert.deepEqual(state(env), before);
     assert.equal(env.sqlite.prepare('SELECT used_at FROM password_reset_tokens').get().used_at, null);
   } finally { env.sqlite.close(); }
