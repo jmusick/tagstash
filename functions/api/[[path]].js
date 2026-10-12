@@ -469,36 +469,11 @@ const toHex = (bytes) =>
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-const fromHex = (hex) => {
-  if (!hex || hex.length % 2 !== 0) {
-    return null;
-  }
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = Number.parseInt(hex.slice(i, i + 2), 16);
-  }
-  return bytes;
-};
-
 const getJwtSecret = (env) => {
   if (!env.JWT_SECRET) {
     throw new Error('Missing JWT_SECRET');
   }
   return encoder.encode(env.JWT_SECRET);
-};
-
-const getApiKeySecretBytes = async (env) => {
-  const secret = env.API_KEY_ENCRYPTION_SECRET || env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('Missing API_KEY_ENCRYPTION_SECRET or JWT_SECRET');
-  }
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(secret));
-  return new Uint8Array(digest);
-};
-
-const getApiKeyAesKey = async (env) => {
-  const rawKey = await getApiKeySecretBytes(env);
-  return crypto.subtle.importKey('raw', rawKey, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
 };
 
 const hashApiKey = async (value) => {
@@ -520,37 +495,19 @@ const storeEmailToken = async (db, table, userId, token, expiresAt) => {
     .bind(userId, `sha256:${tokenHash}`, tokenHash, expiresAt).run();
 };
 
-const encryptApiKey = async (value, env) => {
-  const key = await getApiKeyAesKey(env);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    key,
-    encoder.encode(value)
-  );
-  return `${toHex(iv)}:${toHex(new Uint8Array(encrypted))}`;
-};
-
-const decryptApiKey = async (encryptedValue, env) => {
-  if (!encryptedValue) {
-    return null;
-  }
-
-  const parts = encryptedValue.split(':');
-  if (parts.length !== 2) {
-    return null;
-  }
-
-  const iv = fromHex(parts[0]);
-  const data = fromHex(parts[1]);
-  if (!iv || !data) {
-    return null;
-  }
-
-  const key = await getApiKeyAesKey(env);
-  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
-  return new TextDecoder().decode(decrypted);
-};
+// Personal API keys are stored hash-only (show once at creation) and are NOT an auth
+// path: requireAuth never consults api_keys.
+const MAX_ACTIVE_API_KEYS_PER_USER = 10;
+const API_KEY_METADATA_COLUMNS = 'id, name, key_prefix, key_last4, created_at, last_used_at, revoked_at';
+const toApiKeyMetadata = (row) => ({
+  id: row.id,
+  name: row.name,
+  key_prefix: row.key_prefix,
+  key_last4: row.key_last4,
+  created_at: row.created_at,
+  last_used_at: row.last_used_at,
+  revoked_at: row.revoked_at,
+});
 
 const generateApiKeyValue = () => {
   const bytes = crypto.getRandomValues(new Uint8Array(24));
@@ -1947,9 +1904,10 @@ async function handleAuth(request, env, segments) {
     const auth = await requireAuth(request, env);
     if (auth.error) return auth.error;
 
+    // Hash-only storage: list metadata, never key material (legacy encrypted_key is not read).
     const result = await db
       .prepare(
-        `SELECT id, name, key_prefix, key_last4, encrypted_key, created_at, last_used_at, revoked_at
+        `SELECT ${API_KEY_METADATA_COLUMNS}
          FROM api_keys
          WHERE user_id = ?
          ORDER BY created_at DESC`
@@ -1957,25 +1915,7 @@ async function handleAuth(request, env, segments) {
       .bind(auth.user.id)
       .all();
 
-    const apiKeys = [];
-    for (const row of result.results || []) {
-      let apiKey = null;
-      try {
-        apiKey = await decryptApiKey(row.encrypted_key, env);
-      } catch {
-        apiKey = null;
-      }
-      apiKeys.push({
-        id: row.id,
-        name: row.name,
-        key_prefix: row.key_prefix,
-        key_last4: row.key_last4,
-        created_at: row.created_at,
-        last_used_at: row.last_used_at,
-        revoked_at: row.revoked_at,
-        api_key: apiKey,
-      });
-    }
+    const apiKeys = (result.results || []).map(toApiKeyMetadata);
 
     return jsonResponse({ apiKeys });
   }
@@ -1992,32 +1932,42 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'API key name must be 100 characters or less' }, 400);
     }
 
+    const activeCount = await db
+      .prepare('SELECT COUNT(*) AS count FROM api_keys WHERE user_id = ? AND revoked_at IS NULL')
+      .bind(auth.user.id)
+      .first();
+    if ((activeCount?.count || 0) >= MAX_ACTIVE_API_KEYS_PER_USER) {
+      return jsonResponse(
+        { error: `You can have at most ${MAX_ACTIVE_API_KEYS_PER_USER} active API keys. Revoke one first.` },
+        400
+      );
+    }
+
+    // Only the SHA-256 hash and a non-secret display hint are stored; the plaintext is
+    // returned in this response and can never be retrieved again.
     const apiKey = generateApiKeyValue();
     const keyHash = await hashApiKey(apiKey);
-    const encryptedKey = await encryptApiKey(apiKey, env);
     const keyPrefix = apiKey.slice(0, 8);
     const keyLast4 = apiKey.slice(-4);
 
     const insert = await db
       .prepare(
-        `INSERT INTO api_keys (user_id, name, key_hash, encrypted_key, key_prefix, key_last4)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO api_keys (user_id, name, key_hash, key_prefix, key_last4)
+         VALUES (?, ?, ?, ?, ?)`
       )
-      .bind(auth.user.id, keyName, keyHash, encryptedKey, keyPrefix, keyLast4)
+      .bind(auth.user.id, keyName, keyHash, keyPrefix, keyLast4)
       .run();
 
-    const apiKeyMetadata = await db
-      .prepare(
-        'SELECT id, name, key_prefix, key_last4, created_at, last_used_at, revoked_at FROM api_keys WHERE id = ?'
-      )
+    const row = await db
+      .prepare(`SELECT ${API_KEY_METADATA_COLUMNS} FROM api_keys WHERE id = ?`)
       .bind(insert.meta.last_row_id)
       .first();
 
     return jsonResponse(
       {
-        message: 'API key created successfully',
+        message: 'API key created. Copy it now - it will not be shown again.',
         apiKey,
-        apiKeyMetadata,
+        apiKeyMetadata: toApiKeyMetadata(row),
       },
       201
     );

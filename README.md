@@ -44,7 +44,7 @@ Current status at a glance:
 - Random button for jumping straight to a random bookmark in edit mode
 - Tag Management page (`/tags`) for merging two tags into one, with a confirmation step since it can't be undone
 - Self-service username, email, and password changes, plus a forgot-password email flow
-- Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API
+- Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
 - Brute-force protection: 8 failed logins lock an account for 15 minutes, with per-IP/per-email throttling of login, sign-up, verification resends and password-reset requests; auth events are logged for super admins in Settings → Admin
 - Security response headers (CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) and immutable caching for hashed assets, served via `public/_headers`
 - Reset and verification links are stored as SHA-256 digests, and unverified-account guidance is shown only after a correct password. Keyboard focus outlines, skip links, and reduced-motion support cover the main app and public pages.
@@ -143,7 +143,6 @@ Required or commonly used values:
 
 - `JWT_SECRET`
 - `SUPER_ADMIN_EMAIL`
-- `API_KEY_ENCRYPTION_SECRET` optional, defaults to `JWT_SECRET` behavior in app usage
 - `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` for email sending (Cloudflare Email Sending), needed for registration/verification/password-reset emails and the support form
 - `EMAIL_FROM`, `EMAIL_FROM_VERIFICATION`, `EMAIL_FROM_PASSWORD_RESET`, `EMAIL_FROM_CONTACT`, `EMAIL_REPLY_TO`, `SUPPORT_EMAIL` — per-purpose sender/reply addresses for Cloudflare Email Sending; each falls back to `EMAIL_FROM`, then a `tagsta.sh` default
 - `TURNSTILE_SECRET_KEY` for validating the support form's Cloudflare Turnstile CAPTCHA
@@ -250,7 +249,7 @@ These use an isolated in-memory database and never access production.
 - `PUT /api/auth/theme`
 - `PUT /api/auth/link-target`
 - `GET /api/auth/api-keys`
-- `POST /api/auth/api-keys`
+- `POST /api/auth/api-keys` — returns the plaintext key once; `GET` lists metadata only
 - `DELETE /api/auth/api-keys/:id`
 - `DELETE /api/auth/api-keys/:id/permanent`
 - `POST /api/auth/forgot-password`

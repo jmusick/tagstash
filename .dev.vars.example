@@ -3,7 +3,6 @@
 
 # Required
 JWT_SECRET=change_this_to_a_long_random_secret
-API_KEY_ENCRYPTION_SECRET=change_this_to_a_different_random_secret
 SUPER_ADMIN_EMAIL=your@email.com
 
 # Public app URL, used to build links in emails and Stripe redirect URLs.

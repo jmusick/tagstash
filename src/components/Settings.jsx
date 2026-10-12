@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
-import { X, KeyRound, Copy, Ban, Eye, EyeOff, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
+import { X, KeyRound, Copy, Ban, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
 import Import from './Import';
 import Export from './Export';
 import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../utils/linkTarget';
@@ -36,7 +36,6 @@ function Settings({
   const [newKeyName, setNewKeyName] = useState('');
   const [generatedApiKey, setGeneratedApiKey] = useState('');
   const [showRevokedKeys, setShowRevokedKeys] = useState(false);
-  const [revealedApiKeys, setRevealedApiKeys] = useState({});
   const [publicApiTagInput, setPublicApiTagInput] = useState('');
 
   // Billing state
@@ -309,11 +308,6 @@ function Settings({
       setSuccess('');
       await authAPI.deleteApiKey(id);
       setSuccess('API key deleted permanently');
-      setRevealedApiKeys((prev) => {
-        const next = { ...prev };
-        delete next[id];
-        return next;
-      });
       await fetchApiKeys();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to delete API key');
@@ -325,24 +319,6 @@ function Settings({
 
     try {
       await navigator.clipboard.writeText(generatedApiKey);
-      setSuccess('API key copied to clipboard');
-    } catch {
-      setError('Unable to copy API key');
-    }
-  };
-
-  const handleToggleRevealApiKey = (id) => {
-    setRevealedApiKeys((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
-  };
-
-  const handleCopyStoredApiKey = async (apiKey) => {
-    if (!apiKey) return;
-
-    try {
-      await navigator.clipboard.writeText(apiKey);
       setSuccess('API key copied to clipboard');
     } catch {
       setError('Unable to copy API key');
@@ -871,7 +847,10 @@ function Settings({
 
             {generatedApiKey && (
               <div className="generated-key-box">
-                <p className="generated-key-note">Save this key now. It will not be shown again.</p>
+                <p className="generated-key-note">
+                  Copy this key now. You won&apos;t see it again: only a hash is stored, so it can&apos;t be
+                  shown later. If you lose it, revoke it and generate a new one.
+                </p>
                 <code>{generatedApiKey}</code>
                 <button type="button" className="btn-secondary" onClick={handleCopyApiKey}>
                   <Copy size={16} />
@@ -903,33 +882,8 @@ function Settings({
                       <p className="api-key-name">{key.name}</p>
                       <p className="api-key-meta">
                         {key.key_prefix}...{key.key_last4} • Created {new Date(key.created_at).toLocaleDateString()}
+                        {key.last_used_at && ` • Last used ${new Date(key.last_used_at).toLocaleDateString()}`}
                       </p>
-                      {key.api_key ? (
-                        <div className="stored-key-row">
-                          <code>{revealedApiKeys[key.id] ? key.api_key : `${key.key_prefix}...${key.key_last4}`}</code>
-                          <button
-                            type="button"
-                            className="btn-secondary api-key-action-btn"
-                            onClick={() => handleToggleRevealApiKey(key.id)}
-                            title={revealedApiKeys[key.id] ? 'Hide API key' : 'Show API key'}
-                          >
-                            {revealedApiKeys[key.id] ? <EyeOff size={14} /> : <Eye size={14} />}
-                            <span>{revealedApiKeys[key.id] ? 'Hide' : 'Show'}</span>
-                          </button>
-                          {revealedApiKeys[key.id] && (
-                            <button
-                              type="button"
-                              className="btn-secondary api-key-action-btn"
-                              onClick={() => handleCopyStoredApiKey(key.api_key)}
-                            >
-                              <Copy size={14} />
-                              <span>Copy</span>
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="api-key-meta">This key was created before key reveal support and cannot be displayed.</p>
-                      )}
                       {key.revoked_at && (
                         <p className="api-key-revoked">Revoked {new Date(key.revoked_at).toLocaleDateString()}</p>
                       )}
