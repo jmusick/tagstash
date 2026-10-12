@@ -35,7 +35,7 @@ Current status at a glance:
 - Email verification via Cloudflare Email Sending
 - Opt-in public profiles (`/u/:username`) for sharing your bookmarks via a link, with per-bookmark privacy control and tag filtering
 - Public JSON API (`/api/profiles/:username`, optionally tag-filtered) for embedding your bookmarks on other sites, with ready-to-copy URLs in Settings
-- Super admin controls for managing users, roles, and tiers
+- Super admin controls for managing users, roles, and tiers, plus moderation (suspend an account, force a profile private)
 - Three theme options (Slate, Midnight, Light), with your pick synced to your account when logged in
 - Preference for opening bookmark links in a new tab or the same tab (Settings → Preferences), synced to your account
 - Responsive UI for desktop and mobile
@@ -48,7 +48,7 @@ Current status at a glance:
 - Brute-force protection: 8 failed logins lock an account for 15 minutes, with per-IP/per-email throttling of login, sign-up, verification resends and password-reset requests; auth events are logged for super admins in Settings → Admin
 - Security response headers (CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) and immutable caching for hashed assets, served via `public/_headers`
 - Reset and verification links are stored as SHA-256 digests, and unverified-account guidance is shown only after a correct password. Keyboard focus outlines, skip links, and reduced-motion support cover the main app and public pages.
-- Dynamic XML sitemap (`/sitemap.xml`) listing static pages and opted-in public profiles, plus `robots.txt` and `llms.txt`, for search engine and AI crawler discovery
+- Dynamic XML sitemap (`/sitemap.xml`) listing static pages and public profiles that meet a quality bar (verified email, account at least 14 days old, 5+ public bookmarks; profiles below it are served with `noindex`), plus `robots.txt` and `llms.txt`, for search engine and AI crawler discovery
 
 ## Hosted Version
 
@@ -260,6 +260,10 @@ These use an isolated in-memory database and never access production.
 - `GET /api/auth/admin/users`
 - `PATCH /api/auth/admin/users/:id`
 - `DELETE /api/auth/admin/users/:id`
+- `POST /api/auth/admin/users/:id/suspend` — hide the account's public profile everywhere and block re-publishing (the user can still sign in)
+- `POST /api/auth/admin/users/:id/unsuspend` — lift a suspension (does not re-publish a profile that was made private)
+- `POST /api/auth/admin/users/:id/make-private` — force the profile private
+- `GET /api/auth/admin/auth-events` — recent security and moderation events
 
 ### Billing
 
@@ -292,7 +296,7 @@ These use an isolated in-memory database and never access production.
 
 ### Public Profiles
 
-- `GET /api/profiles/:username` — unauthenticated; returns a user's public, non-private bookmarks and tags if they've opted in via `PUT /api/auth/profile-public`
+- `GET /api/profiles/:username` — unauthenticated; returns a user's public, non-private bookmarks and tags if they've opted in via `PUT /api/auth/profile-public`. Profiles that aren't public, don't exist, or belong to a suspended account all answer the same `404`.
 
 This is a stable, documented public API meant for third-party consumption (not just internal page-support data) — Settings surfaces ready-to-copy URLs for it. Responses are JSON with CORS enabled for all origins, so it can be fetched directly from another site's frontend or from a server-side build/SSR step. The site's Content Security Policy governs only Tagstash's own pages, not consumers of this API.
 
@@ -308,7 +312,7 @@ Example response:
 
 ```json
 {
-  "profile": { "username": "alice", "member_since": "2026-01-01T00:00:00.000Z" },
+  "profile": { "username": "alice", "member_since": "2026-01-01T00:00:00.000Z", "indexable": true },
   "bookmarks": [
     {
       "id": 1,
@@ -327,6 +331,8 @@ Example response:
 ```
 
 `tags` always lists the full public tag set for that user, regardless of any `?tag=` filter applied, so a consumer can discover what other tags are available.
+
+`profile.indexable` (added in a backward-compatible way) says whether the profile page at `/u/:username` is open to search engines. It is `false` until the account has a verified email, is at least 14 days old and has 5 or more public bookmarks. Consumers can ignore it.
 
 ## Project Structure
 

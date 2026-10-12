@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { profileAPI } from '../api/api'
 import AppHeader from './AppHeader'
 import AppFooter from './AppFooter'
@@ -31,7 +31,9 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
         : `Browse ${profile?.username}'s public bookmarks on Tagstash.`,
     // Stored casing (not the URL's) so the client canonical matches the server-rendered one.
     path: `/u/${encodeURIComponent(profile?.username || username)}`,
-    noindex: notFound || !!error,
+    // `indexable` is the shared indexing bar (functions/_lib/profileVisibility.js), the same
+    // value the SSR used for its robots meta, so hydration never drops a server-side noindex.
+    noindex: notFound || !!error || !profile?.indexable,
   })
 
   const fetchProfile = useCallback(async () => {
@@ -116,6 +118,13 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
       </main>
       <AppFooter>
         <a className="footer-privacy-link" href="/">Create your own Tagstash</a>
+        <Link
+          className="footer-privacy-link"
+          to={`/support?report=${encodeURIComponent(profile?.username || username)}`}
+          rel="nofollow"
+        >
+          Report this profile
+        </Link>
       </AppFooter>
     </div>
   )

@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
+import { findVisibleProfile, getProfileSchema, isProfileIndexable } from '../_lib/profileVisibility.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -1006,6 +1007,35 @@ const bookmarksTableHasColumn = async (db, columnName) => {
   return (result.results || []).some((column) => column.name === columnName);
 };
 
+// --- Profile moderation (migration 0016) ---
+// Suspension hides the public profile everywhere (see functions/_lib/profileVisibility.js)
+// and blocks re-enabling profile_public; the owner can still sign in and use their library.
+
+const PROFILE_SUSPENDED_MESSAGE =
+  "Your account is suspended, so your profile can't be made public. Contact support if you think this is a mistake.";
+
+// False when suspended_at doesn't exist yet: code deployed ahead of 0016 fails safe.
+const isUserSuspended = async (db, userId) => {
+  if (!(await usersTableHasColumn(db, 'suspended_at'))) return false;
+  const row = await db.prepare('SELECT suspended_at FROM users WHERE id = ?').bind(userId).first();
+  return Boolean(row?.suspended_at);
+};
+
+// Logs an admin moderation action to auth_events with the acting admin. Never throws; before
+// 0016 adds actor_user_id it still logs the action (and the Worker log keeps the actor).
+const recordModerationEvent = async (db, request, eventType, targetUser, adminUser) => {
+  const ip = getClientIp(request);
+  console.warn(`[moderation] ${eventType}`, JSON.stringify({ targetUserId: targetUser.id, adminUserId: adminUser.id }));
+  try {
+    await db
+      .prepare('INSERT INTO auth_events (event_type, email, user_id, ip, actor_user_id) VALUES (?, ?, ?, ?, ?)')
+      .bind(eventType, targetUser.email, targetUser.id, ip, adminUser.id)
+      .run();
+  } catch {
+    await recordAuthEvent(db, request, eventType, { email: targetUser.email, userId: targetUser.id });
+  }
+};
+
 const tableExists = async (db, tableName) => {
   const result = await db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -1816,6 +1846,8 @@ async function handleAuth(request, env, segments) {
     }
 
     user.profile_public = Number(user.profile_public || 0);
+    // Lets Settings explain why the public-profile toggle is locked. False before migration 0016.
+    user.suspended = await isUserSuspended(db, auth.user.id);
 
     await ensureUserRoleMatchesConfig(db, user, env);
     return jsonResponse({ user });
@@ -2009,6 +2041,11 @@ async function handleAuth(request, env, segments) {
     const { profilePublic } = await parseBody(request);
     const nextValue = profilePublic ? 1 : 0;
 
+    // A suspended account can still turn its profile off, but not back on.
+    if (nextValue && (await isUserSuspended(db, auth.user.id))) {
+      return jsonResponse({ error: PROFILE_SUSPENDED_MESSAGE, suspended: true }, 403);
+    }
+
     await db
       .prepare('UPDATE users SET profile_public = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .bind(nextValue, auth.user.id)
@@ -2191,12 +2228,19 @@ async function handleAuth(request, env, segments) {
     const hasLastLoginAtColumn = await usersTableHasColumn(db, 'last_login_at');
     const lastLoginSelect = hasLastLoginAtColumn ? 'u.last_login_at' : 'NULL AS last_login_at';
     const lockedUntilSelect = (await usersTableHasColumn(db, 'locked_until')) ? 'u.locked_until' : 'NULL AS locked_until';
+    const schema = await getProfileSchema(db);
+    const profilePublicSelect = schema.hasProfilePublic ? 'u.profile_public' : '0 AS profile_public';
+    const suspendedAtSelect = schema.hasSuspendedAt ? 'u.suspended_at' : 'NULL AS suspended_at';
+    const publicCountSelect = schema.hasIsPrivate
+      ? 'COALESCE(SUM(CASE WHEN b.is_private = 0 THEN 1 ELSE 0 END), 0)'
+      : 'COUNT(b.id)';
 
     const result = await db
       .prepare(
         `SELECT u.id, u.username, u.email, u.membership_tier, u.role, u.stripe_customer_id, u.created_at, u.updated_at, ${lastLoginSelect},
-                ${lockedUntilSelect},
-                COUNT(b.id) AS bookmark_count
+                ${lockedUntilSelect}, u.email_verified, ${profilePublicSelect}, ${suspendedAtSelect},
+                COUNT(b.id) AS bookmark_count,
+                ${publicCountSelect} AS public_bookmark_count
          FROM users u
          LEFT JOIN bookmarks b ON b.user_id = u.id
          GROUP BY u.id
@@ -2204,12 +2248,17 @@ async function handleAuth(request, env, segments) {
       )
       .all();
 
+    const now = Date.now();
     const users = (result.results || []).map((u) => ({
       ...u,
       bookmark_count: Number(u.bookmark_count || 0),
+      public_bookmark_count: Number(u.public_bookmark_count || 0),
+      profile_public: Number(u.profile_public || 0),
+      // Same rule as the sitemap/SSR: would this profile be indexed if it is public?
+      meets_indexing_bar: isProfileIndexable(u, now),
     }));
 
-    return jsonResponse({ users });
+    return jsonResponse({ users, moderationAvailable: schema.hasSuspendedAt });
   }
 
   if (request.method === 'GET' && segments[1] === 'admin' && segments[2] === 'auth-events') {
@@ -2223,17 +2272,112 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ events: [] });
     }
 
+    // actor_user_id (migration 0016) names the admin behind a moderation event.
+    const authEventColumns = await db.prepare('PRAGMA table_info(auth_events)').all();
+    const hasActorColumn = (authEventColumns.results || []).some((column) => column.name === 'actor_user_id');
+    const actorSelect = hasActorColumn
+      ? 'e.actor_user_id, actor.username AS actor_username'
+      : 'NULL AS actor_user_id, NULL AS actor_username';
+    const actorJoin = hasActorColumn ? 'LEFT JOIN users actor ON actor.id = e.actor_user_id' : '';
+
     const result = await db
       .prepare(
-        `SELECT id, event_type, email, user_id, ip, created_at
-         FROM auth_events
-         WHERE event_type NOT IN ('register_attempt', 'verification_resend_requested')
-         ORDER BY id DESC
+        `SELECT e.id, e.event_type, e.email, e.user_id, e.ip, e.created_at, ${actorSelect}
+         FROM auth_events e ${actorJoin}
+         WHERE e.event_type NOT IN ('register_attempt', 'verification_resend_requested')
+         ORDER BY e.id DESC
          LIMIT 200`
       )
       .all();
 
     return jsonResponse({ events: result.results || [] });
+  }
+
+  // Moderation: POST /auth/admin/users/:id/{suspend|unsuspend|make-private}.
+  // Suspend leaves profile_public untouched, so a wrongful suspension is fully reversible;
+  // make-private flips profile_public off and stays off after an unsuspend.
+  if (
+    request.method === 'POST' &&
+    segments[1] === 'admin' &&
+    segments[2] === 'users' &&
+    segments[3] &&
+    ['suspend', 'unsuspend', 'make-private'].includes(segments[4]) &&
+    segments.length === 5
+  ) {
+    const auth = await requireAuth(request, env);
+    if (auth.error) return auth.error;
+
+    const access = await requireSuperAdmin(db, auth.user, env);
+    if (access.error) return access.error;
+
+    const action = segments[4];
+    const targetId = Number(segments[3]);
+    if (!Number.isInteger(targetId) || targetId <= 0) {
+      return jsonResponse({ error: 'Invalid user id' }, 400);
+    }
+
+    const schema = await getProfileSchema(db);
+    if (action === 'make-private' ? !schema.hasProfilePublic : !schema.hasSuspendedAt) {
+      return jsonResponse({ error: 'Account moderation is not configured yet' }, 503);
+    }
+
+    const targetUser = await db
+      .prepare('SELECT id, username, email, role FROM users WHERE id = ?')
+      .bind(targetId)
+      .first();
+    if (!targetUser) {
+      return jsonResponse({ error: 'User not found' }, 404);
+    }
+
+    if (action === 'suspend') {
+      if (targetId === auth.user.id) {
+        return jsonResponse({ error: 'You cannot suspend your own account' }, 400);
+      }
+      if (targetUser.role === USER_ROLES.SUPER_ADMIN || isSuperAdminEmail(targetUser.email, env)) {
+        return jsonResponse({ error: 'Super admin accounts cannot be suspended' }, 400);
+      }
+    }
+
+    const statements = {
+      suspend: db
+        .prepare('UPDATE users SET suspended_at = CURRENT_TIMESTAMP, suspended_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND suspended_at IS NULL')
+        .bind(auth.user.id, targetId),
+      unsuspend: db
+        .prepare('UPDATE users SET suspended_at = NULL, suspended_by = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND suspended_at IS NOT NULL')
+        .bind(targetId),
+      'make-private': db
+        .prepare('UPDATE users SET profile_public = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND profile_public = 1')
+        .bind(targetId),
+    };
+    const result = await statements[action].run();
+    const changed = (result.meta?.changes || 0) > 0;
+
+    const eventTypes = {
+      suspend: 'admin_account_suspended',
+      unsuspend: 'admin_account_unsuspended',
+      'make-private': 'admin_profile_made_private',
+    };
+    if (changed) {
+      await recordModerationEvent(db, request, eventTypes[action], targetUser, access.adminUser);
+    }
+
+    const updated = await db
+      .prepare(
+        `SELECT id, username, email, ${schema.hasProfilePublic ? 'profile_public' : '0 AS profile_public'}, ${schema.hasSuspendedAt ? 'suspended_at' : 'NULL AS suspended_at'} FROM users WHERE id = ?`
+      )
+      .bind(targetId)
+      .first();
+
+    const messages = {
+      suspend: changed ? `Suspended ${targetUser.email}` : `${targetUser.email} is already suspended`,
+      unsuspend: changed ? `Unsuspended ${targetUser.email}` : `${targetUser.email} is not suspended`,
+      'make-private': changed ? `Made ${targetUser.email}'s profile private` : `${targetUser.email}'s profile is already private`,
+    };
+    return jsonResponse({
+      message: messages[action],
+      changed,
+      user: { ...updated, profile_public: Number(updated?.profile_public || 0) },
+    });
   }
 
   if (
@@ -3033,12 +3177,10 @@ async function handleProfiles(request, env, segments) {
     return jsonResponse({ error: 'Route not found' }, 404);
   }
 
-  const [hasProfilePublicColumn, hasIsPrivateColumn] = await Promise.all([
-    usersTableHasColumn(db, 'profile_public'),
-    bookmarksTableHasColumn(db, 'is_private'),
-  ]);
+  const schema = await getProfileSchema(db);
+  const hasIsPrivateColumn = schema.hasIsPrivate;
 
-  if (!hasProfilePublicColumn) {
+  if (!schema.hasProfilePublic) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
@@ -3049,12 +3191,10 @@ async function handleProfiles(request, env, segments) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
-  const user = await db
-    .prepare('SELECT id, username, profile_public, created_at FROM users WHERE LOWER(username) = LOWER(?)')
-    .bind(username)
-    .first();
+  // Missing, non-public and suspended profiles get the identical 404 (suspension isn't disclosed).
+  const user = await findVisibleProfile(db, username, schema);
 
-  if (!user || !Number(user.profile_public)) {
+  if (!user) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
@@ -3103,6 +3243,10 @@ async function handleProfiles(request, env, segments) {
     profile: {
       username: user.username,
       member_since: user.created_at,
+      // Additive: whether /u/:username is open to search engines (the indexing bar). It
+      // repeats what that page's robots meta already says publicly, and lets the SPA's
+      // client-side head agree with the SSR one.
+      indexable: user.indexable,
     },
     bookmarks,
     tags,
