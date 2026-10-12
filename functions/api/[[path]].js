@@ -115,6 +115,28 @@ const withCors = (response, request, env) => {
   return response;
 };
 
+// public/_headers only reaches static assets, so every Worker response (success, error and
+// preflight alike) gets its own hardening here. The API only ever answers JSON or empty
+// bodies, so nothing may sniff, frame or render it as a document. HSTS mirrors _headers and
+// is sent only over HTTPS (browsers ignore it on plain HTTP anyway); no `preload`.
+const API_SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
+};
+
+const withApiHeaders = (response, request, env) => {
+  response.headers.set('Cache-Control', 'no-store');
+  for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
+    response.headers.set(name, value);
+  }
+  if (new URL(request.url).protocol === 'https:') {
+    response.headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
+  }
+  return withCors(response, request, env);
+};
+
 const encoder = new TextEncoder();
 
 // --- Email sending (Cloudflare Email Sending REST API) ---
@@ -3365,7 +3387,7 @@ async function handleSupport(request, env, segments) {
 }
 
 export const onRequestOptions = async ({ request, env }) =>
-  new Response(null, { status: 204, headers: corsHeadersFor(request, env) });
+  withApiHeaders(new Response(null, { status: 204 }), request, env);
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -3378,8 +3400,7 @@ export async function onRequest(context) {
   const response = needsProof && !hasWebRequestProof(request, env)
     ? jsonResponse({ error: 'Invalid web request origin' }, 403)
     : await routeRequest(context);
-  response.headers.set('Cache-Control', 'no-store');
-  return withCors(response, request, env);
+  return withApiHeaders(response, request, env);
 }
 
 async function routeRequest(context) {
