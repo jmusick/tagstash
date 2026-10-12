@@ -22,7 +22,7 @@
   --color-text: #f2f1f5;
   --color-text-soft: rgba(242, 241, 245, 0.78);
   --color-text-muted: rgba(242, 241, 245, 0.56);
-  --color-placeholder: rgba(242, 241, 245, 0.4);
+  --color-placeholder: rgba(242, 241, 245, 0.6);
   --color-primary: #6d45ff;
   --color-primary-hover: #7b57ff;
   --color-primary-strong: #a48fff;
@@ -80,7 +80,7 @@
   --color-text: #efedff;
   --color-text-soft: rgba(239, 237, 255, 0.78);
   --color-text-muted: rgba(239, 237, 255, 0.56);
-  --color-placeholder: rgba(239, 237, 255, 0.4);
+  --color-placeholder: rgba(239, 237, 255, 0.6);
   --color-primary: #6d45ff;
   --color-primary-hover: #7b57ff;
   --color-primary-strong: #ab98ff;
@@ -130,7 +130,7 @@
   --color-text: #1c1830;
   --color-text-soft: rgba(28, 24, 48, 0.78);
   --color-text-muted: rgba(28, 24, 48, 0.6);
-  --color-placeholder: rgba(28, 24, 48, 0.42);
+  --color-placeholder: rgba(28, 24, 48, 0.65);
   --color-primary: #5a2ff0;
   --color-primary-hover: #4c22e0;
   --color-primary-strong: #4a22d6;
@@ -199,6 +199,12 @@ input,
 textarea,
 select {
   font: inherit;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--color-placeholder);
+  opacity: 1;
 }
 
 h1,
@@ -310,6 +316,17 @@ button.tag-stock,
   cursor: pointer;
 }
 
+/* Always-mounted wrapper for role="alert"/"status" content; adds no layout box. */
+.live-region {
+  display: contents;
+}
+
+/* Visible instruction text linked to its field via aria-describedby. */
+.form-hint {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
 /* Visually hidden but available to screen readers and crawlers. */
 .sr-only {
   position: absolute;
@@ -378,7 +395,8 @@ button.tag-stock,
   background: rgba(var(--color-accent-rgb), 0.14);
 }
 
-.theme-selector-btn:focus-visible {}
+.theme-selector-btn:focus-visible {
+}
 
 .theme-selector-label {
   max-width: 0;

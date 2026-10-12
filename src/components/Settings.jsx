@@ -629,8 +629,12 @@ function Settings({
           )}
         </div>
 
-        {error && <div className="settings-error">{error}</div>}
-        {success && <div className="settings-success">{success}</div>}
+        <div role="alert" className="live-region">
+          {error && <div className="settings-error">{error}</div>}
+        </div>
+        <div role="status" className="live-region">
+          {success && <div className="settings-success">{success}</div>}
+        </div>
 
         {activeTab === 'username' && (
           <form onSubmit={handleUsernameSubmit} className="settings-form">
@@ -750,9 +754,11 @@ function Settings({
                 value={passwordForm.newPassword}
                 onChange={handlePasswordChange}
                 required
-                placeholder="Enter your new password (min 6 characters)"
+                placeholder="Enter your new password"
+                aria-describedby="new-password-hint"
                 minLength={6}
               />
+              <small id="new-password-hint" className="form-hint">At least 6 characters</small>
             </div>
 
             <div className="form-field">
@@ -798,6 +804,7 @@ function Settings({
                   <input
                     type="text"
                     readOnly
+                    aria-label="Public profile URL"
                     value={publicProfileUrl}
                     onFocus={(e) => e.target.select()}
                   />
@@ -830,6 +837,7 @@ function Settings({
                   <input
                     type="text"
                     readOnly
+                    aria-label="Public API URL"
                     value={publicApiUrl}
                     onFocus={(e) => e.target.select()}
                   />
@@ -1092,7 +1100,7 @@ function Settings({
             <p className="settings-import-description">
               Import bookmarks from other services into Tagstash.
             </p>
-            <Import inline onImportComplete={onImportComplete} />
+            <Import onImportComplete={onImportComplete} />
             <Export />
           </div>
         )}
@@ -1106,6 +1114,7 @@ function Settings({
             <div className="admin-users-search-wrap">
               <input
                 type="text"
+                aria-label="Search users"
                 value={adminUserQuery}
                 onChange={(e) => setAdminUserQuery(e.target.value)}
                 placeholder="Search by email, username, id, role, or tier"

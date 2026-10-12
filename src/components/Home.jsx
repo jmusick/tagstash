@@ -151,9 +151,13 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                       required
                       placeholder="Enter your email"
                       autoFocus
+                      aria-invalid={forgotError ? 'true' : undefined}
+                      aria-describedby={forgotError ? 'forgot-error' : undefined}
                     />
                   </div>
-                  {forgotError && <div className="auth-error">{forgotError}</div>}
+                  <div role="alert" className="live-region">
+                    {forgotError && <div id="forgot-error" className="auth-error">{forgotError}</div>}
+                  </div>
                   <button type="submit" className="auth-button" disabled={forgotStatus === 'loading'}>
                     {forgotStatus === 'loading' ? 'Sending…' : 'Send reset link'}
                   </button>
@@ -189,7 +193,9 @@ function Home({ logoSrc, theme, onSelectTheme }) {
               We sent a verification link to <strong>{pendingEmail}</strong>. Click the link to activate
               your account.
             </p>
-            {resendStatus && <p className="auth-description">{resendStatus}</p>}
+            <div role="status" className="live-region">
+              {resendStatus && <p className="auth-description">{resendStatus}</p>}
+            </div>
             <button className="auth-button auth-button--secondary" onClick={handleResend}>
               Resend verification email
             </button>
@@ -245,11 +251,12 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                   value={formData.username}
                   onChange={handleChange}
                   required
-                  placeholder="No spaces"
+                  aria-describedby="username-hint"
                   autoComplete="username"
                   pattern="\S+"
                   title="Username cannot contain spaces"
                 />
+                <small id="username-hint" className="form-hint">No spaces</small>
               </div>
             )}
 
@@ -288,12 +295,15 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                 onChange={handleChange}
                 required
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
-                placeholder={isLogin ? '' : 'At least 6 characters'}
+                aria-describedby={isLogin ? undefined : 'password-hint'}
                 minLength={6}
               />
+              {!isLogin && <small id="password-hint" className="form-hint">At least 6 characters</small>}
             </div>
 
-            {error && <div className="auth-error">{error}</div>}
+            <div role="alert" className="live-region">
+              {error && <div className="auth-error">{error}</div>}
+            </div>
 
             <button type="submit" className="auth-button" disabled={loading}>
               {loading ? 'Please wait…' : isLogin ? 'Log in' : 'Create account'}

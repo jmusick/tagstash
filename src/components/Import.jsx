@@ -169,7 +169,7 @@ function parseBrowserBookmarksHTML(html) {
   return bookmarks;
 }
 
-function Import({ onClose, onImportComplete, inline = false }) {
+function Import({ onImportComplete }) {
   const [stage, setStage] = useState('idle'); // idle | preview | importing | done
   const [parsed, setParsed] = useState([]);
   const [result, setResult] = useState(null);
@@ -285,11 +285,6 @@ function Import({ onClose, onImportComplete, inline = false }) {
           <Upload size={18} className="import-title-icon" />
           Import Bookmarks
         </h2>
-        {!inline && (
-          <button className="close-btn" onClick={onClose} aria-label="Close import">
-            <X size={18} />
-          </button>
-        )}
       </div>
 
       <div className="import-source-picker">
@@ -308,14 +303,23 @@ function Import({ onClose, onImportComplete, inline = false }) {
         </div>
       )}
 
-      {error && (
-        <div className="import-error">
-          {error}
-          <button onClick={() => setError('')} aria-label="Dismiss error">
-            <X size={14} />
-          </button>
-        </div>
-      )}
+      <div role="alert" className="live-region">
+        {error && (
+          <div className="import-error">
+            {error}
+            <button type="button" onClick={() => setError('')} aria-label="Dismiss error">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+      </div>
+      <p role="status" className="sr-only">
+        {stage === 'importing'
+          ? 'Importing bookmarks…'
+          : stage === 'done' && result
+            ? `Import complete. ${result.imported} imported${result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.`
+            : ''}
+      </p>
 
       {(source === 'raindrop' || source === 'firefox' || source === 'chrome') && stage === 'idle' && (
         <>
@@ -326,27 +330,25 @@ function Import({ onClose, onImportComplete, inline = false }) {
                 ? 'Export from Chrome: Bookmark Manager -> Organize -> Export bookmarks. Then upload the HTML file here.'
                 : 'Export your bookmarks from Raindrop.io as a CSV file, then upload it here.'}
           </p>
-          <div
+          <button
+            type="button"
             className={`drop-zone${dragging ? ' drop-zone--active' : ''}`}
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
             aria-label={isBrowserHtmlSource ? 'Upload HTML bookmark file' : 'Upload CSV file'}
           >
             <FileText size={36} className="drop-zone-icon" />
-            <p>
+            <span className="drop-zone-title">
               {source === 'firefox'
                 ? 'Drop your Firefox bookmarks HTML here'
                 : source === 'chrome'
                   ? 'Drop your Chrome bookmarks HTML here'
                   : 'Drop your Raindrop.io CSV here'}
-            </p>
-            <span>or click to browse</span>
-          </div>
+            </span>
+            <span className="drop-zone-sub">or click to browse</span>
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -432,9 +434,6 @@ function Import({ onClose, onImportComplete, inline = false }) {
             </p>
           )}
           <div className="import-actions">
-            {!inline && (
-              <button className="btn-primary" onClick={onClose}>Done</button>
-            )}
             <button className="btn-secondary" onClick={handleReset}>Import another file</button>
           </div>
         </div>
@@ -442,19 +441,9 @@ function Import({ onClose, onImportComplete, inline = false }) {
     </>
   );
 
-  if (inline) {
-    return (
-      <div className="import-inline" role="region" aria-labelledby="import-title">
-        {content}
-      </div>
-    );
-  }
-
   return (
-    <div className="import-overlay" onClick={(e) => e.target === e.currentTarget && onClose?.()}>
-      <div className="import-panel" role="dialog" aria-modal="true" aria-labelledby="import-title">
-        {content}
-      </div>
+    <div className="import-inline" role="region" aria-labelledby="import-title">
+      {content}
     </div>
   );
 }

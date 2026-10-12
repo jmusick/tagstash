@@ -111,15 +111,19 @@ function TagsPage() {
 
   return (
     <div className="tags-page">
-      {error && (
-        <div className="error-message">
-          {error}
-          <button onClick={() => setError('')} className="error-close" aria-label="Dismiss error">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-      {success && <div className="tags-page-success">{success}</div>}
+      <div role="alert" className="live-region">
+        {error && (
+          <div className="error-message">
+            {error}
+            <button onClick={() => setError('')} className="error-close" aria-label="Dismiss error">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+      <div role="status" className="live-region">
+        {success && <div className="tags-page-success">{success}</div>}
+      </div>
 
       <section className="tags-page-section">
         <h2>Singular &amp; Plural Tags</h2>

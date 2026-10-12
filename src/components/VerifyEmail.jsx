@@ -58,6 +58,7 @@ function VerifyEmail({ logoSrc }) {
           <Logo src={logoSrc} className="auth-title-logo" />
         </h1>
 
+        <div role="status" className="live-region">
         {status === 'verifying' && (
           <p className="auth-subtitle">Verifying your email address…</p>
         )}
@@ -78,7 +79,9 @@ function VerifyEmail({ logoSrc }) {
             </a>
           </>
         )}
+        </div>
 
+        <div role="alert" className="live-region">
         {status === 'error' && (
           <>
             <p className="auth-subtitle">Verification failed</p>
@@ -88,6 +91,7 @@ function VerifyEmail({ logoSrc }) {
             </a>
           </>
         )}
+        </div>
       </div>
     </main>
   );
