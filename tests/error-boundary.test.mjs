@@ -88,6 +88,7 @@ test('non-string tags are dropped on import and rejected on create', async () =>
     assert.equal(imported.status, 200, await imported.clone().text());
     const summary = await imported.json();
     assert.equal(summary.imported, 1);
+    assert.equal(summary.droppedTags, 2);
 
     // Create validates the whole payload first, so a bad tag rejects it and writes nothing.
     const created = await call(env, 'bookmarks', {

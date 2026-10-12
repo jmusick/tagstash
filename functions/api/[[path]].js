@@ -599,6 +599,7 @@ const INPUT_LIMITS = {
 // Request bodies are streamed and abandoned past these sizes (413). The default fits the
 // largest valid bookmark even with every character escaped; import carries up to 2000.
 const MAX_JSON_BODY_BYTES = 256 * 1024;
+const MAX_IMPORT_BODY_BYTES = 8 * 1024 * 1024;
 
 // Thrown by request-parsing helpers; routeRequest turns it into a JSON error response.
 class HttpError extends Error {
@@ -1341,16 +1342,6 @@ const toggleBookmarkFlag = async (db, userId, bookmarkId, columnName, { onMessag
   };
 };
 
-const ensureTag = async (db, tagName) => {
-  await db
-    .prepare('INSERT INTO tags (name) VALUES (?) ON CONFLICT(name) DO UPDATE SET name = excluded.name')
-    .bind(tagName)
-    .run();
-
-  const tag = await db.prepare('SELECT id, name FROM tags WHERE name = ?').bind(tagName).first();
-  return tag;
-};
-
 // Tag writes are built as statements for the caller's db.batch(), so a bookmark row and its
 // tag links commit or roll back together. `tags` is the global name table (see AGENTS.md):
 // names are upserted, then links resolve names through its UNIQUE index.
@@ -1680,6 +1671,220 @@ const listBookmarks = async (db, userId) => {
   }
 
   return attachTagsToBookmarks(db, userId, bookmarks);
+};
+
+// --- Bulk import (POST /bookmarks/import) ---
+// Contract (also in AGENTS.md):
+// - The whole request is rejected (400/413/429), writing nothing, unless `bookmarks` is a
+//   non-empty array of at most INPUT_LIMITS.importBookmarks rows within MAX_IMPORT_BODY_BYTES.
+// - Every row is validated before anything is written. A row is skipped as `invalid` (listed
+//   in `invalidRows` by index, first IMPORT_INVALID_DETAILS only) if it isn't an object, the
+//   title or URL is missing, not a string or unusable, the URL is over the limit, the
+//   description isn't a string, or tags isn't an array. Softer problems keep the row: an
+//   over-long title or description is truncated (`truncated`), and non-string, over-long or
+//   surplus tags are dropped (`droppedTags`; blank and repeated tags are simply ignored).
+// - A row whose URL the account already has, or that an earlier row in the file already
+//   carries, is skipped as a duplicate; a free plan imports only up to its remaining slots
+//   (`limitReached`). `skipped` is the total not imported.
+// - Accepted rows are written in chunks of up to IMPORT_CHUNK_ROWS. Each chunk is one
+//   db.batch, which D1 runs as a transaction, so a chunk lands whole or not at all. If one
+//   fails the request answers 500 with the counts so far; earlier chunks stay, and retrying
+//   the same file is safe because those rows now count as duplicates.
+const IMPORT_CHUNK_ROWS = 250;
+// Each chunk travels as one bound JSON value; D1 caps a single value at 2 MB.
+const IMPORT_CHUNK_BYTES = 512 * 1024;
+const IMPORT_INVALID_DETAILS = 20;
+
+// [title, url, description, tags] for a row, or { error }.
+const prepareImportRow = (row) => {
+  if (!row || typeof row !== 'object' || Array.isArray(row)) {
+    return { error: 'Not a bookmark object' };
+  }
+  const { title, url, description, tags } = row;
+  if (typeof title !== 'string' || typeof url !== 'string') {
+    return { error: 'Title and URL must be strings' };
+  }
+  const trimmedTitle = title.trim();
+  const normalizedUrl = normalizeBookmarkUrl(url);
+  if (!trimmedTitle || !normalizedUrl) {
+    return { error: 'Title and URL are required' };
+  }
+  if (normalizedUrl.length > INPUT_LIMITS.url) {
+    return { error: `URL is longer than ${INPUT_LIMITS.url} characters` };
+  }
+  if (!isValidHttpUrl(normalizedUrl)) {
+    return { error: 'Invalid URL format' };
+  }
+  if (!isOptionalString(description)) {
+    return { error: 'Description must be a string' };
+  }
+  if (tags !== undefined && tags !== null && !Array.isArray(tags)) {
+    return { error: 'Tags must be an array of strings' };
+  }
+
+  const safeTitle = clampText(trimmedTitle, INPUT_LIMITS.title);
+  const safeDescription = description ? clampText(description, INPUT_LIMITS.description) : null;
+  const names = new Set();
+  let droppedTags = 0;
+  for (const tag of tags || []) {
+    if (typeof tag !== 'string') {
+      droppedTags += 1;
+      continue;
+    }
+    const name = tag.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!name || names.has(name)) continue;
+    if (name.length > INPUT_LIMITS.tagName || names.size >= INPUT_LIMITS.tagsPerBookmark) {
+      droppedTags += 1;
+      continue;
+    }
+    names.add(name);
+  }
+
+  return {
+    value: { title: safeTitle, url: normalizedUrl, description: safeDescription, tags: [...names] },
+    truncated: safeTitle !== trimmedTitle || safeDescription !== (description || null),
+    droppedTags,
+  };
+};
+
+// Splits items into groups of at most `maxItems` whose JSON encoding stays under `maxBytes`.
+const chunkByJsonSize = (items, maxItems, maxBytes) => {
+  const chunks = [];
+  let current = [];
+  let bytes = 2;
+  for (const item of items) {
+    const size = encoder.encode(JSON.stringify(item)).byteLength + 1;
+    if (current.length && (current.length >= maxItems || bytes + size > maxBytes)) {
+      chunks.push(current);
+      current = [];
+      bytes = 2;
+    }
+    current.push(item);
+    bytes += size;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+};
+
+const findExistingBookmarkUrls = async (db, userId, urls) => {
+  const existing = new Set();
+  for (const chunk of chunkByJsonSize(urls, Infinity, IMPORT_CHUNK_BYTES)) {
+    const rows = await db
+      .prepare('SELECT url FROM bookmarks WHERE user_id = ? AND url IN (SELECT value FROM json_each(?))')
+      .bind(userId, JSON.stringify(chunk))
+      .all();
+    for (const row of rows.results || []) existing.add(row.url);
+  }
+  return existing;
+};
+
+// Three statements per chunk regardless of size: upsert the chunk's tag names, insert its
+// bookmarks in order, then link tags. The link step finds each new bookmark by position:
+// inside the batch's transaction AUTOINCREMENT hands the chunk consecutive ids ending at
+// MAX(id), and the join re-checks owner and URL so a link can never land elsewhere.
+const importChunkStatements = (db, userId, chunk) => {
+  const payload = JSON.stringify(chunk);
+  return [
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO tags (name)
+         SELECT DISTINCT tag.value FROM json_each(?) AS bm, json_each(bm.value, '$[4]') AS tag`
+      )
+      .bind(payload),
+    db
+      .prepare(
+        `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
+         SELECT ?, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
+         FROM json_each(?) ORDER BY key`
+      )
+      .bind(userId, payload),
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
+         SELECT b.id, t.id
+         FROM json_each(?) AS bm
+         JOIN bookmarks b ON b.id = (SELECT MAX(id) FROM bookmarks) - ? + 1 + bm.key
+           AND b.user_id = ? AND b.url = json_extract(bm.value, '$[1]')
+         JOIN json_each(bm.value, '$[4]') AS tag
+         JOIN tags t ON t.name = tag.value`
+      )
+      .bind(payload, chunk.length, userId),
+  ];
+};
+
+// `remainingSlots` is null for unlimited plans. Returns { summary } or { summary, failed }.
+const importBookmarks = async (db, userId, rows, remainingSlots) => {
+  const summary = {
+    imported: 0,
+    skipped: 0,
+    duplicates: 0,
+    invalid: 0,
+    truncated: 0,
+    droppedTags: 0,
+    limitReached: false,
+    invalidRows: [],
+  };
+
+  const prepared = [];
+  rows.forEach((row, index) => {
+    const result = prepareImportRow(row);
+    if (result.error) {
+      summary.invalid += 1;
+      if (summary.invalidRows.length < IMPORT_INVALID_DETAILS) {
+        summary.invalidRows.push({ index, error: result.error });
+      }
+      return;
+    }
+    if (result.truncated) summary.truncated += 1;
+    summary.droppedTags += result.droppedTags;
+    prepared.push(result.value);
+  });
+
+  const candidateUrls = new Set(prepared.flatMap((bookmark) => [bookmark.url, legacyBookmarkUrl(bookmark.url)]));
+  const existing = await findExistingBookmarkUrls(db, userId, [...candidateUrls]);
+  const seen = new Set();
+  let accepted = [];
+  for (const bookmark of prepared) {
+    if (seen.has(bookmark.url) || existing.has(bookmark.url) || existing.has(legacyBookmarkUrl(bookmark.url))) {
+      summary.duplicates += 1;
+      continue;
+    }
+    seen.add(bookmark.url);
+    accepted.push(bookmark);
+  }
+
+  let overLimit = 0;
+  if (remainingSlots !== null && accepted.length > remainingSlots) {
+    overLimit = accepted.length - remainingSlots;
+    accepted = accepted.slice(0, remainingSlots);
+    summary.limitReached = true;
+  }
+  summary.skipped = summary.invalid + summary.duplicates + overLimit;
+
+  const records = accepted.map((bookmark) => [
+    bookmark.title,
+    bookmark.url,
+    bookmark.description,
+    getFaviconUrl(bookmark.url),
+    bookmark.tags,
+  ]);
+  for (const chunk of chunkByJsonSize(records, IMPORT_CHUNK_ROWS, IMPORT_CHUNK_BYTES)) {
+    let results;
+    try {
+      results = await db.batch(importChunkStatements(db, userId, chunk));
+    } catch (error) {
+      console.error('[import] chunk failed; earlier chunks were kept:', error?.message ?? error);
+      summary.skipped += records.length - summary.imported;
+      return { summary, failed: true };
+    }
+    summary.imported += Number(results[1]?.meta?.changes || 0);
+    const expectedLinks = chunk.reduce((total, record) => total + record[4].length, 0);
+    if (Number(results[2]?.meta?.changes || 0) !== expectedLinks) {
+      console.warn('[import] tag link count mismatch', JSON.stringify({ expectedLinks, linked: results[2]?.meta?.changes }));
+    }
+  }
+
+  return { summary };
 };
 
 // --- Stripe helpers ---
@@ -3117,14 +3322,18 @@ async function handleBookmarks(request, env, segments) {
   }
 
   if (request.method === 'POST' && segments[1] === 'import') {
-    const { bookmarks } = await parseBody(request);
+    const { bookmarks } = await parseBody(request, { maxBytes: MAX_IMPORT_BODY_BYTES });
 
     if (!Array.isArray(bookmarks) || bookmarks.length === 0) {
       return jsonResponse({ error: 'bookmarks array is required' }, 400);
     }
 
-    if (bookmarks.length > 2000) {
-      return jsonResponse({ error: 'Cannot import more than 2000 bookmarks at once' }, 400);
+    if (bookmarks.length > INPUT_LIMITS.importBookmarks) {
+      return jsonResponse({ error: `Cannot import more than ${INPUT_LIMITS.importBookmarks} bookmarks at once` }, 400);
+    }
+
+    if (await isUserBudgetExhausted(db, request, auth.user.id, 'bookmark_import', [USER_RATE_LIMITS.importsPerHour])) {
+      return rateLimitedResponse('Too many imports. Please wait a while and try again.');
     }
 
     const planStatus = await getUserPlanStatus(db, auth.user.id);
@@ -3141,64 +3350,25 @@ async function handleBookmarks(request, env, segments) {
       );
     }
 
-    const results = { imported: 0, skipped: 0, limitReached: false };
-    let remainingSlots = planStatus.remainingSlots;
+    const { summary, failed } = await importBookmarks(
+      db,
+      auth.user.id,
+      bookmarks,
+      planStatus.paidTier ? null : planStatus.remainingSlots
+    );
 
-    for (const bm of bookmarks) {
-      const { title, url, description, tags } = bm || {};
-      const normalizedUrl = normalizeBookmarkUrl(url);
-
-      if (!title || !normalizedUrl || !isValidHttpUrl(normalizedUrl)) {
-        results.skipped += 1;
-        continue;
-      }
-
-      if (!planStatus.paidTier && remainingSlots <= 0) {
-        results.skipped += 1;
-        results.limitReached = true;
-        continue;
-      }
-
-      const existing = await db
-        .prepare('SELECT id FROM bookmarks WHERE user_id = ? AND url IN (?, ?)')
-        .bind(auth.user.id, normalizedUrl, legacyBookmarkUrl(normalizedUrl))
-        .first();
-
-      if (existing) {
-        results.skipped += 1;
-        continue;
-      }
-
-      const insert = await db
-        .prepare(
-          'INSERT INTO bookmarks (user_id, title, url, description, favicon_url) VALUES (?, ?, ?, ?, ?)'
-        )
-        .bind(auth.user.id, title, normalizedUrl, description || null, getFaviconUrl(normalizedUrl))
-        .run();
-
-      const bookmarkId = insert.meta.last_row_id;
-
-      if (Array.isArray(tags) && tags.length > 0) {
-        for (const tagName of tags) {
-          if (typeof tagName !== 'string') continue;
-          const sanitized = tagName.trim().toLowerCase().replace(/\s+/g, '-');
-          if (!sanitized) continue;
-          const tag = await ensureTag(db, sanitized);
-          await db
-            .prepare('INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id) VALUES (?, ?)')
-            .bind(bookmarkId, tag.id)
-            .run();
-        }
-      }
-
-      results.imported += 1;
-      if (!planStatus.paidTier) {
-        remainingSlots -= 1;
-      }
+    if (failed) {
+      return jsonResponse(
+        {
+          error: `Import stopped partway: ${summary.imported} bookmark${summary.imported === 1 ? ' was' : 's were'} saved. Importing the same file again is safe, since saved bookmarks are skipped as duplicates.`,
+          ...summary,
+        },
+        500
+      );
     }
 
     return jsonResponse({
-      ...results,
+      ...summary,
       membership_tier: planStatus.membershipTier,
       bookmark_limit: planStatus.paidTier ? null : FREE_BOOKMARK_LIMIT,
     });
