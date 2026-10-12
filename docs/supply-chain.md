@@ -1,8 +1,9 @@
 # Dependency supply-chain safeguards
 
 Settings live in `.npmrc` and `package.json`. They need **npm 11.19 or newer**
-(`npm --version`; ships with current Node 24). Older npm ignores the policy keys
-with an `Unknown project config` warning and still installs correctly from the lockfile.
+(`npm --version`; Node 24.20 ships it). Older npm ignores the `.npmrc` policy keys and
+`allowScripts` (npm 10.9.2 printed no warning for them; it warns `EBADDEVENGINES` for
+`devEngines`) and still installs correctly from the lockfile.
 
 ## What is enforced
 
@@ -77,7 +78,7 @@ that command only. Only after review, make the change in the repo through the no
 Pages (build image v3) uses Node 22.16 and the npm bundled with it, 10.9.2, per the
 [build image docs](https://developers.cloudflare.com/pages/configuration/build-image/). It installs from the
 lockfile, then runs `npm run build`. That npm does not know `min-release-age`,
-`strict-allow-scripts` or `allowScripts`, so those keys are ignored (warning only) and
+`strict-allow-scripts` or `allowScripts`, so those keys are ignored and
 dependency scripts run as they did before. It does not read `engines`/`devEngines` to select
 tooling and nothing here sets `engine-strict`, so the npm 11.19 requirement cannot fail the build.
 The lockfile is the production control: review lockfile diffs in PRs.
