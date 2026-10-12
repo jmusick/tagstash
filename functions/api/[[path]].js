@@ -945,7 +945,7 @@ const recordAuthEvent = async (db, request, eventType, { email = null, userId = 
 // CF-Connecting-IP in local dev) — the account lockout still applies to login regardless.
 const isAuthRateLimited = async (db, [eventType, max, windowMinutes], by, value) => {
   if (!value) return false;
-  const column = by === 'email' ? 'email' : 'ip';
+  const column = by === 'email' ? 'email' : by === 'user' ? 'user_id' : 'ip';
   const eventTypes = Array.isArray(eventType) ? eventType : [eventType];
   try {
     const row = await db
@@ -962,6 +962,40 @@ const isAuthRateLimited = async (db, [eventType, max, windowMinutes], by, value)
 };
 
 const rateLimitedResponse = (message) => jsonResponse({ error: message }, 429);
+
+// Per-account budgets for expensive bookmark endpoints, in the AUTH_RATE_LIMITS format and
+// counted from the same auth_events table by user_id. Soft limits like the auth ones, and
+// they fail open before migration 0012. Migration 0017 adds the (event_type, user_id,
+// created_at) index the counts use; without it they still work, just slower.
+const USER_RATE_LIMITS = {
+  metadataFetchesBurst: ['metadata_fetch', 60, 10],
+  metadataFetchesDaily: ['metadata_fetch', 1000, 24 * 60],
+  importsPerHour: ['bookmark_import', 20, 60],
+};
+// Budget events are only needed for their longest window, so prune them sooner than the
+// 30-day auth log retention.
+const USER_BUDGET_RETENTION_MINUTES = 24 * 60;
+
+// True when any of `limits` is exhausted; otherwise records one use and returns false.
+// Never throws: a missing auth_events table must not break the route.
+const isUserBudgetExhausted = async (db, request, userId, eventType, limits) => {
+  for (const limit of limits) {
+    if (await isAuthRateLimited(db, limit, 'user', userId)) return true;
+  }
+  try {
+    await db.batch([
+      db
+        .prepare('INSERT INTO auth_events (event_type, user_id, ip) VALUES (?, ?, ?)')
+        .bind(eventType, userId, getClientIp(request)),
+      db
+        .prepare('DELETE FROM auth_events WHERE event_type = ? AND user_id = ? AND created_at < datetime(\'now\', ?)')
+        .bind(eventType, userId, `-${USER_BUDGET_RETENTION_MINUTES} minutes`),
+    ]);
+  } catch {
+    // Pre-migration: nothing to count against.
+  }
+  return false;
+};
 
 // `user` is a SELECT * row, so the lockout columns are simply absent before migration 0012.
 const getLockedUntil = (user) => {
@@ -1401,35 +1435,211 @@ const isValidHttpUrl = (value) => {
   }
 };
 
+// --- Server-side metadata fetch (POST /bookmarks/meta, /meta-description) ---
+// Workers can't reach private networks, but the fetch is still bounded: public http(s)
+// destinations only (checked again on every redirect hop), HTML only, at most
+// METADATA_MAX_BYTES read (the <head> is all we scrape), one overall deadline.
+const METADATA_TIMEOUT_MS = 8000;
+const METADATA_MAX_BYTES = 512 * 1024;
+const METADATA_MAX_REDIRECTS = 5;
+const METADATA_HTML_TYPES = new Set(['text/html', 'application/xhtml+xml']);
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+// Names that only resolve inside a private network (single-label names are refused too).
+const PRIVATE_HOST_SUFFIXES = ['.localhost', '.local', '.internal', '.intranet', '.lan', '.home.arpa', '.corp'];
+
+const parseIpv4 = (host) => {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!match) return null;
+  const octets = match.slice(1).map(Number);
+  return octets.every((octet) => octet <= 255) ? octets : null;
+};
+
+const isPrivateIpv4 = ([a, b, c]) =>
+  a === 0 || // "this" network
+  a === 10 ||
+  a === 127 || // loopback
+  a >= 224 || // multicast, reserved, broadcast
+  (a === 100 && b >= 64 && b <= 127) || // carrier-grade NAT
+  (a === 169 && b === 254) || // link-local, including cloud metadata endpoints
+  (a === 172 && b >= 16 && b <= 31) ||
+  (a === 192 && b === 168) ||
+  (a === 192 && b === 0 && (c === 0 || c === 2)) || // IETF protocol assignments, TEST-NET-1
+  (a === 198 && (b === 18 || b === 19)) || // benchmarking
+  (a === 198 && b === 51 && c === 100) || // TEST-NET-2
+  (a === 203 && b === 0 && c === 113); // TEST-NET-3
+
+// Eight 16-bit groups, or null if `host` (no brackets) is not an IPv6 literal.
+const parseIpv6 = (host) => {
+  let text = host.toLowerCase();
+  const lastColon = text.lastIndexOf(':');
+  if (lastColon === -1) return null;
+  if (text.includes('.', lastColon)) {
+    const v4 = parseIpv4(text.slice(lastColon + 1));
+    if (!v4) return null;
+    text = `${text.slice(0, lastColon + 1)}${((v4[0] << 8) | v4[1]).toString(16)}:${((v4[2] << 8) | v4[3]).toString(16)}`;
+  }
+  const halves = text.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null;
+  const groups = [...head, ...Array(Math.max(missing, 0)).fill('0'), ...tail];
+  if (!groups.every((group) => /^[0-9a-f]{1,4}$/.test(group))) return null;
+  return groups.map((group) => Number.parseInt(group, 16));
+};
+
+const isPrivateIpv6 = (groups) => {
+  const [g0, g1, g2] = groups;
+  return (
+    groups.slice(0, 4).every((group) => group === 0) || // ::, ::1, IPv4-compatible and IPv4-mapped
+    (g0 === 0x64 && g1 === 0xff9b) || // NAT64
+    (g0 === 0x100 && g1 === 0 && g2 === 0) || // discard-only
+    (g0 === 0x2001 && (g1 === 0 || g1 === 0xdb8)) || // Teredo, documentation
+    (g0 === 0x2002 && isPrivateIpv4([g1 >> 8, g1 & 0xff, g2 >> 8, g2 & 0xff])) || // 6to4
+    (g0 & 0xfe00) === 0xfc00 || // unique local
+    (g0 & 0xffc0) === 0xfe80 || // link-local
+    (g0 & 0xffc0) === 0xfec0 || // site-local
+    (g0 & 0xff00) === 0xff00 // multicast
+  );
+};
+
+// `hostname` as URL#hostname gives it: lowercased, IPv4 canonicalized, IPv6 bracketed.
+const isPrivateHostname = (hostname) => {
+  const host = hostname.toLowerCase().replace(/\.$/, '');
+  if (host.startsWith('[')) {
+    const groups = host.endsWith(']') ? parseIpv6(host.slice(1, -1)) : null;
+    return !groups || isPrivateIpv6(groups);
+  }
+  const v4 = parseIpv4(host);
+  if (v4) return isPrivateIpv4(v4);
+  if (/^[\d.]+$/.test(host) || !host.includes('.')) return true;
+  return PRIVATE_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix));
+};
+
+// Returns { url } for a public http(s) destination, or { error }.
+const checkMetadataTarget = (value, base) => {
+  let parsed;
+  try {
+    parsed = new URL(value, base);
+  } catch {
+    return { error: 'Invalid URL format' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { error: 'Only http and https URLs can be fetched' };
+  }
+  if (parsed.username || parsed.password) {
+    return { error: 'URLs containing credentials cannot be fetched' };
+  }
+  if (!parsed.hostname || isPrivateHostname(parsed.hostname)) {
+    return { error: 'Local and private network addresses cannot be fetched' };
+  }
+  return { url: parsed };
+};
+
+const discardBody = (response) => {
+  response.body?.cancel().catch(() => {});
+};
+
+// Decodes at most `maxBytes` of the body, stopping early once </head> has arrived, and
+// cancels the rest of the stream so an oversized page is never buffered.
+const readHtmlHead = async (response, maxBytes) => {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const headEnd = /<\/head\s*>/gi;
+  let received = 0;
+  let html = '';
+  try {
+    while (received < maxBytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = value.byteLength > maxBytes - received ? value.subarray(0, maxBytes - received) : value;
+      received += chunk.byteLength;
+      headEnd.lastIndex = Math.max(0, html.length - 16);
+      html += decoder.decode(chunk, { stream: true });
+      if (headEnd.test(html)) break;
+    }
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return html + decoder.decode();
+};
+
+const metadataBudgetExhausted = (db, request, userId) =>
+  isUserBudgetExhausted(db, request, userId, 'metadata_fetch', [
+    USER_RATE_LIMITS.metadataFetchesBurst,
+    USER_RATE_LIMITS.metadataFetchesDaily,
+  ]);
+
+const metadataRateLimitedResponse = () =>
+  rateLimitedResponse('Too many page lookups. Please wait a few minutes and try again.');
+
 const fetchSiteMetadata = async (url) => {
   if (!url || typeof url !== 'string') {
     return { error: 'A valid URL is required', status: 400 };
+  }
+  if (url.length > INPUT_LIMITS.url) {
+    return { error: `URL must be ${INPUT_LIMITS.url} characters or less`, status: 400 };
+  }
+  // Checked on the raw input: normalizeBookmarkUrl rebuilds bare roots from the origin,
+  // which would silently drop the userinfo instead of refusing it.
+  if (/^(?:[a-z][a-z\d+.-]*:)?\/*[^/?#\s]*@/i.test(url.trim())) {
+    return { error: 'URLs containing credentials cannot be fetched', status: 400 };
   }
 
   const normalizedUrl = normalizeBookmarkUrl(url);
   if (!normalizedUrl || !isValidHttpUrl(normalizedUrl)) {
     return { error: 'Invalid URL format', status: 400 };
   }
+  const initial = checkMetadataTarget(normalizedUrl);
+  if (initial.error) {
+    return { error: initial.error, status: 400 };
+  }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  const timeoutId = setTimeout(() => controller.abort(), METADATA_TIMEOUT_MS);
 
   try {
-    const response = await fetch(normalizedUrl, {
-      headers: FETCH_HEADERS,
-      redirect: 'follow',
-      signal: controller.signal,
-    });
+    let target = initial.url;
+    let response;
+    for (let redirects = 0; ; redirects += 1) {
+      // Redirects are followed by hand so every hop is checked before it is requested.
+      response = await fetch(target.href, { headers: FETCH_HEADERS, redirect: 'manual', signal: controller.signal });
+      const location = REDIRECT_STATUSES.has(response.status) ? response.headers.get('Location') : null;
+      if (!location) break;
+      discardBody(response);
+      if (redirects >= METADATA_MAX_REDIRECTS) {
+        return { error: 'The site redirected too many times', status: 502 };
+      }
+      const next = checkMetadataTarget(location, target);
+      if (next.error) {
+        return { error: `The site redirected to a URL that cannot be fetched: ${next.error}`, status: 502 };
+      }
+      target = next.url;
+    }
 
-    const html = await response.text();
+    const contentType = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+    if (!METADATA_HTML_TYPES.has(contentType)) {
+      discardBody(response);
+      if (!response.ok) {
+        return { ok: false, status: response.status, title: null, description: null };
+      }
+      return { error: 'This URL did not return an HTML page', status: 422 };
+    }
+
+    const html = await readHtmlHead(response, METADATA_MAX_BYTES);
+    const title = extractPageTitle(html);
+    const description = extractMetaDescription(html);
     return {
       ok: response.ok,
       status: response.status,
-      title: extractPageTitle(html),
-      description: extractMetaDescription(html),
+      // Clamped so a scraped value always fits back into the bookmark form's limits.
+      title: title && clampText(title, INPUT_LIMITS.title),
+      description: description && clampText(description, INPUT_LIMITS.description),
     };
   } catch (error) {
-    if (error?.name === 'AbortError') {
+    if (error?.name === 'AbortError' || controller.signal.aborted) {
       return { error: 'Timed out while fetching site metadata', status: 504 };
     }
     return { error: 'Server error fetching site metadata', status: 500 };
@@ -2448,7 +2658,7 @@ async function handleAuth(request, env, segments) {
       .prepare(
         `SELECT e.id, e.event_type, e.email, e.user_id, e.ip, e.created_at, ${actorSelect}
          FROM auth_events e ${actorJoin}
-         WHERE e.event_type NOT IN ('register_attempt', 'verification_resend_requested')
+         WHERE e.event_type NOT IN ('register_attempt', 'verification_resend_requested', 'metadata_fetch', 'bookmark_import')
          ORDER BY e.id DESC
          LIMIT 200`
       )
@@ -2841,6 +3051,7 @@ async function handleBookmarks(request, env, segments) {
 
   if (request.method === 'POST' && segments[1] === 'meta-description') {
     const { url } = await parseBody(request);
+    if (await metadataBudgetExhausted(db, request, auth.user.id)) return metadataRateLimitedResponse();
     const metadata = await fetchSiteMetadata(url);
 
     if (metadata.error) {
@@ -2864,6 +3075,7 @@ async function handleBookmarks(request, env, segments) {
 
   if (request.method === 'POST' && segments[1] === 'meta') {
     const { url } = await parseBody(request);
+    if (await metadataBudgetExhausted(db, request, auth.user.id)) return metadataRateLimitedResponse();
     const metadata = await fetchSiteMetadata(url);
 
     if (metadata.error) {
