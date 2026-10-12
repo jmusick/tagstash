@@ -13,7 +13,7 @@ const addToken = (env, token, expiresAt = new Date(Date.now() + 3600000).toISOSt
     .run('sha256:' + digest(token), digest(token), expiresAt);
 const verified = (env) => env.sqlite.prepare('SELECT email_verified FROM users WHERE id = 1').get().email_verified;
 
-test('concurrent redemptions of one verification link: exactly one wins and gets a session', async () => {
+test('concurrent redemptions of one verification link: exactly one wins and nobody gets a session', async () => {
   const env = await createAuthEnv({ queryLatency: true });
   try {
     env.sqlite.exec('UPDATE users SET email_verified = 0');
@@ -26,7 +26,9 @@ test('concurrent redemptions of one verification link: exactly one wins and gets
     }));
     const winners = results.filter((r) => r.status === 200);
     assert.equal(winners.length, 1);
-    assert.ok(winners[0].cookie || winners[0].token, 'the winner is signed in');
+    // A verification link proves inbox access only: even the winner must sign in with a password.
+    assert.equal(winners[0].cookie, null);
+    assert.equal(winners[0].token, undefined);
     for (const loser of results.filter((r) => r.status !== 200)) {
       assert.equal(loser.status, 400);
       assert.equal(loser.cookie, null);

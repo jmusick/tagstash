@@ -154,6 +154,24 @@ test('a suspended user can still sign in, but cannot set profile_public=1 until 
   } finally { env.sqlite.close(); }
 });
 
+test('suspending signs the account out everywhere; the owner can sign back in', async () => {
+  const env = await setup();
+  try {
+    const owner = await insertUser(env, 'signedin', { password: OTHER_PASSWORD });
+    const before = await sessionFor(env, 'signedin@example.com', OTHER_PASSWORD);
+    assert.equal((await call(env, 'auth/me', { headers: before })).status, 200);
+
+    const admin = await sessionFor(env, 'session@example.com', env.password);
+    assert.equal((await call(env, `auth/admin/users/${owner}/suspend`, { method: 'POST', headers: admin })).status, 200);
+
+    assert.equal((await call(env, 'auth/me', { headers: before })).status, 403);
+    const after = await sessionFor(env, 'signedin@example.com', OTHER_PASSWORD);
+    assert.equal((await call(env, 'auth/me', { headers: after })).status, 200);
+    // The admin's own session is untouched.
+    assert.equal((await call(env, 'auth/me', { headers: admin })).status, 200);
+  } finally { env.sqlite.close(); }
+});
+
 test('unsuspending does not re-publish a profile an admin made private', async () => {
   const env = await setup();
   try {

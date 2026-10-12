@@ -200,7 +200,7 @@ test('expired sessions and deleted users cannot authenticate', async () => {
   } finally { env.sqlite.close(); }
 });
 
-test('verification and reset issue cookies, and reset revokes the previous session', async () => {
+test('verification issues no session; reset issues a cookie and revokes the previous session', async () => {
   const env = await createAuthEnv();
   try {
     const expiry = new Date(Date.now() + 3600000).toISOString();
@@ -208,8 +208,14 @@ test('verification and reset issue cookies, and reset revokes the previous sessi
     env.sqlite.prepare('INSERT INTO email_verification_tokens (user_id, token, token_hash, expires_at) VALUES (1, ?, ?, ?)').run('sha256:' + digest('verification-test'), digest('verification-test'), expiry);
     const verified = await call(env, 'auth/verify-email?token=verification-test', { headers: webHeaders });
     assert.equal(verified.status, 200);
-    assert.equal((await verified.json()).token, undefined);
-    const cookie = cookieFrom(verified);
+    const verifiedBody = await verified.json();
+    assert.equal(verifiedBody.token, undefined);
+    assert.equal(verifiedBody.verified, true);
+    assert.equal(verified.headers.get('Set-Cookie'), null);
+    assert.equal(env.sqlite.prepare('SELECT email_verified FROM users WHERE id = 1').get().email_verified, 1);
+    const login = await call(env, 'auth/login', { method: 'POST', headers: webHeaders, body: { email: 'session@example.com', password: env.password } });
+    assert.equal(login.status, 200);
+    const cookie = cookieFrom(login);
     assert.equal((await call(env, 'auth/me', { headers: { Cookie: cookie } })).status, 200);
     env.sqlite.prepare('INSERT INTO password_reset_tokens (user_id, token, token_hash, expires_at) VALUES (1, ?, ?, ?)').run('sha256:' + digest('reset-test'), digest('reset-test'), expiry);
     const reset = await call(env, 'auth/reset-password', { method: 'POST', headers: webHeaders, body: { token: 'reset-test', password: 'reset-session-password' } });

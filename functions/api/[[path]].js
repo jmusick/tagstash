@@ -2312,8 +2312,8 @@ async function handleAuth(request, env, segments) {
 
     // Atomic single-use claim, as for email-change and reset links: the token update only
     // matches while the token is still unused and unexpired, so of any number of simultaneous
-    // redemptions exactly one wins (and gets the session below). Both statements run in one
-    // D1 batch (a transaction), and the user is only marked verified if this claim won.
+    // redemptions exactly one wins. Both statements run in one D1 batch (a transaction), and
+    // the user is only marked verified if this claim won.
     const nowIso = new Date().toISOString();
     const [claim] = await db.batch([
       db
@@ -2330,28 +2330,9 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'This verification link has already been used or has expired.' }, 400);
     }
 
-    const hasProfilePublicColumnForVerify = await usersTableHasColumn(db, 'profile_public');
-    const hasThemeColumnForVerify = await usersTableHasColumn(db, 'theme');
-    const hasLinkTargetColumnForVerify = await usersTableHasColumn(db, 'link_target');
-    const verifiedUserQuery = `SELECT id, username, email, membership_tier, role, ${hasProfilePublicColumnForVerify ? 'profile_public' : '0 AS profile_public'}, ${hasThemeColumnForVerify ? 'theme' : 'NULL AS theme'}, ${hasLinkTargetColumnForVerify ? 'link_target' : 'NULL AS link_target'} FROM users WHERE id = ?`;
-
-    const verifiedUser = await db
-      .prepare(verifiedUserQuery)
-      .bind(record.user_id)
-      .first();
-
-    if (!verifiedUser) {
-      return jsonResponse({ error: 'Invalid or expired verification link.' }, 400);
-    }
-    verifiedUser.profile_public = Number(verifiedUser.profile_public || 0);
-
-    const authToken = await signUserToken(verifiedUser, env, request);
-
-    return sessionResponse(request, {
-      message: 'Email verified successfully.',
-      token: authToken,
-      user: verifiedUser,
-    });
+    // A verification link proves inbox access only, so (like an email-change link) it issues
+    // no session: whoever holds the link must still sign in with the account's password.
+    return jsonResponse({ message: 'Email verified successfully. Please sign in.', verified: true });
   }
 
   if (request.method === 'POST' && segments[1] === 'resend-verification') {
@@ -2959,6 +2940,8 @@ async function handleAuth(request, env, segments) {
       'make-private': 'admin_profile_made_private',
     };
     if (changed) {
+      // Suspension also signs the account out everywhere (web cookies and extension tokens).
+      if (action === 'suspend') await bumpTokenVersion(db, targetId);
       await recordModerationEvent(db, request, eventTypes[action], targetUser, access.adminUser);
     }
 
