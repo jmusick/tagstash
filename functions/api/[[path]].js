@@ -967,6 +967,29 @@ const getUserPlanStatus = async (db, userId) => {
   };
 };
 
+// Inserts a bookmark only while the owner is on the paid tier or still under the free limit.
+// The plan/count check and the insert are ONE statement, so simultaneous saves can't all pass
+// the same stale count (count-then-insert let parallel requests overshoot the limit). Returns
+// the new id, or null when the free limit is reached.
+const insertBookmarkWithinPlan = async (db, userId, { title, url, description, faviconUrl }) => {
+  const result = await db
+    .prepare(
+      `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
+       SELECT ?1, ?2, ?3, ?4, ?5
+       WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?6
+          OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1) < ?7`
+    )
+    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT)
+    .run();
+  return result.meta?.changes ? result.meta.last_row_id : null;
+};
+
+const freeLimitResponse = () =>
+  jsonResponse(
+    { error: `Free users can save up to ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks.` },
+    403
+  );
+
 const getTagsByBookmarkId = async (db, userId, { publicOnly = false, hasIsPrivateColumn } = {}) => {
   let whereClause = 'WHERE b.user_id = ?';
   if (publicOnly) {
@@ -2786,25 +2809,24 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: 'User not found' }, 404);
     }
 
+    // Fast path for the common case; insertBookmarkWithinPlan re-checks atomically.
     if (!planStatus.paidTier && planStatus.bookmarkCount >= FREE_BOOKMARK_LIMIT) {
-      return jsonResponse(
-        {
-          error: `Free users can save up to ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks.`,
-        },
-        403
-      );
+      return freeLimitResponse();
     }
 
-    const insert = await db
-      .prepare(
-        'INSERT INTO bookmarks (user_id, title, url, description, favicon_url) VALUES (?, ?, ?, ?, ?)'
-      )
-      .bind(auth.user.id, title, normalizedUrl, description || null, getFaviconUrl(normalizedUrl))
-      .run();
+    const bookmarkId = await insertBookmarkWithinPlan(db, auth.user.id, {
+      title,
+      url: normalizedUrl,
+      description: description || null,
+      faviconUrl: getFaviconUrl(normalizedUrl),
+    });
+    if (!bookmarkId) {
+      return freeLimitResponse();
+    }
 
     const bookmark = await db
       .prepare('SELECT * FROM bookmarks WHERE id = ?')
-      .bind(insert.meta.last_row_id)
+      .bind(bookmarkId)
       .first();
 
     let bookmarkTags = [];
