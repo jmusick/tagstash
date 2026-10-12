@@ -169,6 +169,10 @@ Tags everywhere (cards, tag rack, filters, tag inputs, Tags page, home demo) ren
 
 The browser extension has its own equivalent setting (sidebar cog → "Open bookmarks in"), stored in `browser.storage.local` and **deliberately never synced with this one** — unlike `theme`, which the extension mirrors from the account. Don't "fix" that asymmetry by making the extension read `user.link_target`.
 
+## Dependency installs
+
+Use `npm ci` on a clean checkout. `.npmrc` sets a 7-day `min-release-age` and `strict-allow-scripts`; `package.json` `allowScripts` denies esbuild/workerd install scripts (not needed). These need npm 11.19+; Cloudflare Pages runs npm 10.9.2, which ignores them and installs from the lockfile. A new dependency with an install script fails the install until reviewed. Workflow and bypass procedure: `docs/supply-chain.md`.
+
 ## Local dev workflow
 
 ```bash
