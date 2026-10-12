@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from 'react'
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { Star, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import TagCloud from './TagCloud'
 import { decodeHtmlEntities } from '../utils/decodeHtmlEntities'
@@ -6,6 +6,13 @@ import { getRegistrableDomain } from '../utils/domain'
 import { DEFAULT_LINK_TARGET, linkTargetProps } from '../utils/linkTarget'
 import { BookmarkTagList } from './BookmarkParts'
 import { displayUrl, formatSavedDate } from '../utils/bookmarkDisplay'
+
+// Honor the OS "reduce motion" setting for script-driven scrolling; CSS
+// scroll-behavior is already neutralised in index.css, but an explicit
+// behavior: 'smooth' passed to scrollIntoView bypasses that.
+const prefersReducedMotion = () => (
+  typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+)
 
 function DefaultCard({ bookmark, linkTarget, selectedTags, onTagSelect }) {
   const displayTitle = decodeHtmlEntities(bookmark.title || '')
@@ -60,6 +67,8 @@ function BookmarkBrowser({
   const [itemsPerPage, setItemsPerPage] = useState(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [domainFilter, setDomainFilter] = useState(null)
+  const [pageAnnouncement, setPageAnnouncement] = useState('')
+  const resultsHeadingRef = useRef(null)
 
   useEffect(() => {
     onSelectedTagsChange?.(selectedTags)
@@ -138,6 +147,7 @@ function BookmarkBrowser({
 
   useEffect(() => {
     setCurrentPage(1)
+    setPageAnnouncement('')
   }, [searchTerm, selectedTags, sortBy, sortDirection, itemsPerPage, domainFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredBookmarks.length / itemsPerPage))
@@ -147,6 +157,15 @@ function BookmarkBrowser({
       setCurrentPage(totalPages)
     }
   }, [currentPage, totalPages])
+
+  // Pager buttons sit above and below the grid and the one that was pressed may
+  // become disabled, so after a page change move focus to the top of the results
+  // and announce the new page.
+  const handlePageChange = (page) => {
+    setCurrentPage(page)
+    setPageAnnouncement(`Page ${page} of ${totalPages}`)
+    resultsHeadingRef.current?.focus()
+  }
 
   const paginatedBookmarks = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage
@@ -181,7 +200,7 @@ function BookmarkBrowser({
     if (!focusBookmarkId) return
     if (!paginatedBookmarks.some((bookmark) => bookmark.id === focusBookmarkId)) return
     const el = document.getElementById(`bookmark-${focusBookmarkId}`)
-    el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' })
   }, [focusBookmarkId, paginatedBookmarks])
 
   const handleTagSelect = (tagName) => {
@@ -282,6 +301,8 @@ function BookmarkBrowser({
         {children}
 
         <div className="bookmarks-section">
+          <h2 ref={resultsHeadingRef} tabIndex={-1} className="sr-only">Bookmarks</h2>
+          <p className="sr-only" role="status">{pageAnnouncement}</p>
           {filteredBookmarks.length > 0 && (
             <div className="results-bar">
               <p className="results-count" aria-live="polite">
@@ -326,7 +347,7 @@ function BookmarkBrowser({
                   </select>
                 </div>
                 {totalPages > 1 && (
-                  <Pager currentPage={currentPage} totalPages={totalPages} onChange={setCurrentPage} />
+                  <Pager currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
                 )}
               </div>
             </div>
@@ -366,7 +387,7 @@ function BookmarkBrowser({
               </div>
               {totalPages > 1 && (
                 <div className="results-bar results-bar--bottom">
-                  <Pager currentPage={currentPage} totalPages={totalPages} onChange={setCurrentPage} />
+                  <Pager currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
                 </div>
               )}
             </>

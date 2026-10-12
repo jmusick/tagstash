@@ -40,8 +40,9 @@
   margin-bottom: 1.5rem;
 }
 
-.settings-header h2 {
+.settings-header h1 {
   margin: 0;
+  font-size: 1.5rem;
   color: var(--color-text);
 }
 

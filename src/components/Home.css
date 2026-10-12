@@ -36,8 +36,9 @@
   margin-left: auto;
 }
 
-.home-features-link { margin-left: auto; margin-right: 1.5rem; color: var(--color-link); text-decoration: none; }
-.home-features-link + .home-theme-toggle { margin-left: 0; }
+.home-topnav { margin-left: auto; margin-right: 1.5rem; }
+.home-features-link { color: var(--color-link); text-decoration: none; }
+.home-topnav + .home-theme-toggle { margin-left: 0; }
 .home-features-detail-link { display: inline-block; margin-top: 1.5rem; color: var(--color-link); }
 
 /* ---------- Hero ----------

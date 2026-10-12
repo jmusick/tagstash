@@ -32,7 +32,12 @@ function ThemeSelector({ theme, onSelectTheme, className = '', size = 16 }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              if (!expanded) {
+              // Collapsed, the active button only reveals the options (a pointer
+              // affordance; re-selecting the current theme is a no-op anyway).
+              // Any other button is always real: the "hidden" ones are still in
+              // the accessibility tree, and a screen reader's activate can click
+              // them without the focus/hover events that expand the control.
+              if (!expanded && isActive) {
                 expand()
                 return
               }

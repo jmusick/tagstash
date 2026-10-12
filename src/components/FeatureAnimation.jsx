@@ -60,7 +60,7 @@ export default function FeatureAnimation({ clips }) {
           {failed && <p role="status">This animation could not load. You can still read the walkthrough below.</p>}
         </div>
         <div className="feature-animation-actions">
-          <button type="button" onClick={() => setPlaying(value => !value)} aria-label={`${playing ? 'Pause' : 'Play'} ${clip.title.toLowerCase()} animation`}>{playing ? 'Pause animation' : 'Play animation'}</button>
+          <button type="button" onClick={() => setPlaying(value => !value)} aria-label={`${playing ? 'Pause' : 'Play'} animation: ${clip.title.toLowerCase()}`}>{playing ? 'Pause animation' : 'Play animation'}</button>
           <a href={`/feature-demos/${clip.id}.mp4`} target="_blank" rel="noopener noreferrer">View larger</a>
         </div>
       </figcaption>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
-import { Routes, Route, Link, useNavigate } from 'react-router-dom'
+import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { version } from '../package.json'
 import './App.css'
 import { useAuth } from './context/AuthContext'
@@ -7,6 +7,8 @@ import Home from './components/Home'
 import BookmarkBrowser from './components/BookmarkBrowser'
 import AppHeader from './components/AppHeader'
 import AppFooter from './components/AppFooter'
+import RouteAnnouncer from './components/RouteAnnouncer'
+import { useDocumentMeta } from './utils/useDocumentMeta'
 import { authAPI, bookmarksAPI, billingAPI } from './api/api'
 
 // Lazy + catch rather than a static import: if a content blocker ever blocks this
@@ -93,6 +95,10 @@ function App() {
   const [browserResetKey, setBrowserResetKey] = useState(0)
   const [focusBookmarkId, setFocusBookmarkId] = useState(null)
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  // The signed-in bookmark view had no title of its own, so it kept the previous
+  // page's (e.g. "Manage Tags") and route announcements read the wrong one.
+  useDocumentMeta({ title: 'Bookmarks - Tagstash', path: '/', noindex: true, enabled: !!user && pathname === '/' })
   const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
@@ -354,7 +360,10 @@ function App() {
 
   const handleAddTagDraftKeyDown = (e) => {
     if (e.key === 'Tab') {
-      if (!addTagSuggestion) return
+      // Only a plain Tab accepts the suggestion, and only when it can actually be
+      // locked in; otherwise Tab/Shift+Tab must keep moving focus (no keyboard trap).
+      if (!addTagSuggestion || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
+      if (buildTagList(formData.tags, addTagSuggestion).invalidTag) return
 
       e.preventDefault()
       setError('')
@@ -373,7 +382,8 @@ function App() {
 
   const handleEditTagDraftKeyDown = (e) => {
     if (e.key === 'Tab') {
-      if (!editTagSuggestion) return
+      if (!editTagSuggestion || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return
+      if (buildTagList(editFormData.tags, editTagSuggestion).invalidTag) return
 
       e.preventDefault()
       setError('')
@@ -957,6 +967,7 @@ function App() {
   return (
     <>
     <a className="skip-link" href="#main">Skip to content</a>
+    <RouteAnnouncer />
     <Suspense fallback={<div className="loading-container"><p>Loading...</p></div>}>
       <Routes>
         <Route path="/verify-email" element={<VerifyEmail logoSrc={logoSrc} />} />
@@ -1080,6 +1091,8 @@ function App() {
                 className="btn-primary"
                 onClick={() => setShowAddForm(!showAddForm)}
                 disabled={isFreeLimitReached && !showAddForm}
+                aria-expanded={showAddForm}
+                aria-controls="add-bookmark-form"
               >
                 {!showAddForm && <Plus size={16} className="btn-icon" />}
                 <span>{showAddForm ? 'Cancel' : 'Add bookmark'}</span>
@@ -1087,6 +1100,7 @@ function App() {
             </>
           )}
         >
+          <h1 className="sr-only">Your bookmarks</h1>
           {billingMessage === 'success' && (
             <div className="billing-banner billing-banner--success">
               <span>Your subscription is active. Welcome to Pro.</span>
@@ -1114,7 +1128,7 @@ function App() {
           )}
 
           {showAddForm && (
-            <div className="add-bookmark-form">
+            <div className="add-bookmark-form" id="add-bookmark-form">
               <h2>Add a bookmark</h2>
               {isFreeLimitReached && (
                 <p className="usage-limit-warning">
@@ -1247,6 +1261,7 @@ function App() {
                   <button
                     type="button"
                     className={`upgrade-plan-btn ${usageUpgradePlan === 'monthly' ? 'active' : ''}`}
+                    aria-pressed={usageUpgradePlan === 'monthly'}
                     onClick={() => setUsageUpgradePlan('monthly')}
                     disabled={startingUpgrade}
                   >
@@ -1255,6 +1270,7 @@ function App() {
                   <button
                     type="button"
                     className={`upgrade-plan-btn ${usageUpgradePlan === 'annual' ? 'active' : ''}`}
+                    aria-pressed={usageUpgradePlan === 'annual'}
                     onClick={() => setUsageUpgradePlan('annual')}
                     disabled={startingUpgrade}
                   >
