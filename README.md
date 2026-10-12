@@ -285,14 +285,16 @@ These use an isolated in-memory database and never access production.
 - `PUT /api/bookmarks/:id`
 - `DELETE /api/bookmarks/:id`
 - `GET /api/bookmarks/by-url` — lookup by exact URL, used to detect duplicates (e.g. from the browser extension)
-- `POST /api/bookmarks/meta` — fetch a page's title metadata
-- `POST /api/bookmarks/meta-description` — fetch a page's description metadata
-- `POST /api/bookmarks/import`
+- `POST /api/bookmarks/meta` — fetch a page's title metadata (public http(s) pages only; rate limited per account)
+- `POST /api/bookmarks/meta-description` — fetch a page's description metadata (same rules)
+- `POST /api/bookmarks/import` — up to 2000 bookmarks per request; reports `imported`, `skipped`, `duplicates`, `invalid` (with `invalidRows`), `truncated` and `droppedTags`
 - `GET /api/bookmarks/tags/all`
 - `POST /api/bookmarks/tags/merge`
 - `POST /api/bookmarks/tags/:id/favorite`
 - `POST /api/bookmarks/:id/favorite`
 - `POST /api/bookmarks/:id/private`
+
+Request bodies must be JSON objects sent as `application/json` (415 otherwise) and are capped in size (413). Fields are type-checked and length-limited — bookmark title 1000 characters, URL 8192, description 10000, tags 100 characters each and 50 per bookmark — and an invalid create or update returns 400 without changing anything.
 
 ### Public Profiles
 
