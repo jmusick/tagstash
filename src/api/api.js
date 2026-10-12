@@ -77,6 +77,10 @@ export const authAPI = {
   adminDeleteUser: (id) =>
     api.delete(`/auth/admin/users/${id}`),
 
+  // action: 'suspend' | 'unsuspend' | 'make-private'
+  adminModerateUser: (id, action) =>
+    api.post(`/auth/admin/users/${id}/${action}`),
+
   adminListAuthEvents: () =>
     api.get('/auth/admin/auth-events'),
 };

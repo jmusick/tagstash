@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
-import { X, KeyRound, Copy, Ban, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
+import { X, KeyRound, Copy, Ban, EyeOff, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
 import Import from './Import';
 import Export from './Export';
 import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../utils/linkTarget';
@@ -17,7 +17,7 @@ function Settings({
 }) {
   useDocumentMeta({ title: 'Settings - Tagstash', path: '/settings', noindex: true, enabled: pageMode });
 
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshCurrentUser } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
   const currentMembershipTier = user?.membership_tier || user?.membershipTier || 'free';
   const [activeTab, setActiveTab] = useState('username');
@@ -27,6 +27,8 @@ function Settings({
   const [adminUserQuery, setAdminUserQuery] = useState('');
   const [savingAdminUserId, setSavingAdminUserId] = useState(null);
   const [deletingAdminUserId, setDeletingAdminUserId] = useState(null);
+  const [moderatingAdminUserId, setModeratingAdminUserId] = useState(null);
+  const [moderationAvailable, setModerationAvailable] = useState(true);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
   const [apiKeys, setApiKeys] = useState([]);
@@ -173,6 +175,7 @@ function Settings({
       setLoadingAdminUsers(true);
       const response = await authAPI.adminListUsers();
       setAdminUsers(response.data.users || []);
+      setModerationAvailable(response.data.moderationAvailable !== false);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to fetch users');
     } finally {
@@ -247,6 +250,33 @@ function Settings({
     }
   };
 
+  const MODERATION_CONFIRMATIONS = {
+    suspend: (member) =>
+      `Suspend ${member.email}? Their public profile will be hidden everywhere and they won't be able to make it public again until unsuspended. They can still sign in and use their bookmarks.`,
+    'make-private': (member) =>
+      `Make ${member.email}'s profile private? They can turn it back on unless their account is suspended.`,
+  };
+
+  const handleModerateAdminUser = async (member, action) => {
+    const confirmMessage = MODERATION_CONFIRMATIONS[action];
+    if (confirmMessage && !window.confirm(confirmMessage(member))) {
+      return;
+    }
+
+    try {
+      setModeratingAdminUserId(member.id);
+      setError('');
+      setSuccess('');
+      const response = await authAPI.adminModerateUser(member.id, action);
+      setSuccess(response.data.message);
+      await Promise.all([fetchAdminUsers(), fetchAuthEvents()]);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update account');
+    } finally {
+      setModeratingAdminUserId(null);
+    }
+  };
+
   const filteredAdminUsers = useMemo(() => {
     const query = adminUserQuery.trim().toLowerCase();
     if (!query) return adminUsers;
@@ -259,6 +289,8 @@ function Settings({
         member.membership_tier,
         member.role,
         member.bookmark_count,
+        member.suspended_at ? 'suspended' : '',
+        member.profile_public ? 'public' : '',
       ]
         .map((value) => String(value ?? '').toLowerCase())
         .join(' ');
@@ -456,11 +488,24 @@ function Settings({
       updateUser({ ...user, profile_public: nextValue ? 1 : 0 });
       setSuccess(nextValue ? 'Public profile enabled' : 'Public profile disabled');
     } catch (err) {
+      if (err.response?.data?.suspended) {
+        updateUser({ ...user, suspended: true });
+      }
       setError(err.response?.data?.error || 'Failed to update public profile setting');
     } finally {
       setLoading(false);
     }
   };
+
+  // The login response doesn't carry the moderation state, so re-read /auth/me when the
+  // Public Profile tab opens; a suspension then shows its notice without a reload.
+  const isPublicProfileTab = activeTab === 'publicProfile';
+  useEffect(() => {
+    if (!isPublicProfileTab) return;
+    refreshCurrentUser?.().catch(() => {});
+  }, [isPublicProfileTab, refreshCurrentUser]);
+
+  const isSuspended = Boolean(user?.suspended);
 
   const publicProfileUrl = `${window.location.origin}/u/${user?.username || ''}`;
   const publicApiUrl = (() => {
@@ -734,17 +779,24 @@ function Settings({
               by tag. All bookmarks are included by default &mdash; mark individual bookmarks
               private from your bookmark list to keep them out of your public profile.
             </p>
+            {isSuspended && (
+              <p className="settings-suspended-notice" role="note">
+                Your account has been suspended, so your profile is hidden and can&apos;t be made
+                public. Your bookmarks are unaffected. If you think this is a mistake,{' '}
+                <a href="/support">contact support</a>.
+              </p>
+            )}
             <label className="toggle-row">
               <input
                 type="checkbox"
                 checked={Boolean(user?.profile_public)}
                 onChange={handleTogglePublicProfile}
-                disabled={loading}
+                disabled={loading || (isSuspended && !user?.profile_public)}
               />
               <span>Make my profile public</span>
             </label>
 
-            {Boolean(user?.profile_public) && (
+            {Boolean(user?.profile_public) && !isSuspended && (
               <>
                 <div className="public-profile-link">
                   <input
@@ -1033,6 +1085,8 @@ function Settings({
           <div className="admin-users-panel">
             <p className="admin-users-description">
               Manage account access. Free users are limited to 50 bookmarks; paid users are unlimited.
+              Public profiles below the indexing bar are served with noindex and left out of the
+              sitemap. Suspending an account hides its profile; the owner can still sign in.
             </p>
 
             <div className="admin-users-search-wrap">
@@ -1088,6 +1142,24 @@ function Settings({
                         <p className="admin-user-stripe-id">
                           Stripe: <code>{member.stripe_customer_id}</code>
                         </p>
+                      )}
+                      <p className="admin-user-profile">
+                        Profile:{' '}
+                        {member.suspended_at
+                          ? 'hidden (suspended)'
+                          : member.profile_public
+                            ? (
+                              <>
+                                <a href={`/u/${encodeURIComponent(member.username)}`} target="_blank" rel="noopener noreferrer">
+                                  public
+                                </a>
+                                {member.meets_indexing_bar ? ', indexed' : ', noindex (below bar)'}
+                              </>
+                            )
+                            : 'private'}
+                      </p>
+                      {member.suspended_at && (
+                        <p className="admin-user-suspended">Suspended {member.suspended_at} UTC</p>
                       )}
                     </div>
 
@@ -1148,6 +1220,54 @@ function Settings({
                           {deletingAdminUserId === member.id ? 'Deleting...' : 'Delete'}
                         </button>
                       </div>
+
+                      <div className="admin-user-actions">
+                        <button
+                          type="button"
+                          className="btn-secondary"
+                          onClick={() => handleModerateAdminUser(member, 'make-private')}
+                          disabled={moderatingAdminUserId === member.id || !member.profile_public}
+                          title={member.profile_public ? 'Turn this profile private' : 'Profile is already private'}
+                        >
+                          <EyeOff size={14} className="btn-icon" />
+                          Make private
+                        </button>
+
+                        {member.suspended_at ? (
+                          <button
+                            type="button"
+                            className="btn-secondary"
+                            onClick={() => handleModerateAdminUser(member, 'unsuspend')}
+                            disabled={moderatingAdminUserId === member.id}
+                            title="Allow this account to publish a profile again (does not re-publish it)"
+                          >
+                            <CheckCircle size={14} className="btn-icon" />
+                            Unsuspend
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn-primary btn-danger"
+                            onClick={() => handleModerateAdminUser(member, 'suspend')}
+                            disabled={
+                              moderatingAdminUserId === member.id ||
+                              !moderationAvailable ||
+                              member.id === user?.id ||
+                              member.role === 'super_admin'
+                            }
+                            title={
+                              !moderationAvailable
+                                ? 'Suspension needs database migration 0016'
+                                : member.id === user?.id || member.role === 'super_admin'
+                                  ? 'Super admin accounts cannot be suspended'
+                                  : 'Hide this account’s public profile and block re-publishing'
+                            }
+                          >
+                            <Ban size={14} className="btn-icon" />
+                            Suspend
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1156,7 +1276,8 @@ function Settings({
 
             <h3 className="admin-events-heading">Recent security events</h3>
             <p className="admin-users-description">
-              Failed logins, lockouts, rate-limited requests and password-reset requests from the last 30 days.
+              Failed logins, lockouts, rate-limited requests, password-reset requests and admin
+              moderation actions from the last 30 days.
             </p>
             {loadingAuthEvents ? (
               <p className="admin-users-empty">Loading events...</p>
@@ -1171,6 +1292,7 @@ function Settings({
                       <th scope="col">Event</th>
                       <th scope="col">Email</th>
                       <th scope="col">IP</th>
+                      <th scope="col">By admin</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1180,6 +1302,7 @@ function Settings({
                         <td>{event.event_type.replace(/_/g, ' ')}</td>
                         <td>{event.email || '—'}</td>
                         <td>{event.ip || '—'}</td>
+                        <td>{event.actor_username || (event.actor_user_id ? `#${event.actor_user_id}` : '—')}</td>
                       </tr>
                     ))}
                   </tbody>

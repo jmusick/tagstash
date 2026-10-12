@@ -133,6 +133,21 @@ function PolicyPage({ logoSrc, onBack }) {
             fully opt-in, and can be turned off at any time; you can also mark individual
             bookmarks private to exclude them even while your profile is public.
           </p>
+          <p>
+            Public profiles are offered to search engines (and listed in our sitemap) only once
+            the account has a verified email, is at least 14 days old and has at least five
+            public bookmarks; until then the page is still viewable by link but asks search
+            engines not to index it. Anyone can report a public profile through our Support
+            form.
+          </p>
+          <p>
+            To prevent spam and abuse, our administrators can make a profile private or
+            suspend an account. A suspended account&apos;s public profile is hidden and can&apos;t
+            be made public again until the suspension is lifted, but you can still sign in and
+            use, export or delete your bookmarks. We record when an account is suspended and
+            which administrator took each moderation action; the moderation entries in our
+            security log are kept for 30 days.
+          </p>
         </section>
 
         <section>

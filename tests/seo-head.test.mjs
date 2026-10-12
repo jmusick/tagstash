@@ -19,11 +19,12 @@ class FakeRewriter {
 }
 
 const shell = '<!doctype html><html><head><title>x</title></head><body><div id="root"></div></body></html>';
-const insertUser = (env, username, { isPublic = 1, updatedAt = '2026-10-01 00:00:00' } = {}) =>
+// Accounts default to old enough for the indexing bar; tests add the bookmarks they need.
+const insertUser = (env, username, { isPublic = 1, updatedAt = '2026-10-01 00:00:00', createdAt = '2025-01-01 00:00:00' } = {}) =>
   Number(env.sqlite.prepare(
-    `INSERT INTO users (username, email, password_hash, email_verified, profile_public, updated_at)
-     VALUES (?, ?, 'x', 1, ?, ?)`,
-  ).run(username, `${username}@example.com`, isPublic, updatedAt).lastInsertRowid);
+    `INSERT INTO users (username, email, password_hash, email_verified, profile_public, created_at, updated_at)
+     VALUES (?, ?, 'x', 1, ?, ?, ?)`,
+  ).run(username, `${username}@example.com`, isPublic, createdAt, updatedAt).lastInsertRowid);
 const insertBookmark = (env, userId, { isPrivate = 0, createdAt, updatedAt = createdAt }) =>
   env.sqlite.prepare(
     `INSERT INTO bookmarks (user_id, title, url, is_private, created_at, updated_at) VALUES (?, 't', 'https://example.com/', ?, ?, ?)`,
@@ -69,10 +70,11 @@ test('a failed lookup is a 503, not a 404 that would drop a real profile', async
   assert.equal(response.headers.get('Retry-After'), '60');
 });
 
-test('a public profile stays 200 and indexable', async () => {
+test('a public profile above the indexing bar stays 200 and indexable', async () => {
   const env = await createAuthEnv();
   try {
-    insertUser(env, 'visible');
+    const visible = insertUser(env, 'visible');
+    for (let i = 0; i < 5; i += 1) insertBookmark(env, visible, { createdAt: '2026-01-02 10:00:00' });
     const response = await getProfile(env, 'visible');
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('X-Robots-Tag'), null);
@@ -102,19 +104,20 @@ test('sitemap lastmod follows the newest public bookmark, not users.updated_at',
   const env = await createAuthEnv();
   try {
     const active = insertUser(env, 'active', { updatedAt: '2026-10-11 09:00:00' });
-    insertBookmark(env, active, { createdAt: '2026-01-02 10:00:00' });
+    for (let i = 0; i < 4; i += 1) insertBookmark(env, active, { createdAt: '2026-01-02 10:00:00' });
     insertBookmark(env, active, { createdAt: '2026-02-03 10:00:00', updatedAt: '2026-03-04 10:00:00' });
     // Newer, but private: must not leak into lastmod.
     insertBookmark(env, active, { isPrivate: 1, createdAt: '2026-09-09 10:00:00' });
+    // Below the bar (fewer than 5 public bookmarks): listed nowhere, whatever their dates.
     const privateOnly = insertUser(env, 'privateonly', { updatedAt: '2026-10-11 09:00:00' });
-    insertBookmark(env, privateOnly, { isPrivate: 1, createdAt: '2026-09-09 10:00:00' });
+    for (let i = 0; i < 5; i += 1) insertBookmark(env, privateOnly, { isPrivate: 1, createdAt: '2026-09-09 10:00:00' });
     insertUser(env, 'empty', { updatedAt: '2026-10-11 09:00:00' });
     insertUser(env, 'notpublic', { isPublic: 0 });
 
     const xml = await (await sitemap({ request: new Request('https://tagsta.sh/sitemap.xml'), env })).text();
     assert.match(xml, /<loc>https:\/\/tagsta\.sh\/u\/active<\/loc><lastmod>2026-03-04<\/lastmod><\/url>/);
-    assert.match(xml, /<loc>https:\/\/tagsta\.sh\/u\/privateonly<\/loc><\/url>/);
-    assert.match(xml, /<loc>https:\/\/tagsta\.sh\/u\/empty<\/loc><\/url>/);
+    assert.ok(!xml.includes('privateonly'));
+    assert.ok(!xml.includes('/u/empty'));
     assert.ok(!xml.includes('notpublic'));
     assert.ok(!xml.includes('2026-10-11'));
     assert.ok(!/changefreq|priority/.test(xml));
@@ -127,7 +130,9 @@ test('sitemap still works before the is_private migration is applied', async () 
   try {
     env.sqlite.exec('DROP INDEX idx_bookmarks_user_private; ALTER TABLE bookmarks DROP COLUMN is_private');
     const user = insertUserWithoutPrivateColumn(env);
-    env.sqlite.prepare(`INSERT INTO bookmarks (user_id, title, url, created_at, updated_at) VALUES (?, 't', 'https://example.com/', '2026-05-06 00:00:00', '2026-05-06 00:00:00')`).run(user);
+    for (let i = 0; i < 5; i += 1) {
+      env.sqlite.prepare(`INSERT INTO bookmarks (user_id, title, url, created_at, updated_at) VALUES (?, 't', 'https://example.com/', '2026-05-06 00:00:00', '2026-05-06 00:00:00')`).run(user);
+    }
     const xml = await (await sitemap({ request: new Request('https://tagsta.sh/sitemap.xml'), env })).text();
     assert.match(xml, /\/u\/legacy<\/loc><lastmod>2026-05-06<\/lastmod>/);
   } finally { env.sqlite.close(); }
@@ -135,7 +140,7 @@ test('sitemap still works before the is_private migration is applied', async () 
 
 function insertUserWithoutPrivateColumn(env) {
   return Number(env.sqlite.prepare(
-    `INSERT INTO users (username, email, password_hash, email_verified, profile_public) VALUES ('legacy', 'legacy@example.com', 'x', 1, 1)`,
+    `INSERT INTO users (username, email, password_hash, email_verified, profile_public, created_at) VALUES ('legacy', 'legacy@example.com', 'x', 1, 1, '2025-01-01 00:00:00')`,
   ).run().lastInsertRowid);
 }
 

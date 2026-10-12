@@ -3,16 +3,9 @@
 // engines see unique metadata per profile instead of the generic index.html defaults.
 // Real visitors get the same HTML; React hydrates over it and useDocumentMeta (see
 // src/utils/useDocumentMeta.js) keeps things correct on subsequent client-side nav.
-
-const usersTableHasColumn = async (db, columnName) => {
-  const result = await db.prepare('PRAGMA table_info(users)').all();
-  return result.results.some((col) => col.name === columnName);
-};
-
-const bookmarksTableHasColumn = async (db, columnName) => {
-  const result = await db.prepare('PRAGMA table_info(bookmarks)').all();
-  return result.results.some((col) => col.name === columnName);
-};
+// Visibility (public, not suspended) and the indexing bar come from the shared helper, so
+// this page, GET /api/profiles/:username and the sitemap always agree.
+import { findVisibleProfile, getProfileSchema, publicBookmarkCondition } from '../_lib/profileVisibility.js';
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (c) => ({
@@ -49,11 +42,13 @@ export async function onRequestGet({ request, env, params, next }) {
   let title = 'Profile Not Found - Tagstash';
   let description = "This profile doesn't exist or isn't public.";
   let found = false;
+  // A visible profile below PROFILE_INDEXING_BAR still renders (200) but is noindex.
+  let indexable = false;
   // Stored casing of the matched user. Lookup is case-insensitive, so /u/jd and /u/JD
   // both resolve to one profile; canonical, og:url and JSON-LD must name that one
   // address (the stored casing) rather than echoing whatever casing the URL used.
   let canonicalUsername = rawUsername;
-  // 404 when the profile doesn't exist or isn't public (so crawlers don't index a
+  // 404 when the profile doesn't exist, isn't public or is suspended (so crawlers don't index a
   // soft-404); 503 when the lookup itself failed, so a transient D1 error isn't
   // mistaken for a missing profile.
   let status = 404;
@@ -62,38 +57,26 @@ export async function onRequestGet({ request, env, params, next }) {
     const db = env.DB;
     if (rawUsername) {
       if (!db) throw new Error('DB binding is not configured');
-      const hasProfilePublicColumn = await usersTableHasColumn(db, 'profile_public');
-      if (hasProfilePublicColumn) {
-        const user = await db
-          .prepare('SELECT id, username FROM users WHERE LOWER(username) = LOWER(?) AND profile_public = 1')
-          .bind(rawUsername)
-          .first();
+      const schema = await getProfileSchema(db);
+      const user = await findVisibleProfile(db, rawUsername, schema);
+      if (user) {
+        found = true;
+        indexable = user.indexable;
+        status = 200;
+        canonicalUsername = user.username;
+        const tagsQuery = `SELECT t.name AS name, COUNT(*) AS cnt FROM bookmark_tags bt
+           JOIN bookmarks b ON bt.bookmark_id = b.id
+           JOIN tags t ON bt.tag_id = t.id
+           WHERE b.user_id = ?${publicBookmarkCondition(schema)}
+           GROUP BY t.name ORDER BY cnt DESC LIMIT 5`;
 
-        if (user) {
-          found = true;
-          status = 200;
-          canonicalUsername = user.username;
-          const hasIsPrivateColumn = await bookmarksTableHasColumn(db, 'is_private');
-          const tagsQuery = hasIsPrivateColumn
-            ? `SELECT t.name AS name, COUNT(*) AS cnt FROM bookmark_tags bt
-               JOIN bookmarks b ON bt.bookmark_id = b.id
-               JOIN tags t ON bt.tag_id = t.id
-               WHERE b.user_id = ? AND b.is_private = 0
-               GROUP BY t.name ORDER BY cnt DESC LIMIT 5`
-            : `SELECT t.name AS name, COUNT(*) AS cnt FROM bookmark_tags bt
-               JOIN bookmarks b ON bt.bookmark_id = b.id
-               JOIN tags t ON bt.tag_id = t.id
-               WHERE b.user_id = ?
-               GROUP BY t.name ORDER BY cnt DESC LIMIT 5`;
+        const { results } = await db.prepare(tagsQuery).bind(user.id).all();
+        const topTags = (results || []).map((row) => row.name);
 
-          const { results } = await db.prepare(tagsQuery).bind(user.id).all();
-          const topTags = (results || []).map((row) => row.name);
-
-          title = `${user.username}'s Bookmarks - Tagstash`;
-          description = topTags.length
-            ? `Browse ${user.username}'s public bookmarks on Tagstash, tagged with ${topTags.join(', ')}.`
-            : `Browse ${user.username}'s public bookmarks on Tagstash.`;
-        }
+        title = `${user.username}'s Bookmarks - Tagstash`;
+        description = topTags.length
+          ? `Browse ${user.username}'s public bookmarks on Tagstash, tagged with ${topTags.join(', ')}.`
+          : `Browse ${user.username}'s public bookmarks on Tagstash.`;
       }
     }
   } catch {
@@ -102,6 +85,7 @@ export async function onRequestGet({ request, env, params, next }) {
     title = 'Profile Not Found - Tagstash';
     description = "This profile doesn't exist or isn't public.";
     found = false;
+    indexable = false;
     status = 503;
   }
 
@@ -129,7 +113,7 @@ export async function onRequestGet({ request, env, params, next }) {
 <meta name="twitter:title" content="${safeTitle}" />
 <meta name="twitter:description" content="${safeDescription}" />
 <meta name="twitter:image" content="${escapeHtml(imageUrl)}" />
-${found ? '' : '<meta name="robots" content="noindex" />'}
+${found && indexable ? '' : '<meta name="robots" content="noindex" />'}
 ${jsonLd ? `<script type="application/ld+json">${serializeJsonLd(jsonLd)}</script>` : ''}
 `;
 
@@ -171,10 +155,11 @@ ${jsonLd ? `<script type="application/ld+json">${serializeJsonLd(jsonLd)}</scrip
   }
 
   const transformed = await rewriter.transform(response);
-  if (status === 200) return transformed;
+  if (status === 200 && indexable) return transformed;
 
-  // Keep the SPA shell as the body so the app still renders its not-found UI, but
-  // answer with a real error status (the noindex meta above stays as belt and braces).
+  // Below-bar profiles stay 200 with noindex. Missing/non-public/suspended ones keep the SPA
+  // shell as the body so the app still renders its not-found UI, but answer with a real
+  // error status (the noindex meta above stays as belt and braces).
   const headers = new Headers(transformed.headers);
   headers.set('X-Robots-Tag', 'noindex');
   if (status === 503) headers.set('Retry-After', '60');

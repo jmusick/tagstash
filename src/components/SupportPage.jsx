@@ -1,5 +1,6 @@
 import Logo from './Logo'
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supportAPI } from '../api/api';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { SUPPORT_META } from '../utils/pageMeta';
@@ -7,11 +8,20 @@ import './SupportPage.css';
 
 const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY || '';
 
+// "Report this profile" on /u/:username links to /support?report=<username>. Only a
+// username-like value is accepted, and the message names the profile by its URL.
+const reportMessageFor = (reported) => {
+  const username = String(reported || '').trim();
+  if (!username || username.length > 64 || /[\s/]/.test(username)) return '';
+  return `I'd like to report this profile: ${window.location.origin}/u/${encodeURIComponent(username)}\n\nReason: `;
+};
+
 function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
   useDocumentMeta(SUPPORT_META);
 
   const [email, setEmail] = useState(prefillEmail);
-  const [message, setMessage] = useState('');
+  const [searchParams] = useSearchParams();
+  const [message, setMessage] = useState(() => reportMessageFor(searchParams.get('report')));
   const [captchaToken, setCaptchaToken] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
