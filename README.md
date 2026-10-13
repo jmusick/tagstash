@@ -196,7 +196,7 @@ Production setup includes:
 - D1 migrations applied locally and remotely
 - Cloudflare Pages secrets for Stripe and email
 - Stripe webhook endpoint wired to `/api/billing/webhook`
-- Security headers come from `public/_headers`; its Content Security Policy allowlists Google Analytics/Tag Manager, Google favicons, Google Fonts, and Cloudflare Turnstile, so a new third-party origin must be added there
+- Security headers come from `public/_headers`; its Content Security Policy allowlists Google Analytics/Tag Manager, Google favicons, and Cloudflare Turnstile (the Archivo font is self-hosted from `src/assets/fonts/`, so no font origin is allowlisted), so a new third-party origin must be added there
 
 ### Stripe-related secrets
 
