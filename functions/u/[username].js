@@ -2,10 +2,12 @@
 // GET /u/:username, so link previews (Slack, Discord, X, Facebook, etc.) and search
 // engines see unique metadata per profile instead of the generic index.html defaults.
 // For profiles that pass the indexing bar it also renders a static snapshot of the most
-// recent public bookmarks into #root, so crawlers that don't run JS see real content.
-// Real visitors get the same HTML; React's createRoot render() replaces #root on mount
-// (no hydration) and useDocumentMeta (src/utils/useDocumentMeta.js) keeps the head
-// correct on subsequent client-side nav.
+// recent public bookmarks into <div id="ssr-profile">, inserted just before #root, so
+// crawlers that don't run JS see real content. Real visitors get the same HTML: CSS hides
+// #root while the snapshot is present (`#ssr-profile + #root`, src/App.css), the app mounts
+// into the hidden #root, and PublicProfile removes the snapshot in a layout effect once the
+// real list is rendered (src/utils/profileSnapshot.js), so there is no loading flash.
+// useDocumentMeta (src/utils/useDocumentMeta.js) keeps the head correct on client-side nav.
 // Visibility (public, not suspended) and the indexing bar come from the shared helper, so
 // this page, GET /api/profiles/:username and the sitemap always agree.
 import { findVisibleProfile, getProfileSchema, publicBookmarkCondition } from '../_lib/profileVisibility.js';
@@ -24,7 +26,7 @@ const escapeHtml = (value) =>
 const serializeJsonLd = (value) =>
   JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 
-// Most recent public bookmarks rendered into #root for indexable profiles. The full list
+// Most recent public bookmarks rendered into #ssr-profile for indexable profiles. The full list
 // (and filtering/sorting) comes from GET /api/profiles/:username once the app mounts.
 export const SSR_BOOKMARK_LIMIT = 100;
 
@@ -70,10 +72,12 @@ const parseTagNames = (value) => {
   }
 };
 
-// Mirrors the PublicProfile page shell (AppHeader, .app-main, BookmarkBrowser's list and
-// DefaultCard) with the global App.css/index.css classes, so the pre-mount markup looks
-// like the page React is about to render. Every user-controlled value is escaped.
-export function renderProfileBookmarks(username, bookmarks, totalPublic) {
+const logoPicture = (variant) => `<picture class="logo-picture ssr-logo--${variant}"><source srcset="/logo-${variant}.webp 255w, /logo-${variant}-large.webp 560w" sizes="80px" type="image/webp" /><img src="/logo-${variant}-small.png" alt="Tagstash" width="560" height="440" class="app-header-logo" /></picture>`;
+
+// Mirrors the PublicProfile page shell (AppHeader, .app-main, BookmarkBrowser's toolbar
+// height, list and DefaultCard, AppFooter) with the global App.css/index.css classes, so
+// the snapshot looks like the page that replaces it. Every user-controlled value is escaped.
+export function renderProfileBookmarks(username, bookmarks, totalPublic, now = new Date()) {
   const items = bookmarks.map((bookmark) => {
     const url = safeHttpUrl(bookmark.url);
     const title = escapeHtml(bookmark.title || (url ? url.href : 'Untitled'));
@@ -91,9 +95,13 @@ export function renderProfileBookmarks(username, bookmarks, totalPublic) {
   const count = total > bookmarks.length
     ? `${bookmarks.length} most recent of ${total} bookmarks`
     : `${total} ${total === 1 ? 'bookmark' : 'bookmarks'}`;
-  return `<div class="app"><header class="app-header"><div class="app-header-brand"><a href="/" class="app-header-logo-btn" title="Back to Tagstash"><picture class="logo-picture"><source srcset="/logo-dark.webp 255w, /logo-dark-large.webp 560w" sizes="80px" type="image/webp" /><img src="/logo-dark-small.png" alt="Tagstash" width="560" height="440" class="app-header-logo" /></picture></a><p class="app-header-tagline">Public bookmarks</p></div></header>`
-    + `<main id="main" class="app-main"><div class="main-content"><div class="public-profile-header"><h1>@${escapeHtml(username)}&#39;s bookmarks</h1></div>`
-    + `<div class="bookmarks-section"><div class="results-bar"><p class="results-count">${count}</p></div><div class="bookmarks-grid">${items.join('')}</div></div></div></main></div>`;
+  const safeUsername = escapeHtml(username);
+  // The logo follows the theme App.jsx applies to <html data-theme> on mount; the empty
+  // toolbar spacer keeps the heading where it sits once the real search box renders.
+  return `<div id="ssr-profile"><div class="app"><header class="app-header"><div class="app-header-brand"><a href="/" class="app-header-logo-btn" title="Back to Tagstash">${logoPicture('dark')}${logoPicture('light')}</a><p class="app-header-tagline">Public bookmarks</p></div></header>`
+    + `<main class="app-main"><div class="main-content"><div class="toolbar" aria-hidden="true"><div class="toolbar-row"><div class="search-control ssr-toolbar-spacer"></div></div></div><div class="public-profile-header"><h1>@${safeUsername}&#39;s bookmarks</h1></div>`
+    + `<div class="bookmarks-section"><div class="results-bar"><p class="results-count">${count}</p></div><div class="bookmarks-grid">${items.join('')}</div></div></div></main>`
+    + `<footer class="app-footer"><span class="footer-copyright">&copy; ${now.getUTCFullYear()} Stone Dragon Media LLC</span><a class="footer-privacy-link" href="/">Create your own Tagstash</a><a class="footer-privacy-link" href="/support?report=${encodeURIComponent(username)}" rel="nofollow">Report this profile</a></footer></div></div>`;
 }
 
 export async function onRequestGet({ request, env, params, next }) {
@@ -127,8 +135,8 @@ export async function onRequestGet({ request, env, params, next }) {
   // soft-404); 503 when the lookup itself failed, so a transient D1 error isn't
   // mistaken for a missing profile.
   let status = 404;
-  // Static bookmark list for #root; only ever set for indexable profiles.
-  let rootHtml = '';
+  // Static bookmark snapshot placed before #root; only ever set for indexable profiles.
+  let snapshotHtml = '';
 
   try {
     const db = env.DB;
@@ -155,7 +163,7 @@ export async function onRequestGet({ request, env, params, next }) {
         ]);
         const topTags = (results || []).map((row) => row.name);
         if (recentBookmarks.length) {
-          rootHtml = renderProfileBookmarks(user.username, recentBookmarks, user.public_bookmark_count);
+          snapshotHtml = renderProfileBookmarks(user.username, recentBookmarks, user.public_bookmark_count);
         }
 
         title = `${user.username}'s Bookmarks - Tagstash`;
@@ -171,7 +179,7 @@ export async function onRequestGet({ request, env, params, next }) {
     description = "This profile doesn't exist or isn't public.";
     found = false;
     indexable = false;
-    rootHtml = '';
+    snapshotHtml = '';
     status = 503;
   }
 
@@ -232,10 +240,11 @@ ${jsonLd ? `<script type="application/ld+json">${serializeJsonLd(jsonLd)}</scrip
       },
     });
 
-  if (rootHtml) {
+  // Outside #root, so React never renders over it; #root itself stays empty.
+  if (snapshotHtml) {
     rewriter = rewriter.on('#root', {
       element(el) {
-        el.setInnerContent(rootHtml, { html: true });
+        el.before(snapshotHtml, { html: true });
       },
     });
   }

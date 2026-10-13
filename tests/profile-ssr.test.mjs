@@ -3,17 +3,18 @@ import assert from 'node:assert/strict';
 import { onRequestGet as profilePage, renderProfileBookmarks, safeHttpUrl, SSR_BOOKMARK_LIMIT } from '../functions/u/[username].js';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 
-// Minimal stand-in for the Workers HTMLRewriter: the <head> append and the #root replacement.
+// Minimal stand-in for the Workers HTMLRewriter: the <head> append and the before-#root insert.
 class FakeRewriter {
   constructor() { this.handlers = {}; }
   on(selector, handler) { this.handlers[selector] = handler; return this; }
   async transform(response) {
     let appended = '';
-    let root = null;
+    let before = '';
     this.handlers.head?.element({ append: (content) => { appended += content; } });
-    this.handlers['#root']?.element({ setInnerContent: (content) => { root = content; } });
-    let html = (await response.text()).replace('</head>', `${appended}</head>`);
-    if (root !== null) html = html.replace('<div id="root"></div>', () => `<div id="root">${root}</div>`);
+    this.handlers['#root']?.element({ before: (content) => { before += content; } });
+    const html = (await response.text())
+      .replace('</head>', `${appended}</head>`)
+      .replace('<div id="root">', () => `${before}<div id="root">`);
     return new Response(html, response);
   }
 }
@@ -48,7 +49,12 @@ const getProfile = (env, username) => {
   });
 };
 
-const rootOf = (html) => html.match(/<div id="root">([\s\S]*)<\/div><\/body>/)[1];
+// The snapshot sits right before an untouched, empty #root (React owns #root).
+const rootOf = (html) => {
+  const match = html.match(/<body>([\s\S]*)<div id="root"><\/div><\/body>/);
+  assert.ok(match, '#root stays empty and last in <body>');
+  return match[1];
+};
 
 test('an indexable profile server-renders its newest public bookmarks with ugc links and tags', async () => {
   const env = await createAuthEnv();
@@ -63,7 +69,9 @@ test('an indexable profile server-renders its newest public bookmarks with ugc l
     assert.equal(response.status, 200);
     const html = await response.text();
     const root = rootOf(html);
+    assert.ok(root.startsWith('<div id="ssr-profile">'), 'snapshot is a sibling container before #root');
     assert.ok(root.includes('<h1>@Reader&#39;s bookmarks</h1>'), 'heading uses the stored casing');
+    assert.ok(root.includes('<a class="footer-privacy-link" href="/support?report=Reader" rel="nofollow">Report this profile</a>'));
     assert.ok(root.includes('<p class="results-count">5 bookmarks</p>'));
     assert.equal((root.match(/<article class="bookmark-card">/g) || []).length, 5);
     // Newest first, like the profile page's default sort.
@@ -118,7 +126,8 @@ test('hostile titles, tags and URLs are escaped and only http(s) URLs become lin
     assert.ok(!/<img src=x|<svg/i.test(root), 'no injected elements');
     // Every "<" from user content is escaped, so any tag left is ours: none may carry a handler.
     assert.ok(!/<[^>]*\son[a-z]+\s*=/i.test(root), 'no event-handler attributes');
-    const hrefs = [...root.matchAll(/href="([^"]*)"/g)].map((m) => m[1]).filter((href) => href !== '/');
+    const cards = (root.match(/<article class="bookmark-card">[\s\S]*?<\/article>/g) || []).join('');
+    const hrefs = [...cards.matchAll(/href="([^"]*)"/g)].map((m) => m[1]);
     assert.equal(hrefs.length, 1, 'only the https bookmark is linked');
     assert.ok(hrefs.every((href) => /^https?:\/\//.test(href)), 'every bookmark href is http(s)');
     assert.ok(!root.includes('data:text/html'));
@@ -138,9 +147,10 @@ test('hostile titles, tags and URLs are escaped and only http(s) URLs become lin
 });
 
 test('renderProfileBookmarks escapes the username', () => {
-  const html = renderProfileBookmarks('</h1><script>x</script>', [{ title: 't', url: 'https://a.example/', tags: '[]' }], 1);
+  const html = renderProfileBookmarks('</h1><script>x</script>"', [{ title: 't', url: 'https://a.example/', tags: '[]' }], 1);
   assert.ok(!html.includes('<script>'));
-  assert.ok(html.includes('@&lt;/h1&gt;&lt;script&gt;x&lt;/script&gt;&#39;s bookmarks'));
+  assert.ok(html.includes('@&lt;/h1&gt;&lt;script&gt;x&lt;/script&gt;&quot;&#39;s bookmarks'));
+  assert.ok(html.includes('href="/support?report=%3C%2Fh1%3E%3Cscript%3Ex%3C%2Fscript%3E%22"'));
   assert.equal(safeHttpUrl('javascript:alert(1)'), null);
   assert.equal(safeHttpUrl('//evil.example'), null);
   assert.equal(safeHttpUrl('HTTPS://ok.example').href, 'https://ok.example/');
@@ -170,7 +180,8 @@ test('profiles below the bar, not public, suspended or missing render no bookmar
       const response = await getProfile(env, username);
       assert.equal(response.status, status, username);
       const html = await response.text();
-      assert.match(html, /<div id="root"><\/div>/, `${username}: empty root`);
+      assert.match(html, /<body><div id="root"><\/div><\/body>/, `${username}: empty root, no snapshot`);
+      assert.ok(!html.includes('ssr-profile'), username);
       assert.ok(!html.includes('bookmark-card'), username);
       assert.ok(!html.includes(`visible-${username}`), username);
     }
@@ -201,7 +212,8 @@ test('a failed snapshot query degrades to metadata only, not a 503', async () =>
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('X-Robots-Tag'), null);
     const html = await response.text();
-    assert.match(html, /<div id="root"><\/div>/);
+    assert.match(html, /<body><div id="root"><\/div><\/body>/);
+    assert.ok(!html.includes('ssr-profile'));
     assert.ok(html.includes('tagged with css'));
     assert.ok(html.includes('application/ld+json'));
   } finally { env.sqlite.close(); }
