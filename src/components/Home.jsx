@@ -11,6 +11,7 @@ import HomeTagDemo from './HomeTagDemo';
 import { version } from '../../package.json';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
+import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import './Home.css';
 
 function Home({ logoSrc, theme, onSelectTheme }) {
@@ -62,8 +63,9 @@ function Home({ logoSrc, theme, onSelectTheme }) {
         return;
       }
 
-      if (formData.password.length < 6) {
-        setError('Password must be at least 6 characters');
+      const passwordError = newPasswordError(formData.password);
+      if (passwordError) {
+        setError(passwordError);
         setLoading(false);
         return;
       }
@@ -107,7 +109,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
     setResendStatus('');
     try {
       await authAPI.resendVerification(pendingEmail);
-      setResendStatus('A new verification link has been sent.');
+      setResendStatus('If this address is waiting for verification, a new link is on its way.');
     } catch (err) {
       setResendStatus(err.response?.data?.error || 'Could not resend. Please try again.');
     }
@@ -191,8 +193,11 @@ function Home({ logoSrc, theme, onSelectTheme }) {
           <div className="auth-card">
             <h1 className="auth-card-title">Check your email</h1>
             <p className="auth-description">
-              We sent a verification link to <strong>{pendingEmail}</strong>. Click the link to activate
-              your account.
+              We sent an email to <strong>{pendingEmail}</strong>. Open it to finish setting up your
+              account.
+            </p>
+            <p className="auth-description">
+              Nothing after a few minutes? Check your spam folder, or request a new link below.
             </p>
             <div role="status" className="live-region">
               {resendStatus && <p className="auth-description">{resendStatus}</p>}
@@ -300,10 +305,9 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                 required
                 autoComplete={isLogin ? 'current-password' : 'new-password'}
                 aria-describedby={isLogin ? undefined : 'password-hint'}
-                minLength={6}
-                maxLength={isLogin ? undefined : INPUT_LIMITS.password}
+                minLength={isLogin ? undefined : INPUT_LIMITS.passwordMinChars}
               />
-              {!isLogin && <small id="password-hint" className="form-hint">At least 6 characters</small>}
+              {!isLogin && <small id="password-hint" className="form-hint">{NEW_PASSWORD_HINT}</small>}
             </div>
 
             <div role="alert" className="live-region">

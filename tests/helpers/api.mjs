@@ -1,13 +1,14 @@
 import { onRequest } from '../../functions/api/[[path]].js';
 
 // Calls the real API dispatcher. `body` objects are JSON-encoded; strings and streams are sent as-is.
-export const call = (env, path, { method = 'GET', headers = {}, body, contentType = 'application/json' } = {}) => {
+// `waitUntil`, when given, is passed through like Pages Functions' context.waitUntil.
+export const call = (env, path, { method = 'GET', headers = {}, body, contentType = 'application/json', waitUntil } = {}) => {
   const init = { method, headers: { ...(contentType ? { 'Content-Type': contentType } : {}), ...headers } };
   if (body !== undefined) {
     init.body = typeof body === 'string' || body instanceof ReadableStream ? body : JSON.stringify(body);
     if (body instanceof ReadableStream) init.duplex = 'half';
   }
-  return onRequest({ env, request: new Request(`https://tagsta.sh/api/${path}`, init) });
+  return onRequest({ env, ...(waitUntil ? { waitUntil } : {}), request: new Request(`https://tagsta.sh/api/${path}`, init) });
 };
 
 // Bearer-token login for the seeded user (id 1) from createAuthEnv.

@@ -21,7 +21,7 @@ function PolicyPage({ logoSrc, onBack }) {
       </header>
 
       <main id="main" tabIndex={-1} className="privacy-content">
-        <p className="privacy-effective">Effective date: October 12, 2026</p>
+        <p className="privacy-effective">Effective date: October 13, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -92,8 +92,15 @@ function PolicyPage({ logoSrc, onBack }) {
             </li>
             <li>
               <strong>Cloudflare Email Sending</strong> delivers transactional emails
-              (verification, password reset), which requires sharing your email address and
+              (verification, password reset and account security notices), which requires sharing your email address and
               the relevant one-time token with them.
+            </li>
+            <li>
+              <strong>Have I Been Pwned (Pwned Passwords)</strong> checks a new password, when
+              you sign up, change or reset it, against passwords exposed in known data breaches.
+              It uses k-anonymity: our servers send only the first 5 characters of the
+              password's SHA-1 hash and compare the results themselves, so your password, your
+              email address and your IP address are never sent.
             </li>
             <li>
               <strong>Cloudflare Turnstile</strong> verifies that Support form submissions

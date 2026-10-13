@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable } from '../_lib/profileVisibility.js';
+import { newPasswordError } from '../../src/utils/passwordPolicy.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -147,6 +148,8 @@ const UPSTREAM_TIMEOUT_MS = {
   email: 10000,
   turnstile: 5000,
   stripe: 15000,
+  // Advisory check on a user-facing request: short, and it fails open (see isPwnedPassword).
+  pwnedPasswords: 3000,
 };
 
 // A fixed upstream service failed, timed out or was unreachable. routeRequest answers it with a
@@ -180,6 +183,8 @@ const fetchUpstream = async (service, url, options) => {
 // --- Email sending (Cloudflare Email Sending REST API) ---
 
 class EmailNotConfiguredError extends Error {}
+
+const isEmailConfigured = (env) => Boolean(env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID);
 
 const sendEmail = async ({ to, from, subject, text, html, replyTo }, env) => {
   if (!env.CLOUDFLARE_API_TOKEN) throw new EmailNotConfiguredError('Missing CLOUDFLARE_API_TOKEN');
@@ -379,6 +384,37 @@ const notifyOldEmailAboutChange = async (oldEmail, username, newEmail, completed
   } catch (error) {
     console.warn('[auth] Failed to notify previous email address', error?.message || error);
   }
+};
+
+// Sent instead of a verification email when someone registers with an address that already has
+// an account, so the sign-up response can be identical either way (no email enumeration).
+// `verified` tailors the advice: an unverified account can't sign in until its link is opened.
+const sendExistingAccountNotice = async (email, username, verified, env) => {
+  const appUrl = (env.APP_URL || 'http://localhost:5173').replace(/\/$/, '');
+  const advice = verified
+    ? `If that was you, you already have an account: sign in at ${appUrl}, or use "Forgot password?" there if you don't remember your password.`
+    : `If that was you, your account hasn't been verified yet: choose "Resend verification email" on the "Check your email" page you saw after signing up, and use "Forgot password?" at ${appUrl} if you don't know the account's password.`;
+  const lines = [
+    `Hi ${username},`,
+    '',
+    'Someone just tried to create a new Tagstash account with this email address, which already has an account.',
+    advice,
+    "If it wasn't you, you can ignore this email. Nothing on your account has changed.",
+  ];
+  await sendEmail(
+    {
+      from: emailFrom('EMAIL_FROM_VERIFICATION', 'welcome@tagsta.sh', env),
+      to: email,
+      replyTo: env.EMAIL_REPLY_TO || undefined,
+      subject: 'Someone tried to sign up with your email address',
+      text: lines.join('\n'),
+      html: `
+<div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #111827;">
+  ${lines.filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join('\n  ')}
+</div>`,
+    },
+    env
+  );
 };
 
 const jsonResponse = (payload, status = 200) =>
@@ -583,6 +619,10 @@ const generateApiKeyValue = () => {
 
 // Server-side input limits (characters unless noted). The web UI mirrors the user-facing ones
 // in src/utils/inputLimits.js as maxLength/tag-count checks — change both together.
+// New passwords: passwordMinChars code points and passwordMaxBytes UTF-8 bytes (bcrypt ignores
+// everything after byte 72), enforced by validateNewPassword via src/utils/passwordPolicy.js.
+// Passwords being checked (login, re-entry) are never length-bounded: grandfathered passwords
+// of any length keep working.
 const INPUT_LIMITS = {
   title: 1000,
   url: 8192,
@@ -591,7 +631,8 @@ const INPUT_LIMITS = {
   tagsPerBookmark: 50,
   username: 50,
   email: 254,
-  password: 256,
+  passwordMinChars: 8,
+  passwordMaxBytes: 72,
   apiKeyName: 100,
   importBookmarks: 2000,
 };
@@ -734,6 +775,80 @@ const validateBookmarkInput = ({ title, url, description, tags }) => {
 };
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+// --- Password policy (every password SETTER: register, change, reset) ---
+//
+// The length rules (at least 8 code points, at most 72 UTF-8 bytes, because bcrypt silently
+// ignores everything after byte 72 and any password sharing that prefix would sign in) live in
+// src/utils/passwordPolicy.js, shared with the web forms so the two can't drift.
+// passwordPolicyError is the synchronous half of validateNewPassword: call it early so
+// malformed input never spends a rate-limit slot or the upstream call. Existing passwords are
+// grandfathered: login and confirmCurrentPassword never apply this policy.
+const passwordPolicyError = newPasswordError;
+
+const BREACHED_PASSWORD_MESSAGE =
+  'This password has appeared in a known data breach, so attackers are likely to try it. Please choose a different one (a passphrase of several unrelated words works well).';
+
+// Have I Been Pwned "range" API with k-anonymity: only the first 5 hex characters of the
+// password's SHA-1 leave the Worker; the matching suffixes come back and are compared here.
+// `Add-Padding` makes every response a similar size; padding rows have a count of 0 and are not
+// breaches. Advisory, so it FAILS OPEN: a timeout, network error or bad response returns false
+// and the password is accepted. Never log or store the password, its hash or the response.
+const PWNED_PASSWORDS_RANGE_URL = 'https://api.pwnedpasswords.com/range/';
+
+const isPwnedPassword = async (password) => {
+  try {
+    const digest = toHex(new Uint8Array(await crypto.subtle.digest('SHA-1', encoder.encode(password)))).toUpperCase();
+    const prefix = digest.slice(0, 5);
+    const suffix = digest.slice(5);
+    const response = await fetchUpstream('pwnedPasswords', `${PWNED_PASSWORDS_RANGE_URL}${prefix}`, {
+      headers: { 'Add-Padding': 'true', 'User-Agent': 'Tagstash-password-check' },
+    });
+    if (!response.ok) {
+      console.warn('[auth] Pwned Passwords check skipped: HTTP', response.status);
+      return false;
+    }
+    const body = await response.text();
+    for (const line of body.split('\n')) {
+      const separator = line.indexOf(':');
+      if (separator === -1) continue;
+      if (line.slice(0, separator).trim().toUpperCase() === suffix) {
+        return Number.parseInt(line.slice(separator + 1), 10) > 0;
+      }
+    }
+    return false;
+  } catch (error) {
+    console.warn('[auth] Pwned Passwords check skipped:', error?.name || 'error');
+    return false;
+  }
+};
+
+// The one entry point for validating a new password: the length policy, then the breach check.
+// Returns an error message for a 400, or null. Run cheap validation (and rate limits) first;
+// callers may call passwordPolicyError early so malformed requests never reach the upstream.
+const validateNewPassword = async (password, { label = 'Password' } = {}) => {
+  const policyError = passwordPolicyError(password, label);
+  if (policyError) return policyError;
+  if (await isPwnedPassword(password)) return BREACHED_PASSWORD_MESSAGE;
+  return null;
+};
+
+// Runs `task` after the response has been sent (Pages Functions `context.waitUntil`), so the
+// response neither waits for nor reveals the timing of database work and email delivery that
+// only happens for existing accounts. Without waitUntil (tests, other runtimes) it is awaited
+// inline. Failures are caught and logged here by type only (no addresses, no provider text).
+const runAfterResponse = (context, label, task) => {
+  const promise = Promise.resolve()
+    .then(task)
+    .catch((error) => {
+      console.error(`[background] ${label} failed:`, error?.name || 'error', error?.status ?? '');
+    });
+  if (typeof context?.waitUntil === 'function') {
+    context.waitUntil(promise);
+    return Promise.resolve();
+  }
+  return promise;
+};
 
 // Hostnames a Turnstile token may have been solved on: the configured app and the host serving
 // this request (the form posts to its own origin, which covers Pages preview deployments).
@@ -915,7 +1030,14 @@ const AUTH_RATE_LIMITS = {
   resetRequestsPerEmail: ['password_reset_requested', 5, 60],
   resetRequestsPerEmailBurst: ['password_reset_requested', 1, 1],
   registrationsPerIp: ['register_attempt', 10, 60],
+  // Signing up with an address that already has an account mails its owner instead; this caps
+  // those notices per address so sign-up can't be used to flood someone's inbox. Over the cap
+  // the notice is skipped silently (the response never changes).
+  registrationNoticesPerEmail: ['register_owner_notified', 3, 24 * 60],
   verificationResendsPerIp: ['verification_resend_requested', 10, 60],
+  // Counted per address before any lookup, so they apply to unregistered addresses too.
+  verificationResendsPerEmail: ['verification_resend_requested', 5, 60],
+  verificationResendsPerEmailBurst: ['verification_resend_requested', 1, 1],
 };
 
 const AUTH_EVENT_RETENTION_DAYS = 30;
@@ -1067,6 +1189,7 @@ const confirmCurrentPassword = async (db, request, userId, password, wrongPasswo
     return rateLimitedResponse(lockedOutMessage(lockedUntil));
   }
 
+  // Never the new-password policy here: a grandfathered password of any length is accepted.
   if (typeof password === 'string' && (await bcrypt.compare(password, user.password_hash))) {
     // Same guard as login: a guess that was in flight while concurrent misses locked the account.
     const lockedNow = await getCurrentLockedUntil(db, user);
@@ -2083,7 +2206,48 @@ const processStripeEvent = async (db, event) => {
   return { handled: false, reason: `Unhandled event type: ${type}` };
 };
 
-async function handleAuth(request, env, segments) {
+// The one answer to every sign-up that gets past validation, whether or not the email already
+// had an account, so the response can't be used to discover registered addresses.
+const REGISTRATION_ACCEPTED_RESPONSE = {
+  message: 'Registration received. Please check your email to continue.',
+  pendingVerification: true,
+};
+
+// Background half of a new sign-up (runs after the response). A failure here never deletes the
+// account: the caller already saw "check your email", so the unverified account stays and
+// "Resend verification email" (or forgot-password) recovers it. runAfterResponse logs the
+// failure by error type only. If the send fails, the undelivered token is dropped so the
+// resend route's "a link was issued under a minute ago" skip doesn't swallow the retry.
+const sendNewAccountVerification = async (db, env, userId, email, username) => {
+  const verificationToken = generateVerificationToken();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  await storeEmailToken(db, 'email_verification_tokens', userId, verificationToken, expiresAt);
+  try {
+    await sendVerificationEmail(email, username, verificationToken, env);
+  } catch (error) {
+    await db
+      .prepare('DELETE FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL')
+      .bind(userId)
+      .run()
+      .catch(() => {});
+    throw error;
+  }
+};
+
+// Background half of a sign-up with an already-registered email: mail the owner, at most
+// AUTH_RATE_LIMITS.registrationNoticesPerEmail times per address and window.
+const notifyExistingAccountOwner = async (db, request, env, email) => {
+  const owner = await db
+    .prepare('SELECT id, username, email_verified FROM users WHERE LOWER(email) = LOWER(?)')
+    .bind(email)
+    .first();
+  if (!owner) return;
+  if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.registrationNoticesPerEmail, 'email', email)) return;
+  await recordAuthEvent(db, request, 'register_owner_notified', { email, userId: owner.id });
+  await sendExistingAccountNotice(email, owner.username, Boolean(owner.email_verified), env);
+};
+
+async function handleAuth(request, env, segments, context = {}) {
   if (request.method === 'POST' && segments[1] === 'session') {
     // Upgrade a pre-cookie web login. Never return the replacement token to JS.
     if (!isWebClient(request) || !getBearerToken(request)) {
@@ -2122,20 +2286,23 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'Username must be at least 2 characters' }, 400);
     }
 
-    if (trimmedUsername.length > 50) {
-      return jsonResponse({ error: 'Username must be 50 characters or less' }, 400);
+    if (trimmedUsername.length > INPUT_LIMITS.username) {
+      return jsonResponse({ error: `Username must be ${INPUT_LIMITS.username} characters or less` }, 400);
     }
 
-    if (password.length < 6) {
-      return jsonResponse({ error: 'Password must be at least 6 characters' }, 400);
-    }
-
-    if (password.length > INPUT_LIMITS.password) {
-      return jsonResponse({ error: `Password must be ${INPUT_LIMITS.password} characters or less` }, 400);
+    const passwordError = passwordPolicyError(password);
+    if (passwordError) {
+      return jsonResponse({ error: passwordError }, 400);
     }
 
     if (normalizedEmail.length > INPUT_LIMITS.email || !isValidEmail(normalizedEmail)) {
       return jsonResponse({ error: 'Please provide a valid email address' }, 400);
+    }
+
+    // Every sign-up ends in an email that is sent after the response, so refuse up front (the
+    // same way for every address) when sending isn't configured.
+    if (!isEmailConfigured(env)) {
+      return jsonResponse({ error: 'Email delivery is not available right now. Please try again later.' }, 503);
     }
 
     // Every registration sends an email to an arbitrary address, so cap attempts per IP.
@@ -2145,47 +2312,56 @@ async function handleAuth(request, env, segments) {
     }
     await recordAuthEvent(db, request, 'register_attempt', { email: normalizedEmail });
 
-    const existing = await db
-      .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?)')
-      .bind(normalizedEmail, trimmedUsername)
+    // Usernames are public (profile URLs), so saying one is taken reveals nothing private. It is
+    // checked before, and independently of, the email so that a taken username plus a registered
+    // email answers exactly like a taken username plus a new email.
+    const usernameTaken = await db
+      .prepare('SELECT 1 AS taken FROM users WHERE LOWER(username) = LOWER(?)')
+      .bind(trimmedUsername)
       .first();
-
-    if (existing) {
-      return jsonResponse({ error: 'User already exists with this email or username' }, 400);
+    if (usernameTaken) {
+      return jsonResponse({ error: 'That username is already taken' }, 400);
     }
 
+    const breachError = await validateNewPassword(password);
+    if (breachError) {
+      return jsonResponse({ error: breachError }, 400);
+    }
+
+    // From here on a registered email must be indistinguishable from a new one: same work
+    // (the bcrypt hash and one write statement), same 201 body, and the email that differs is
+    // sent after the response. The insert is conditional, so a concurrent sign-up for the same
+    // email or username can't slip in between a check and the write.
     const passwordHash = await bcrypt.hash(password, 10);
     const role = getRoleForEmail(normalizedEmail, env);
-
-    const insert = await db
-      .prepare(
-        'INSERT INTO users (username, email, password_hash, membership_tier, role, email_verified) VALUES (?, ?, ?, ?, ?, 0)'
-      )
-      .bind(trimmedUsername, normalizedEmail, passwordHash, MEMBERSHIP_TIERS.FREE, role)
-      .run();
-
-    const userId = insert.meta.last_row_id;
-
-    // Generate and store verification token (expires in 24 hours)
-    const verificationToken = generateVerificationToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await storeEmailToken(db, 'email_verification_tokens', userId, verificationToken, expiresAt);
-
+    let insert;
     try {
-      await sendVerificationEmail(normalizedEmail, trimmedUsername, verificationToken, env);
+      insert = await db
+        .prepare(
+          `INSERT INTO users (username, email, password_hash, membership_tier, role, email_verified)
+           SELECT ?, ?, ?, ?, ?, 0
+           WHERE NOT EXISTS (SELECT 1 FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(username) = LOWER(?))`
+        )
+        .bind(trimmedUsername, normalizedEmail, passwordHash, MEMBERSHIP_TIERS.FREE, role, normalizedEmail, trimmedUsername)
+        .run();
     } catch (error) {
-      // Roll back user creation if email fails so they can try again
-      await db.prepare('DELETE FROM users WHERE id = ?').bind(userId).run();
-      return jsonResponse({ error: 'Failed to send verification email. Please try again.' }, emailFailureStatus(error));
+      // A UNIQUE violation from a simultaneous identical sign-up counts as "already exists".
+      if (!/UNIQUE/i.test(String(error?.message))) throw error;
+      insert = null;
     }
 
-    return jsonResponse(
-      {
-        message: 'Registration successful. Please check your email to verify your account.',
-        pendingVerification: true,
-      },
-      201
-    );
+    if (insert?.meta?.changes) {
+      const userId = insert.meta.last_row_id;
+      await runAfterResponse(context, 'registration verification email', () =>
+        sendNewAccountVerification(db, env, userId, normalizedEmail, trimmedUsername));
+    } else {
+      // The email belongs to an account (or, rarely, the username was taken a moment ago, in
+      // which case there is no owner to tell). Tell the owner instead of the caller.
+      await runAfterResponse(context, 'existing-account notice', () =>
+        notifyExistingAccountOwner(db, request, env, normalizedEmail));
+    }
+
+    return jsonResponse(REGISTRATION_ACCEPTED_RESPONSE, 201);
   }
 
   if (request.method === 'POST' && segments[1] === 'login') {
@@ -2206,6 +2382,9 @@ async function handleAuth(request, env, segments) {
       .bind(normalizedEmail)
       .first();
 
+    // Login never applies the new-password policy: a grandfathered password of any length that
+    // matches its hash keeps working (bcrypt compares its first 72 bytes, exactly as when it was
+    // set). Only the request body cap bounds what is compared.
     if (!user) {
       await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
       await recordAuthEvent(db, request, 'login_failed', { email: normalizedEmail });
@@ -2347,51 +2526,51 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'Email is required' }, 400);
     }
 
+    // Every throttle is checked before the lookup and counts unregistered addresses too, so a
+    // 429 says nothing about whether (or how recently) an account asked for a link.
     if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.verificationResendsPerIp, 'ip', getClientIp(request))) {
       await recordAuthEvent(db, request, 'verification_resend_rate_limited', { email: normalizedEmail });
       return rateLimitedResponse('Too many requests from your network. Please try again later.');
     }
+    if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.verificationResendsPerEmail, 'email', normalizedEmail)) {
+      await recordAuthEvent(db, request, 'verification_resend_rate_limited', { email: normalizedEmail });
+      return rateLimitedResponse('Too many verification emails requested for this address. Please try again later.');
+    }
+    if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.verificationResendsPerEmailBurst, 'email', normalizedEmail)) {
+      return rateLimitedResponse('Please wait a moment before requesting another link.');
+    }
     await recordAuthEvent(db, request, 'verification_resend_requested', { email: normalizedEmail });
 
-    const unverifiedUser = await db
-      .prepare('SELECT id, username, email_verified FROM users WHERE LOWER(email) = LOWER(?)')
-      .bind(normalizedEmail)
-      .first();
+    // The lookup, token rotation and send all happen after the response, so it is the same, and
+    // takes the same time, for unknown, verified and unverified addresses alike.
+    await runAfterResponse(context, 'verification resend', async () => {
+      const unverifiedUser = await db
+        .prepare('SELECT id, username, email_verified FROM users WHERE LOWER(email) = LOWER(?)')
+        .bind(normalizedEmail)
+        .first();
+      if (!unverifiedUser || unverifiedUser.email_verified) return;
 
-    if (!unverifiedUser || unverifiedUser.email_verified) {
-      return jsonResponse({ message: 'If that address is awaiting verification, a new link has been sent.' });
-    }
+      // A link issued in the last minute (by sign-up, say) is still fresh: don't send another.
+      const recent = await db
+        .prepare(
+          `SELECT id FROM email_verification_tokens
+           WHERE user_id = ? AND used_at IS NULL
+             AND created_at > datetime('now', '-60 seconds')
+           LIMIT 1`
+        )
+        .bind(unverifiedUser.id)
+        .first();
+      if (recent) return;
 
-    const recent = await db
-      .prepare(
-        `SELECT id FROM email_verification_tokens
-         WHERE user_id = ? AND used_at IS NULL
-           AND created_at > datetime('now', '-60 seconds')
-         LIMIT 1`
-      )
-      .bind(unverifiedUser.id)
-      .first();
-
-    if (recent) {
-      return jsonResponse({ error: 'Please wait a moment before requesting another link.' }, 429);
-    }
-
-    await db
-      .prepare('DELETE FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL')
-      .bind(unverifiedUser.id)
-      .run();
-
-    const verificationToken = generateVerificationToken();
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-    await storeEmailToken(db, 'email_verification_tokens', unverifiedUser.id, verificationToken, expiresAt);
-
-    try {
+      await db
+        .prepare('DELETE FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL')
+        .bind(unverifiedUser.id)
+        .run();
+      const verificationToken = generateVerificationToken();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      await storeEmailToken(db, 'email_verification_tokens', unverifiedUser.id, verificationToken, expiresAt);
       await sendVerificationEmail(normalizedEmail, unverifiedUser.username, verificationToken, env);
-    } catch (error) {
-      // Answer with the generic message anyway: a distinct error would reveal that the
-      // address belongs to an account awaiting verification.
-      console.error('Resend verification email failed:', error);
-    }
+    });
 
     return jsonResponse({ message: 'If that address is awaiting verification, a new link has been sent.' });
   }
@@ -2495,15 +2674,6 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'Please provide a valid email address' }, 400);
     }
 
-    const emailCheck = await db
-      .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?')
-      .bind(normalizedNewEmail, auth.user.id)
-      .first();
-
-    if (emailCheck) {
-      return jsonResponse({ error: 'Email is already in use' }, 400);
-    }
-
     if (!(await tableExists(db, 'email_change_tokens'))) {
       return jsonResponse({ error: 'Email changes are temporarily unavailable. Please try again later.' }, 503);
     }
@@ -2522,6 +2692,17 @@ async function handleAuth(request, env, segments) {
 
     if (normalizeEmail(user.email) === normalizedNewEmail) {
       return jsonResponse({ error: 'New email must be different from current email' }, 400);
+    }
+
+    // Only after the password check, so a stolen session can't use this route to test which
+    // addresses have accounts. (The account's own owner still can; see AGENTS.md.)
+    const emailCheck = await db
+      .prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?')
+      .bind(normalizedNewEmail, auth.user.id)
+      .first();
+
+    if (emailCheck) {
+      return jsonResponse({ error: 'Email is already in use' }, 400);
     }
 
     // The account keeps its current email and role until the NEW inbox proves ownership.
@@ -2559,12 +2740,9 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'All fields are required' }, 400);
     }
 
-    if (newPassword.length < 6) {
-      return jsonResponse({ error: 'New password must be at least 6 characters' }, 400);
-    }
-
-    if (newPassword.length > INPUT_LIMITS.password) {
-      return jsonResponse({ error: `New password must be ${INPUT_LIMITS.password} characters or less` }, 400);
+    const newPasswordError = passwordPolicyError(newPassword, 'New password');
+    if (newPasswordError) {
+      return jsonResponse({ error: newPasswordError }, 400);
     }
 
     if (newPassword !== confirmPassword) {
@@ -2586,6 +2764,12 @@ async function handleAuth(request, env, segments) {
 
     const passwordFailure = await confirmCurrentPassword(db, request, auth.user.id, currentPassword, 'Incorrect current password');
     if (passwordFailure) return passwordFailure;
+
+    // The breach check runs only once the caller has proved the current password.
+    const breachError = await validateNewPassword(newPassword, { label: 'New password' });
+    if (breachError) {
+      return jsonResponse({ error: breachError }, 400);
+    }
 
     const passwordHash = await bcrypt.hash(newPassword, 10);
     // One transaction: new password, sessions revoked, and any reset link emailed earlier
@@ -3112,47 +3296,40 @@ async function handleAuth(request, env, segments) {
     }
     await recordAuthEvent(db, request, 'password_reset_requested', { email: normalizedEmail });
 
-    const user = await db
-      .prepare('SELECT id, username FROM users WHERE LOWER(email) = LOWER(?)')
-      .bind(normalizedEmail)
-      .first();
+    // The lookup, token rotation and send happen after the response, so a registered address
+    // answers exactly like an unknown one: same body, no extra latency from the token writes or
+    // the email provider, and a provider failure never reaches the caller.
+    await runAfterResponse(context, 'password reset email', async () => {
+      const user = await db
+        .prepare('SELECT id, username FROM users WHERE LOWER(email) = LOWER(?)')
+        .bind(normalizedEmail)
+        .first();
+      if (!user) return;
 
-    if (!user) {
-      return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
-    }
+      // A link issued in the last minute is still fresh: don't send another (silently, since a
+      // distinct answer would reveal the account).
+      const recent = await db
+        .prepare(
+          `SELECT id FROM password_reset_tokens
+           WHERE user_id = ? AND used_at IS NULL
+             AND created_at > datetime('now', '-60 seconds')
+           LIMIT 1`
+        )
+        .bind(user.id)
+        .first();
+      if (recent) return;
 
-    // Rate-limit: one request per 60 seconds
-    const recent = await db
-      .prepare(
-        `SELECT id FROM password_reset_tokens
-         WHERE user_id = ? AND used_at IS NULL
-           AND created_at > datetime('now', '-60 seconds')
-         LIMIT 1`
-      )
-      .bind(user.id)
-      .first();
+      // Invalidate old unused tokens
+      await db
+        .prepare('DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL')
+        .bind(user.id)
+        .run();
 
-    if (recent) {
-      return jsonResponse({ error: 'Please wait a moment before requesting another reset link.' }, 429);
-    }
-
-    // Invalidate old unused tokens
-    await db
-      .prepare('DELETE FROM password_reset_tokens WHERE user_id = ? AND used_at IS NULL')
-      .bind(user.id)
-      .run();
-
-    const resetToken = generateVerificationToken();
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
-
-    await storeEmailToken(db, 'password_reset_tokens', user.id, resetToken, expiresAt);
-
-    try {
+      const resetToken = generateVerificationToken();
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 hour
+      await storeEmailToken(db, 'password_reset_tokens', user.id, resetToken, expiresAt);
       await sendPasswordResetEmail(normalizedEmail, user.username, resetToken, env);
-    } catch (err) {
-      // Don't reveal failure to the caller, but log it for debugging
-      console.error('[forgot-password] Failed to send reset email:', err?.message ?? err);
-    }
+    });
 
     return jsonResponse({ message: 'If that email address is registered, a reset link has been sent.' });
   }
@@ -3168,12 +3345,9 @@ async function handleAuth(request, env, segments) {
       return jsonResponse({ error: 'Token and new password are required.' }, 400);
     }
 
-    if (typeof password !== 'string' || password.length < 6) {
-      return jsonResponse({ error: 'Password must be at least 6 characters.' }, 400);
-    }
-
-    if (password.length > INPUT_LIMITS.password) {
-      return jsonResponse({ error: `Password must be ${INPUT_LIMITS.password} characters or less.` }, 400);
+    const passwordError = passwordPolicyError(password);
+    if (passwordError) {
+      return jsonResponse({ error: passwordError }, 400);
     }
 
     const record = await db
@@ -3195,6 +3369,12 @@ async function handleAuth(request, env, segments) {
 
     if (new Date(record.expires_at) < new Date()) {
       return jsonResponse({ error: 'This reset link has expired. Please request a new one.' }, 400);
+    }
+
+    // Only a live reset link gets as far as the breach check (and its upstream call).
+    const breachError = await validateNewPassword(password);
+    if (breachError) {
+      return jsonResponse({ error: breachError }, 400);
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -4048,7 +4228,7 @@ async function handleSupport(request, env, segments) {
     return jsonResponse({ error: captcha.error }, captcha.status);
   }
 
-  if (!env.CLOUDFLARE_API_TOKEN || !env.CLOUDFLARE_ACCOUNT_ID) {
+  if (!isEmailConfigured(env)) {
     return jsonResponse({ error: 'Support email is not configured.' }, 503);
   }
 
@@ -4157,7 +4337,7 @@ async function routeRequest(context) {
     }
 
     if (segments[1] === 'auth') {
-      return await handleAuth(request, env, segments.slice(1));
+      return await handleAuth(request, env, segments.slice(1), context);
     }
 
     if (segments[1] === 'bookmarks') {
