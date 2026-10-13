@@ -1,8 +1,11 @@
 // Server-renders per-profile <title>/description/OG tags into the SPA shell for
 // GET /u/:username, so link previews (Slack, Discord, X, Facebook, etc.) and search
 // engines see unique metadata per profile instead of the generic index.html defaults.
-// Real visitors get the same HTML; React hydrates over it and useDocumentMeta (see
-// src/utils/useDocumentMeta.js) keeps things correct on subsequent client-side nav.
+// For profiles that pass the indexing bar it also renders a static snapshot of the most
+// recent public bookmarks into #root, so crawlers that don't run JS see real content.
+// Real visitors get the same HTML; React's createRoot render() replaces #root on mount
+// (no hydration) and useDocumentMeta (src/utils/useDocumentMeta.js) keeps the head
+// correct on subsequent client-side nav.
 // Visibility (public, not suspended) and the indexing bar come from the shared helper, so
 // this page, GET /api/profiles/:username and the sitemap always agree.
 import { findVisibleProfile, getProfileSchema, publicBookmarkCondition } from '../_lib/profileVisibility.js';
@@ -20,6 +23,78 @@ const escapeHtml = (value) =>
 // characters that can change how the HTML parser or older JS engines read it) is escaped.
 const serializeJsonLd = (value) =>
   JSON.stringify(value).replace(/[<>&\u2028\u2029]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
+// Most recent public bookmarks rendered into #root for indexable profiles. The full list
+// (and filtering/sorting) comes from GET /api/profiles/:username once the app mounts.
+export const SSR_BOOKMARK_LIMIT = 100;
+
+// One query: the newest public bookmarks (same order as the profile page's default
+// "Date saved, newest first" sort) with each bookmark's tag names as a JSON array.
+const recentBookmarksQuery = (schema) => `WITH recent AS (
+    SELECT b.id, b.title, b.url, b.created_at FROM bookmarks b
+    WHERE b.user_id = ?${publicBookmarkCondition(schema)}
+    ORDER BY b.created_at DESC, b.id DESC LIMIT ${SSR_BOOKMARK_LIMIT}
+  )
+  SELECT r.id, r.title, r.url,
+    (SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+     WHERE bt.bookmark_id = r.id) AS tags
+  FROM recent r ORDER BY r.created_at DESC, r.id DESC`;
+
+// Never throws: a failed snapshot query leaves the page with metadata only.
+const fetchRecentBookmarks = async (db, userId, schema) => {
+  try {
+    const { results } = await db.prepare(recentBookmarksQuery(schema)).bind(userId).all();
+    return results || [];
+  } catch {
+    return [];
+  }
+};
+
+// Only http(s) URLs become links; anything else (javascript:, data:, unparseable) is
+// rendered as plain text. Returns the normalized URL so what's emitted is what was parsed.
+export const safeHttpUrl = (value) => {
+  try {
+    const url = new URL(String(value));
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+};
+
+const parseTagNames = (value) => {
+  try {
+    const names = JSON.parse(value || '[]');
+    return Array.isArray(names) ? names.filter((name) => typeof name === 'string' && name).sort() : [];
+  } catch {
+    return [];
+  }
+};
+
+// Mirrors the PublicProfile page shell (AppHeader, .app-main, BookmarkBrowser's list and
+// DefaultCard) with the global App.css/index.css classes, so the pre-mount markup looks
+// like the page React is about to render. Every user-controlled value is escaped.
+export function renderProfileBookmarks(username, bookmarks, totalPublic) {
+  const items = bookmarks.map((bookmark) => {
+    const url = safeHttpUrl(bookmark.url);
+    const title = escapeHtml(bookmark.title || (url ? url.href : 'Untitled'));
+    const titleHtml = url
+      ? `<a href="${escapeHtml(url.href)}" rel="ugc nofollow noopener">${title}</a>`
+      : title;
+    const domain = url ? url.hostname.replace(/^www\./i, '') : '';
+    const tags = parseTagNames(bookmark.tags);
+    return `<article class="bookmark-card"><div class="bookmark-header"><span class="favicon-slot" aria-hidden="true"></span><h3 class="bookmark-title">${titleHtml}</h3></div>`
+      + (domain ? `<div class="bookmark-meta"><span class="bookmark-url">${escapeHtml(domain)}</span></div>` : '')
+      + (tags.length ? `<div class="tags">${tags.map((tag) => `<span class="tag-stock">${escapeHtml(tag)}</span>`).join('')}</div>` : '')
+      + '</article>';
+  });
+  const total = Math.max(Number(totalPublic) || 0, bookmarks.length);
+  const count = total > bookmarks.length
+    ? `${bookmarks.length} most recent of ${total} bookmarks`
+    : `${total} ${total === 1 ? 'bookmark' : 'bookmarks'}`;
+  return `<div class="app"><header class="app-header"><div class="app-header-brand"><a href="/" class="app-header-logo-btn" title="Back to Tagstash"><picture class="logo-picture"><source srcset="/logo-dark.webp 255w, /logo-dark-large.webp 560w" sizes="80px" type="image/webp" /><img src="/logo-dark-small.png" alt="Tagstash" width="560" height="440" class="app-header-logo" /></picture></a><p class="app-header-tagline">Public bookmarks</p></div></header>`
+    + `<main id="main" class="app-main"><div class="main-content"><div class="public-profile-header"><h1>@${escapeHtml(username)}&#39;s bookmarks</h1></div>`
+    + `<div class="bookmarks-section"><div class="results-bar"><p class="results-count">${count}</p></div><div class="bookmarks-grid">${items.join('')}</div></div></div></main></div>`;
+}
 
 export async function onRequestGet({ request, env, params, next }) {
   const response = await next();
@@ -52,6 +127,8 @@ export async function onRequestGet({ request, env, params, next }) {
   // soft-404); 503 when the lookup itself failed, so a transient D1 error isn't
   // mistaken for a missing profile.
   let status = 404;
+  // Static bookmark list for #root; only ever set for indexable profiles.
+  let rootHtml = '';
 
   try {
     const db = env.DB;
@@ -70,8 +147,16 @@ export async function onRequestGet({ request, env, params, next }) {
            WHERE b.user_id = ?${publicBookmarkCondition(schema)}
            GROUP BY t.name ORDER BY cnt DESC LIMIT 5`;
 
-        const { results } = await db.prepare(tagsQuery).bind(user.id).all();
+        // The bookmark snapshot is the one extra query, run only for indexable profiles.
+        // It is best-effort: if it fails the page degrades to metadata only, not a 503.
+        const [{ results }, recentBookmarks] = await Promise.all([
+          db.prepare(tagsQuery).bind(user.id).all(),
+          indexable ? fetchRecentBookmarks(db, user.id, schema) : [],
+        ]);
         const topTags = (results || []).map((row) => row.name);
+        if (recentBookmarks.length) {
+          rootHtml = renderProfileBookmarks(user.username, recentBookmarks, user.public_bookmark_count);
+        }
 
         title = `${user.username}'s Bookmarks - Tagstash`;
         description = topTags.length
@@ -86,6 +171,7 @@ export async function onRequestGet({ request, env, params, next }) {
     description = "This profile doesn't exist or isn't public.";
     found = false;
     indexable = false;
+    rootHtml = '';
     status = 503;
   }
 
@@ -145,6 +231,14 @@ ${jsonLd ? `<script type="application/ld+json">${serializeJsonLd(jsonLd)}</scrip
         el.append(headHtml, { html: true });
       },
     });
+
+  if (rootHtml) {
+    rewriter = rewriter.on('#root', {
+      element(el) {
+        el.setInnerContent(rootHtml, { html: true });
+      },
+    });
+  }
 
   for (const selector of removeSelectors) {
     rewriter = rewriter.on(selector, {

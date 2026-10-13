@@ -1201,6 +1201,17 @@ a.btn-field-action,
   font-size: 1rem;
 }
 
+/* Public profile heading. Global (not in a lazy chunk) because functions/u/[username].js
+   server-renders it into #root before the app's JS loads. */
+.public-profile-header {
+  margin-bottom: 1rem;
+}
+
+.public-profile-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
 /* ---------- Bookmark list ----------
    One panel, one row per bookmark, like an index. Rows don't move on hover;
    the actions appear instead. */

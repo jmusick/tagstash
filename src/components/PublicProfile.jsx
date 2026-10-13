@@ -5,7 +5,6 @@ import AppHeader from './AppHeader'
 import AppFooter from './AppFooter'
 import BookmarkBrowser from './BookmarkBrowser'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
-import './PublicProfile.css'
 
 function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   const { username } = useParams()
