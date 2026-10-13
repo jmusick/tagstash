@@ -1,4 +1,5 @@
 import { Component } from 'react';
+import { removeProfileSnapshot } from '../utils/profileSnapshot';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -12,6 +13,8 @@ class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     console.error('Unhandled error in component tree:', error, errorInfo);
+    // The fallback renders inside #root, which a server-rendered profile snapshot hides.
+    removeProfileSnapshot();
   }
 
   render() {

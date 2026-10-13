@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, lazy, Suspense } from 'react'
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { version } from '../package.json'
 import './App.css'
@@ -35,6 +35,7 @@ import { getRegistrableDomain } from './utils/domain'
 import { INPUT_LIMITS } from './utils/inputLimits'
 import { BookmarkTagList } from './components/BookmarkParts'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
+import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
 import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Info, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
 
 const FREE_BOOKMARK_LIMIT = 50
@@ -97,6 +98,10 @@ function App() {
   const [focusBookmarkId, setFocusBookmarkId] = useState(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  // The profile snapshot belongs to the first page loaded; drop it on any other route.
+  useLayoutEffect(() => {
+    if (!isSnapshotPath(pathname)) removeProfileSnapshot()
+  }, [pathname])
   // The signed-in bookmark view had no title of its own, so it kept the previous
   // page's (e.g. "Manage Tags") and route announcements read the wrong one.
   useDocumentMeta({ title: 'Bookmarks - Tagstash', path: '/', noindex: true, enabled: !!user && pathname === '/' })

@@ -1201,6 +1201,38 @@ a.btn-field-action,
   font-size: 1rem;
 }
 
+/* Public profile snapshot. functions/u/[username].js renders an indexable profile's
+   bookmarks into #ssr-profile just before #root. While it is there #root stays hidden,
+   so the app mounts and loads behind it; PublicProfile removes it once the real list has
+   rendered (src/utils/profileSnapshot.js). These rules must stay global, not in a
+   lazy-loaded stylesheet, because they apply before the app's JS runs. */
+#ssr-profile + #root {
+  display: none;
+}
+
+#ssr-profile .ssr-toolbar-spacer {
+  border-color: transparent;
+  background: none;
+}
+
+#ssr-profile .ssr-logo--light,
+:root[data-theme='light'] #ssr-profile .ssr-logo--dark {
+  display: none;
+}
+
+:root[data-theme='light'] #ssr-profile .ssr-logo--light {
+  display: contents;
+}
+
+.public-profile-header {
+  margin-bottom: 1rem;
+}
+
+.public-profile-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
 /* ---------- Bookmark list ----------
    One panel, one row per bookmark, like an index. Rows don't move on hover;
    the actions appear instead. */
@@ -1472,7 +1504,8 @@ a.btn-field-action,
 }
 
 @media (max-width: 1024px) {
-  #root {
+  #root,
+  #ssr-profile {
     padding: 1rem 1rem 1.5rem;
   }
 

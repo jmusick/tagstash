@@ -217,7 +217,8 @@ body {
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-#root {
+#root,
+#ssr-profile {
   max-width: 1440px;
   margin: 0 auto;
   padding: 1.5rem 2rem 2rem;

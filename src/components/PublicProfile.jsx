@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { profileAPI } from '../api/api'
 import AppHeader from './AppHeader'
 import AppFooter from './AppFooter'
 import BookmarkBrowser from './BookmarkBrowser'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
-import './PublicProfile.css'
+import { removeProfileSnapshot } from '../utils/profileSnapshot'
 
 function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   const { username } = useParams()
@@ -61,6 +61,13 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
       fetchProfile()
     }
   }, [username, fetchProfile])
+
+  // Swap out the server-rendered snapshot (functions/u/[username].js) only once the real
+  // list, or the not-found/error state, is committed. A layout effect runs before paint, so
+  // the snapshot and the loaded page never show a blank or "Loading..." frame in between.
+  useLayoutEffect(() => {
+    if (!loading) removeProfileSnapshot()
+  }, [loading])
 
   const handleSelectedTagsChange = (selectedTags) => {
     const next = new URLSearchParams()
