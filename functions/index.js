@@ -40,6 +40,7 @@ export async function onRequestGet({ request, next }) {
 
   const rootHtml = `
 <div class="home-container">
+  <main id="main" tabindex="-1">
   <section class="hero-section">
     <div class="hero-content">
       <h1 class="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</h1>
@@ -59,6 +60,7 @@ export async function onRequestGet({ request, next }) {
     <h2 class="home-section-title">Questions</h2>
     <dl class="faq-list">${faqHtml}</dl>
   </section>
+  </main>
 </div>
 `;
 
