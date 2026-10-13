@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { onRequest } from '../functions/api/[[path]].js';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 
-const call = (env, path, { method = 'GET', headers = {}, body, origin = 'https://tagsta.sh' } = {}) =>
-  onRequest({ env, request: new Request(`${origin}/api/${path}`, {
+const call = (env, path, { method = 'GET', headers = {}, body, origin = 'https://tagsta.sh', waitUntil } = {}) =>
+  onRequest({ env, waitUntil, request: new Request(`${origin}/api/${path}`, {
     method, headers: { 'Content-Type': 'application/json', ...headers },
     ...(body ? { body: JSON.stringify(body) } : {}),
   }) });
@@ -97,22 +97,38 @@ test('hung or failing Turnstile and email upstreams answer 502 within their dead
   } finally { env.sqlite.close(); }
 });
 
-test('registration rolls back with 502 when email times out, 503 when email is not configured', async () => {
+const pwnedMiss = async () => new Response('0000000000000000000000000000000000A:0\r\n');
+
+test('registration answers before the email is sent, keeps the account if it times out, and 503s when email is not configured', async () => {
   const env = await supportEnv();
   try {
-    const register = () => call(env, 'auth/register', { method: 'POST', body: { username: 'newuser', email: 'new@example.com', password: 'new-user-password' } });
-    await withUpstreams({ 'api.cloudflare.com': hang }, async ({ deadlines }) => {
-      const response = await register();
-      assert.equal(response.status, 502);
-      assert.deepEqual(deadlines, [10000]);
+    const pending = [];
+    const register = () => call(env, 'auth/register', {
+      method: 'POST', waitUntil: (promise) => pending.push(promise),
+      body: { username: 'newuser', email: 'new@example.com', password: 'new-user-password' },
     });
-    assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE email = 'new@example.com'").get().n, 0);
+    await withUpstreams({ 'api.pwnedpasswords.com': pwnedMiss, 'api.cloudflare.com': hang }, async ({ deadlines }) => {
+      const response = await register();
+      // The provider's failure can't leak into the response (an existing email gets this too).
+      assert.equal(response.status, 201);
+      assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE email = 'new@example.com'").get().n, 1);
+      assert.equal(pending.length, 1);
+      await Promise.all(pending);
+      assert.deepEqual(deadlines, [3000, 10000]);
+    });
+    // The background send timed out: the unverified account stays (so Resend can recover it)
+    // and the undelivered token is dropped.
+    assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE email = 'new@example.com' AND email_verified = 0").get().n, 1);
+    assert.equal(env.sqlite.prepare('SELECT COUNT(*) AS n FROM email_verification_tokens WHERE used_at IS NULL').get().n, 0);
     delete env.CLOUDFLARE_API_TOKEN;
     await withUpstreams({}, async ({ calls }) => {
-      assert.equal((await register()).status, 503);
+      const response = await call(env, 'auth/register', {
+        method: 'POST', body: { username: 'otheruser', email: 'other@example.com', password: 'new-user-password' },
+      });
+      assert.equal(response.status, 503);
       assert.equal(calls.length, 0);
     });
-    assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE email = 'new@example.com'").get().n, 0);
+    assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM users WHERE email = 'other@example.com'").get().n, 0);
   } finally { env.sqlite.close(); }
 });
 

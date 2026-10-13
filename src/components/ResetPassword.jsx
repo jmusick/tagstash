@@ -4,6 +4,7 @@ import { authAPI } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
+import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import './Auth.css';
 
 function ResetPassword({ logoSrc }) {
@@ -19,8 +20,9 @@ function ResetPassword({ logoSrc }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password.length < 6) {
-      setMessage('Password must be at least 6 characters.');
+    const passwordError = newPasswordError(password);
+    if (passwordError) {
+      setMessage(`${passwordError}.`);
       setStatus('error');
       return;
     }
@@ -81,12 +83,11 @@ function ResetPassword({ logoSrc }) {
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setStatus('form'); }}
                   required
-                  minLength={6}
-                  maxLength={INPUT_LIMITS.password}
+                  minLength={INPUT_LIMITS.passwordMinChars}
                   aria-describedby="rp-password-hint"
                   autoFocus
                 />
-                <small id="rp-password-hint" className="form-hint">At least 6 characters</small>
+                <small id="rp-password-hint" className="form-hint">{NEW_PASSWORD_HINT}</small>
               </div>
               <div className="form-field">
                 <label htmlFor="rp-confirm">Confirm new password</label>
@@ -96,8 +97,7 @@ function ResetPassword({ logoSrc }) {
                   value={confirm}
                   onChange={(e) => { setConfirm(e.target.value); setStatus('form'); }}
                   required
-                  minLength={6}
-                  maxLength={INPUT_LIMITS.password}
+                  minLength={INPUT_LIMITS.passwordMinChars}
                   placeholder="Repeat your password"
                   aria-invalid={status === 'error' ? 'true' : undefined}
                   aria-describedby={status === 'error' ? 'rp-error' : undefined}

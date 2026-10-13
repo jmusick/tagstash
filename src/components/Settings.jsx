@@ -7,6 +7,7 @@ import Export from './Export';
 import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../utils/linkTarget';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
+import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import './Settings.css';
 
 function Settings({
@@ -454,8 +455,9 @@ function Settings({
         return;
       }
 
-      if (passwordForm.newPassword.length < 6) {
-        setError('New password must be at least 6 characters');
+      const passwordError = newPasswordError(passwordForm.newPassword, 'New password');
+      if (passwordError) {
+        setError(passwordError);
         setLoading(false);
         return;
       }
@@ -749,10 +751,9 @@ function Settings({
                 required
                 placeholder="Enter your new password"
                 aria-describedby="new-password-hint"
-                minLength={6}
-                maxLength={INPUT_LIMITS.password}
+                minLength={INPUT_LIMITS.passwordMinChars}
               />
-              <small id="new-password-hint" className="form-hint">At least 6 characters</small>
+              <small id="new-password-hint" className="form-hint">{NEW_PASSWORD_HINT}</small>
             </div>
 
             <div className="form-field">
@@ -765,8 +766,7 @@ function Settings({
                 onChange={handlePasswordChange}
                 required
                 placeholder="Confirm your new password"
-                minLength={6}
-                maxLength={INPUT_LIMITS.password}
+                minLength={INPUT_LIMITS.passwordMinChars}
               />
             </div>
 

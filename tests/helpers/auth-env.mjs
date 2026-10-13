@@ -2,6 +2,18 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import bcrypt from 'bcryptjs';
 
+// New passwords are checked against Have I Been Pwned. Keep tests offline and deterministic: unless
+// a test installs its own fetch, that host answers with a padding-only range (no breach). Other
+// hosts go to whatever fetch was there before (tests mock those themselves).
+export const PWNED_PASSWORDS_HOST = 'api.pwnedpasswords.com';
+const fetchBeforeHelpers = globalThis.fetch;
+globalThis.fetch = async (url, options) => {
+  if (new URL(String(url)).host === PWNED_PASSWORDS_HOST) {
+    return new Response('0000000000000000000000000000000000A:0\r\n', { headers: { 'Content-Type': 'text/plain' } });
+  }
+  return fetchBeforeHelpers(url, options);
+};
+
 // Run the real queries and migrations against isolated in-memory SQLite, with D1's API shape.
 // `queryLatency` makes every query wait a macrotask first, like a real D1 round trip, so
 // concurrent requests interleave between queries (otherwise they tend to run back to back and

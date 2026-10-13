@@ -9,6 +9,9 @@ export const INPUT_LIMITS = {
   tagsPerBookmark: 50,
   username: 50,
   email: 254,
-  password: 256,
+  // New passwords: minimum in characters (code points), maximum in UTF-8 bytes (bcrypt's limit).
+  // See src/utils/passwordPolicy.js; login fields carry neither.
+  passwordMinChars: 8,
+  passwordMaxBytes: 72,
   apiKeyName: 100,
 };

@@ -45,6 +45,8 @@ Current status at a glance:
 - Tag Management page (`/tags`) for merging two tags into one, with a confirmation step since it can't be undone
 - Self-service username, email, and password changes, plus a forgot-password email flow
 - Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
+- Password policy for new passwords (sign-up, change, reset): at least 8 characters and at most 72 UTF-8 bytes (bcrypt's limit), and passwords found in known breaches are refused via a Have I Been Pwned k-anonymity lookup (only a 5-character hash prefix is sent; the check fails open if the service is unreachable). Existing passwords keep working.
+- Account-enumeration resistance: sign-up, password reset and verification resend give the same answer (and timing, with the email sent after the response) whether or not an address has an account; signing up with a registered address emails its owner instead. Usernames are public, so "username taken" is reported.
 - Brute-force protection: 8 failed logins lock an account for 15 minutes, with per-IP/per-email throttling of login, sign-up, verification resends and password-reset requests; auth events are logged for super admins in Settings → Admin
 - Security response headers (CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) and immutable caching for hashed assets, served via `public/_headers`
 - Reset and verification links are stored as SHA-256 digests, and unverified-account guidance is shown only after a correct password. Keyboard focus outlines, skip links, and reduced-motion support cover the main app and public pages.
@@ -235,7 +237,7 @@ expiry unless revoked by a password change/reset.
 Auth regression checks: `npm run test:auth` (Node 22.13+ with built-in SQLite).
 These use an isolated in-memory database and never access production.
 
-- `POST /api/auth/register`
+- `POST /api/auth/register` — `201 { pendingVerification: true }` whether or not the email already has an account (its owner is emailed instead); `400` for invalid input, a taken username or a breached password
 - `POST /api/auth/login`
 - `POST /api/auth/session` — exchange a legacy bearer token for a web cookie session
 - `POST /api/auth/logout` — clear the current web session cookie
@@ -243,7 +245,7 @@ These use an isolated in-memory database and never access production.
 - `GET /api/auth/verify-email`
 - `POST /api/auth/resend-verification`
 - `PUT /api/auth/username`
-- `PUT /api/auth/email`
+- `PUT /api/auth/email` — reports an address already in use only after the current password is confirmed
 - `PUT /api/auth/password`
 - `PUT /api/auth/profile-public`
 - `PUT /api/auth/theme`
@@ -252,7 +254,7 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/api-keys` — returns the plaintext key once; `GET` lists metadata only
 - `DELETE /api/auth/api-keys/:id`
 - `DELETE /api/auth/api-keys/:id/permanent`
-- `POST /api/auth/forgot-password`
+- `POST /api/auth/forgot-password` — the same `200` for registered and unknown addresses; the reset email is sent after the response
 - `POST /api/auth/reset-password`
 
 ### Admin
