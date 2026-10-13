@@ -1288,7 +1288,7 @@ function Settings({
             ) : authEvents.length === 0 ? (
               <p className="admin-users-empty">No security events recorded.</p>
             ) : (
-              <div className="admin-events-table-wrap">
+              <div className="admin-events-table-wrap" role="region" aria-label="Recent security events" tabIndex={0}>
                 <table className="admin-events-table">
                   <thead>
                     <tr>

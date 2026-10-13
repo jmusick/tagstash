@@ -236,7 +236,7 @@
 .import-note {
   margin: 0;
   font-size: 0.82rem;
-  opacity: 0.6;
+  color: var(--color-text-muted);
 }
 
 .import-actions {

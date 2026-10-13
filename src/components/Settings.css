@@ -324,7 +324,7 @@
   align-items: center;
   padding: 0.28rem 0.62rem;
   border-radius: 999px;
-  background: #22c55e;
+  background: var(--color-success-solid);
   color: #fff;
   font-size: 0.78rem;
   font-weight: 700;
@@ -562,13 +562,13 @@
 }
 
 .admin-user-actions .btn-danger {
-  background-color: var(--color-danger);
+  background-color: var(--color-danger-solid);
   color: #fff;
   border: none;
 }
 
 .admin-user-actions .btn-danger:hover:not(:disabled) {
-  background-color: var(--color-danger-hover, var(--color-danger));
+  background-color: var(--color-danger-solid-hover);
 }
 
 .admin-user-actions .btn-danger:disabled {

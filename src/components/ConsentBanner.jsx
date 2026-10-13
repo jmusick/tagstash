@@ -125,13 +125,14 @@ function ConsentBanner() {
             way. See the <Link to="/privacy">Privacy Policy</Link>.
           </p>
         </div>
+        {/* Accept and Decline share one style on purpose: equal prominence, neither is the primary action. */}
         <div className="cc-actions">
-          <button type="button" className="btn-secondary" onClick={() => record('denied')}>
+          <button type="button" className="cc-btn" onClick={() => record('denied')}>
             Decline
           </button>
           <button
             type="button"
-            className="btn-primary"
+            className="cc-btn"
             ref={acceptBtnRef}
             onClick={() => record('granted')}
           >
