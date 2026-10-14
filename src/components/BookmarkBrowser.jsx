@@ -6,6 +6,7 @@ import { getRegistrableDomain } from '../utils/domain'
 import { DEFAULT_LINK_TARGET, linkTargetProps } from '../utils/linkTarget'
 import { BookmarkTagList } from './BookmarkParts'
 import { displayUrl, formatSavedDate } from '../utils/bookmarkDisplay'
+import { hasNoTags, countUntagged } from '../utils/bookmarkFilters'
 
 // Honor the OS "reduce motion" setting for script-driven scrolling; CSS
 // scroll-behavior is already neutralised in index.css, but an explicit
@@ -50,6 +51,7 @@ function BookmarkBrowser({
   tagsRefreshKey = 0,
   onTagFavoriteToggle,
   showFavoritesFilter = true,
+  showUntaggedFilter = false,
   toolbarExtra,
   renderCard,
   emptyStateMessage = 'No bookmarks yet. Add your first one to get started!',
@@ -61,6 +63,7 @@ function BookmarkBrowser({
 }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [showUntaggedOnly, setShowUntaggedOnly] = useState(false)
   const [selectedTags, setSelectedTags] = useState(() => initialSelectedTags || [])
   const [sortBy, setSortBy] = useState('date')
   const [sortDirection, setSortDirection] = useState('desc')
@@ -106,6 +109,10 @@ function BookmarkBrowser({
     return items
   }, [bookmarks, sortBy, sortDirection])
 
+  // Ignore the toggle's state if the filter isn't offered, so it can never filter invisibly.
+  const untaggedActive = showUntaggedFilter && showUntaggedOnly
+  const untaggedCount = useMemo(() => countUntagged(bookmarks), [bookmarks])
+
   const filteredBookmarks = useMemo(() => {
     if (focusBookmarkId) {
       return sortedBookmarks.filter((bookmark) => bookmark.id === focusBookmarkId)
@@ -141,14 +148,16 @@ function BookmarkBrowser({
 
       const matchesFavorite = !showFavoritesOnly || Boolean(bookmark.is_favorite)
 
-      return matchesSearch && matchesTag && matchesFavorite
+      const matchesUntagged = !untaggedActive || hasNoTags(bookmark)
+
+      return matchesSearch && matchesTag && matchesFavorite && matchesUntagged
     })
-  }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, focusBookmarkId, domainFilter])
+  }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, untaggedActive, focusBookmarkId, domainFilter])
 
   useEffect(() => {
     setCurrentPage(1)
     setPageAnnouncement('')
-  }, [searchTerm, selectedTags, sortBy, sortDirection, itemsPerPage, domainFilter])
+  }, [searchTerm, selectedTags, untaggedActive, sortBy, sortDirection, itemsPerPage, domainFilter])
 
   const totalPages = Math.max(1, Math.ceil(filteredBookmarks.length / itemsPerPage))
 
@@ -179,6 +188,7 @@ function BookmarkBrowser({
     setSearchTerm('')
     setSelectedTags([])
     setShowFavoritesOnly(false)
+    setShowUntaggedOnly(false)
     setDomainFilter(null)
     setCurrentPage(1)
   }, [focusBookmarkId])
@@ -190,6 +200,7 @@ function BookmarkBrowser({
     setSearchTerm('')
     setSelectedTags([])
     setShowFavoritesOnly(false)
+    setShowUntaggedOnly(false)
     setDomainFilter(domain)
   }
 
@@ -208,6 +219,8 @@ function BookmarkBrowser({
     if (!normalized) return
 
     setDomainFilter(null)
+    // "Without tags" and a tag filter can never both match, so picking a tag replaces it.
+    setShowUntaggedOnly(false)
     if (focusBookmarkId) onClearFocus?.()
     setSelectedTags([normalized])
   }
@@ -217,6 +230,7 @@ function BookmarkBrowser({
     if (!normalized) return
 
     setDomainFilter(null)
+    setShowUntaggedOnly(false)
     if (focusBookmarkId) onClearFocus?.()
     setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]))
   }
@@ -227,8 +241,16 @@ function BookmarkBrowser({
     setSelectedTags((prev) => prev.filter((tag) => tag !== normalized))
   }
 
+  const handleToggleUntagged = () => {
+    setDomainFilter(null)
+    if (focusBookmarkId) onClearFocus?.()
+    // Mutually exclusive with tag selection; search and favorites still combine with it.
+    if (!showUntaggedOnly) setSelectedTags([])
+    setShowUntaggedOnly((prev) => !prev)
+  }
+
   const hasActiveFilters = Boolean(
-    searchTerm.trim() || selectedTags.length > 0 || showFavoritesOnly || domainFilter || focusBookmarkId
+    searchTerm.trim() || selectedTags.length > 0 || showFavoritesOnly || untaggedActive || domainFilter || focusBookmarkId
   )
 
   const activeFilterChipLabel = focusBookmarkId
@@ -241,6 +263,7 @@ function BookmarkBrowser({
     setSearchTerm('')
     setSelectedTags([])
     setShowFavoritesOnly(false)
+    setShowUntaggedOnly(false)
     setDomainFilter(null)
     if (focusBookmarkId) onClearFocus?.()
   }
@@ -288,7 +311,7 @@ function BookmarkBrowser({
                   className="clear-filters-btn"
                   onClick={handleClearAllFilters}
                   aria-label="Clear all filters"
-                  title="Clear search, tags, favorites, and related filters"
+                  title="Clear search, tags, favorites, untagged, and related filters"
                 >
                   <X size={16} />
                 </button>
@@ -356,7 +379,14 @@ function BookmarkBrowser({
             <div className="loading-message">Loading bookmarks…</div>
           ) : filteredBookmarks.length === 0 ? (
             <div className="empty-state">
-              {hasActiveFilters ? (
+              {untaggedActive && untaggedCount === 0 ? (
+                <>
+                  <p>Every bookmark has at least one tag.</p>
+                  <button type="button" className="btn-secondary" onClick={handleClearAllFilters}>
+                    Clear filters
+                  </button>
+                </>
+              ) : hasActiveFilters ? (
                 <>
                   <p>No bookmarks match these filters.</p>
                   <button type="button" className="btn-secondary" onClick={handleClearAllFilters}>
@@ -433,6 +463,18 @@ function BookmarkBrowser({
               <p className="active-tag-filter-hint">Showing bookmarks that have all of these tags.</p>
             )}
           </div>
+        )}
+        {showUntaggedFilter && (
+          <button
+            type="button"
+            className={`untagged-filter-btn ${untaggedActive ? 'active' : ''}`}
+            onClick={handleToggleUntagged}
+            aria-pressed={untaggedActive}
+            title="Show only bookmarks that have no tags"
+          >
+            <span>Without tags</span>
+            {!loading && <span className="untagged-filter-count">{untaggedCount}</span>}
+          </button>
         )}
         <TagCloud
           tags={tags}

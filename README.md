@@ -27,7 +27,7 @@ Current status at a glance:
 - Export your entire library from Settings → Import / Export as Netscape HTML, CSV, or JSON, including private bookmarks. JSON preserves dates, tags, favorites, and privacy settings; HTML/CSV support migration to other tools. HTML imports also read exported tags and descriptions.
 - Bookmark title, URL, description, and tag management
 - Base URL keeps the site root with a trailing slash (for example, `https://www.google.com/`); Trim URL removes queries and fragments
-- Search, sorting, and tag query filtering (click any tag on a bookmark or in the tag panel to filter by it; combine tags to narrow results)
+- Search, sorting, and tag query filtering (click any tag on a bookmark or in the tag panel to filter by it; combine tags to narrow results), plus a "Without tags" filter in your own library for finding and tidying up untagged bookmarks
 - Free tier with a 50-bookmark limit
 - Pro tier with unlimited bookmarks
 - Stripe Checkout for upgrades ($3/month or $36/year — same rate either way)

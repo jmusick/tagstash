@@ -10,7 +10,7 @@
 // database, logs in through the real login form, and scans:
 //   anonymous : /, login error + sign-up + forgot-password states, /features,
 //               /privacy, /support, a public profile (/u/<owner>)
-//   owner     : / (bookmark list, edit mode, add form), /settings (every tab,
+//   owner     : / (bookmark list, "Without tags" filter, edit mode, add form), /settings (every tab,
 //               plus an error, a success banner and the import preview), /tags
 //               (empty merge slots and a selected merge pair)
 //   admin     : /settings -> Admin
@@ -132,6 +132,8 @@ function seedUsers() {
     ['Accessibility checklist', 'https://example.com/a11y', 'WCAG in plain language.', ['design', 'guides']],
     ['Static site generators', 'https://example.com/ssg', 'Comparing build tools.', ['tools', 'dev']],
     ['Reading list for the weekend', 'https://example.com/weekend', 'Long reads.', ['reading']],
+    // Deliberately untagged, so the owner list's "Without tags" filter has something to show.
+    ['Unsorted link to triage', 'https://example.com/triage', 'Saved without any tags yet.', []],
   ]
   const tagNames = [...new Set(bookmarks.flatMap((b) => b[3]))]
   const statements = [
@@ -306,6 +308,21 @@ async function owner(browser, theme) {
 
   await page.locator('.bookmark-card').first().waitFor()
   await scan('/ (bookmark list)')
+
+  // "Without tags" filter: active (only the untagged bookmark), then combined with a
+  // search that matches nothing so the empty state is scanned too.
+  const untaggedToggle = page.getByRole('button', { name: /^Without tags/ })
+  await untaggedToggle.click()
+  await page.locator('.bookmark-card').first().waitFor()
+  if ((await untaggedToggle.getAttribute('aria-pressed')) !== 'true') throw new Error('Without tags toggle is not pressed')
+  if ((await page.locator('.bookmark-card').count()) !== 1) throw new Error('Without tags should list exactly the one untagged bookmark')
+  await scan('/ (bookmark list, Without tags filter active)')
+  await page.getByRole('textbox', { name: 'Search bookmarks' }).fill('zzz-no-such-bookmark')
+  await page.locator('.empty-state').waitFor()
+  await scan('/ (Without tags filter, no matches)')
+  await page.getByRole('button', { name: 'Clear all filters' }).click()
+  await page.locator('.bookmark-card').nth(1).waitFor()
+  if ((await untaggedToggle.getAttribute('aria-pressed')) !== 'false') throw new Error('Clear all filters should release Without tags')
 
   await page.getByRole('button', { name: 'Add bookmark' }).click()
   await page.locator('form').filter({ has: page.getByLabel('Title') }).first().waitFor()

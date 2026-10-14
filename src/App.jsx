@@ -1081,6 +1081,7 @@ function App() {
                     tagsRefreshKey={tagsRefreshKey}
                     onTagFavoriteToggle={handleTagFavoriteToggle}
                     renderCard={renderOwnerCard}
+                    showUntaggedFilter
                     focusBookmarkId={focusBookmarkId}
                     onClearFocus={handleCancelEdit}
                     toolbarExtra={(
