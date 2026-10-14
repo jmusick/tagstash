@@ -128,8 +128,112 @@ const API_SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'",
 };
 
+// --- Public profile edge cache ---
+// Cloudflare does not cache Pages Functions responses at the edge from Cache-Control/s-maxage
+// alone: a Function's own response is never stored unless it goes through the Cache API. So
+// `GET /api/profiles/:username` is stored explicitly in `caches.default` for 60 seconds, keyed
+// on a canonical GET Request (see profileCacheKey) that ignores cookies, Authorization, Origin
+// and every query parameter the endpoint doesn't read. The Cache API is per data center and
+// `cache.delete` only reaches the data center that runs it, so purges (below) are best-effort;
+// the 60 s TTL is the real freshness bound.
+//
+// Safe to cache because the body never depends on who asks: handleProfiles never reads
+// cookies, Authorization or Origin and has no owner/admin variant (owners and super admins
+// see exactly what an anonymous visitor sees). Only the stored *body* is reused; the headers
+// (security headers, CORS, Cache-Control) are rebuilt by withApiHeaders on every response.
+const PROFILE_CACHE_TTL_SECONDS = 60;
+// Browsers and other private caches always revalidate (max-age=0), so a profile turned
+// private is never held back by a client; only shared caches may keep it for s-maxage.
+const PROFILE_CACHE_CONTROL = `public, max-age=0, s-maxage=${PROFILE_CACHE_TTL_SECONDS}`;
+// What the Cache API entry is stored with: put() refuses responses without a positive TTL.
+const PROFILE_CACHE_STORE_CONTROL = `public, max-age=${PROFILE_CACHE_TTL_SECONDS}, s-maxage=${PROFILE_CACHE_TTL_SECONDS}`;
+// Requests with more/longer ?tag= filters than a real consumer sends are served uncached, so
+// arbitrary query strings can't mint unbounded cache entries.
+const PROFILE_CACHE_MAX_TAG_FILTERS = 10;
+const PROFILE_CACHE_MAX_TAG_LENGTH = 100;
+const PROFILE_CACHE_MAX_PURGE_TAGS = 100;
+const cacheablePublicProfiles = new WeakSet();
+
+// null where the Cache API doesn't exist (the node test harness, some local setups).
+const getEdgeCache = () => {
+  try {
+    return (typeof caches !== 'undefined' && caches.default) || null;
+  } catch {
+    return null;
+  }
+};
+
+// Mirrors how handleProfiles filters: trimmed, lowercased, de-duplicated, first-seen order
+// (appliedTags is echoed in the body in that order, so it has to be part of the key).
+const parseAppliedTags = (url) => [...new Set(
+  url.searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean)
+)];
+
+// Only ASCII is folded because the lookup uses SQLite LOWER(), which leaves non-ASCII letters
+// alone: JS toLowerCase() would merge two distinct usernames into one cache key.
+const asciiLower = (text) => text.replace(/[A-Z]/g, (char) => char.toLowerCase());
+
+const profileCacheKey = (request, username, appliedTags) => {
+  const key = new URL(`/api/profiles/${encodeURIComponent(asciiLower(username))}`, new URL(request.url).origin);
+  for (const tag of appliedTags) key.searchParams.append('tag', tag);
+  return new Request(key.toString(), { method: 'GET' });
+};
+
+const isCacheableTagFilter = (appliedTags) =>
+  appliedTags.length <= PROFILE_CACHE_MAX_TAG_FILTERS &&
+  appliedTags.every((tag) => tag.length <= PROFILE_CACHE_MAX_TAG_LENGTH);
+
+// Cache keys to drop when a profile stops being (or may stop being) visible: the base URL plus
+// the single-tag variant of each tag on the user's public bookmarks (the documented consumer
+// usage). Multi-tag combinations can't be enumerated and simply expire after the TTL.
+// Returns [] without touching the DB when there's no Cache API.
+const collectProfileCacheKeys = async (db, request, userId, username) => {
+  if (!getEdgeCache() || !username) return [];
+  const keys = [profileCacheKey(request, username, [])];
+  try {
+    const hasIsPrivate = await bookmarksTableHasColumn(db, 'is_private');
+    const rows = await db
+      .prepare(
+        `SELECT DISTINCT t.name
+         FROM bookmark_tags bt
+         INNER JOIN tags t ON t.id = bt.tag_id
+         INNER JOIN bookmarks b ON b.id = bt.bookmark_id
+         WHERE b.user_id = ?${hasIsPrivate ? ' AND b.is_private = 0' : ''}
+         LIMIT ${PROFILE_CACHE_MAX_PURGE_TAGS}`
+      )
+      .bind(userId)
+      .all();
+    const names = new Set((rows.results || []).map((row) => String(row.name).trim().toLowerCase()).filter(Boolean));
+    for (const name of names) {
+      if (name.length <= PROFILE_CACHE_MAX_TAG_LENGTH) keys.push(profileCacheKey(request, username, [name]));
+    }
+  } catch (error) {
+    console.error('[profile-cache] tag lookup for purge failed:', error?.name || 'error');
+  }
+  return keys;
+};
+
+// Best-effort: failures only log a type and never fail the request that triggered the purge.
+const purgeProfileCacheKeys = (context, keys) => {
+  const cache = getEdgeCache();
+  if (!cache || keys.length === 0) return Promise.resolve();
+  return runAfterResponse(context, 'profile cache purge', () => Promise.all(keys.map((key) => cache.delete(key))));
+};
+
+// The one exception to `no-store`: a successful public profile response. The handler flags the
+// exact Response object it built; status, method and path are re-checked here so nothing else
+// (errors, 404s, other routes, cookie responses) can pick up a public Cache-Control.
+const isPublicProfileCacheable = (response, request) =>
+  response.status === 200 &&
+  request.method === 'GET' &&
+  /^\/api\/profiles\/[^/]+\/?$/.test(new URL(request.url).pathname) &&
+  cacheablePublicProfiles.has(response);
+
 const withApiHeaders = (response, request, env) => {
-  response.headers.set('Cache-Control', 'no-store');
+  response.headers.set(
+    'Cache-Control',
+    isPublicProfileCacheable(response, request) ? PROFILE_CACHE_CONTROL : 'no-store'
+  );
   for (const [name, value] of Object.entries(API_SECURITY_HEADERS)) {
     response.headers.set(name, value);
   }
@@ -2651,6 +2755,9 @@ async function handleAuth(request, env, segments, context = {}) {
 
     await db.prepare('UPDATE users SET username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(trimmedUsername, auth.user.id).run();
 
+    // The old name's profile URL stops resolving; don't keep serving it from the edge cache.
+    await purgeProfileCacheKeys(context, await collectProfileCacheKeys(db, request, auth.user.id, user.username));
+
     const updatedUser = await db
       .prepare('SELECT id, username, email, membership_tier, role FROM users WHERE id = ?')
       .bind(auth.user.id)
@@ -2814,6 +2921,11 @@ async function handleAuth(request, env, segments, context = {}) {
       .prepare('UPDATE users SET profile_public = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
       .bind(nextValue, auth.user.id)
       .run();
+
+    // Going private: drop this data center's cached copies now (best-effort, see edge cache).
+    if (!nextValue) {
+      await purgeProfileCacheKeys(context, await collectProfileCacheKeys(db, request, auth.user.id, auth.user.username));
+    }
 
     return jsonResponse({
       message: nextValue ? 'Public profile enabled' : 'Public profile disabled',
@@ -3127,6 +3239,10 @@ async function handleAuth(request, env, segments, context = {}) {
       // Suspension also signs the account out everywhere (web cookies and extension tokens).
       if (action === 'suspend') await bumpTokenVersion(db, targetId);
       await recordModerationEvent(db, request, eventTypes[action], targetUser, access.adminUser);
+      // Hidden profiles must disappear from this data center's cache at once (best-effort).
+      if (action !== 'unsuspend') {
+        await purgeProfileCacheKeys(context, await collectProfileCacheKeys(db, request, targetId, targetUser.username));
+      }
     }
 
     const updated = await db
@@ -3242,7 +3358,7 @@ async function handleAuth(request, env, segments, context = {}) {
     }
 
     const targetUser = await db
-      .prepare('SELECT id, email, role FROM users WHERE id = ?')
+      .prepare('SELECT id, username, email, role FROM users WHERE id = ?')
       .bind(targetId)
       .first();
 
@@ -3254,6 +3370,9 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'Configured super admin account cannot be deleted' }, 400);
     }
 
+    // Collected before the delete (it removes the tags this looks up), purged after.
+    const profileCacheKeys = await collectProfileCacheKeys(db, request, targetId, targetUser.username);
+
     await db.batch([
       db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)').bind(targetId),
       db.prepare('DELETE FROM bookmarks WHERE user_id = ?').bind(targetId),
@@ -3263,6 +3382,7 @@ async function handleAuth(request, env, segments, context = {}) {
       db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').bind(targetId),
       db.prepare('DELETE FROM users WHERE id = ?').bind(targetId),
     ]);
+    await purgeProfileCacheKeys(context, profileCacheKeys);
 
     return jsonResponse({ message: 'User account and bookmarks deleted successfully' });
   }
@@ -3905,24 +4025,48 @@ async function handleBookmarks(request, env, segments) {
   return jsonResponse({ error: 'Route not found' }, 404);
 }
 
-async function handleProfiles(request, env, segments) {
+// Only a successful body is ever stored or served from the edge cache; every other outcome
+// (404 for missing/private/suspended, 5xx, unconfigured schema) is built fresh and stays no-store.
+const publicProfileResponse = (body, cacheStatus) => {
+  const response = new Response(body, { status: 200, headers: { 'Content-Type': 'application/json' } });
+  if (cacheStatus) response.headers.set('X-Tagstash-Cache', cacheStatus);
+  cacheablePublicProfiles.add(response);
+  return response;
+};
+
+async function handleProfiles(request, env, segments, context = {}) {
   const db = env.DB;
 
   if (request.method !== 'GET' || !segments[1]) {
     return jsonResponse({ error: 'Route not found' }, 404);
   }
 
-  const schema = await getProfileSchema(db);
-  const hasIsPrivateColumn = schema.hasIsPrivate;
-
-  if (!schema.hasProfilePublic) {
-    return jsonResponse({ error: 'Not found' }, 404);
-  }
-
   let username;
   try {
     username = decodeURIComponent(segments[1]);
   } catch {
+    return jsonResponse({ error: 'Not found' }, 404);
+  }
+
+  // Edge cache (see "Public profile edge cache"): checked before any D1 query. Only the plain
+  // `/api/profiles/:username` shape is cached; the key is canonical, so cookies, headers and
+  // unrelated query parameters can neither fragment nor poison it.
+  const appliedTags = parseAppliedTags(new URL(request.url));
+  const edgeCache = segments.length === 2 && isCacheableTagFilter(appliedTags) ? getEdgeCache() : null;
+  const cacheKey = edgeCache ? profileCacheKey(request, username, appliedTags) : null;
+  if (edgeCache) {
+    try {
+      const hit = await edgeCache.match(cacheKey);
+      if (hit && hit.status === 200) return publicProfileResponse(hit.body, 'HIT');
+    } catch (error) {
+      console.error('[profile-cache] match failed:', error?.name || 'error');
+    }
+  }
+
+  const schema = await getProfileSchema(db);
+  const hasIsPrivateColumn = schema.hasIsPrivate;
+
+  if (!schema.hasProfilePublic) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
@@ -3962,11 +4106,6 @@ async function handleProfiles(request, env, segments) {
   // Consumed by external sites embedding a user's bookmarks (Settings surfaces these URLs) —
   // repeatable ?tag= params AND together. `tags` above always lists the full public tag set,
   // regardless of this filter, so a consumer can discover what else is available.
-  const url = new URL(request.url);
-  const appliedTags = [...new Set(
-    url.searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean)
-  )];
-
   if (appliedTags.length > 0) {
     bookmarks = bookmarks.filter((bookmark) => {
       const bookmarkTagNames = new Set(bookmark.tags.map((tag) => tag.name.toLowerCase()));
@@ -3974,7 +4113,7 @@ async function handleProfiles(request, env, segments) {
     });
   }
 
-  return jsonResponse({
+  const body = JSON.stringify({
     profile: {
       username: user.username,
       member_since: user.created_at,
@@ -3987,6 +4126,22 @@ async function handleProfiles(request, env, segments) {
     tags,
     appliedTags,
   });
+
+  if (edgeCache) {
+    // After the response is sent (inline where there's no waitUntil); a failed put only means
+    // the next request misses.
+    await runAfterResponse(context, 'profile cache put', () =>
+      edgeCache.put(
+        cacheKey,
+        new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', 'Cache-Control': PROFILE_CACHE_STORE_CONTROL },
+        })
+      )
+    );
+  }
+
+  return publicProfileResponse(body, edgeCache ? 'MISS' : null);
 }
 
 async function handleBilling(request, env, segments) {
@@ -4345,7 +4500,7 @@ async function routeRequest(context) {
     }
 
     if (segments[1] === 'profiles') {
-      return await handleProfiles(request, env, segments.slice(1));
+      return await handleProfiles(request, env, segments.slice(1), context);
     }
 
     if (segments[1] === 'billing') {
