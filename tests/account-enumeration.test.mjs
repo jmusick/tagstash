@@ -268,3 +268,87 @@ test('forgot-password: provider failures and fresh links stay invisible', async 
     });
   } finally { env.sqlite.close(); }
 });
+
+// Issue #140: tripping the login lockout must not tell a registered address from an unregistered one.
+const attempt = async (env, email, password, headers = {}) => {
+  const response = await call(env, 'auth/login', { method: 'POST', headers, body: { email, password } });
+  return {
+    status: response.status,
+    body: await response.json(),
+    headers: [...response.headers].filter(([name]) => !['date', 'set-cookie'].includes(name)).sort(),
+  };
+};
+
+test('login: an unregistered address runs the same lockout sequence as a registered one', async () => {
+  const env = await createAuthEnv();
+  try {
+    const sequence = async (email, password) => {
+      const out = [];
+      for (let i = 0; i < 10; i += 1) out.push(await attempt(env, email, password));
+      return out;
+    };
+    const known = await sequence('session@example.com', 'wrong-password');
+    const unknown = await sequence('ghost@example.com', 'wrong-password');
+    assert.deepEqual(unknown, known);
+    assert.deepEqual(known.map((r) => r.status), [401, 401, 401, 401, 401, 401, 401, 429, 429, 429]);
+    assert.match(known[7].body.error, /try again in 15 minutes/);
+
+    // Even the real password is refused while locked, and normalization (case, spaces) doesn't dodge it.
+    assert.equal((await attempt(env, ' Session@Example.com ', env.password)).status, 429);
+    assert.equal((await attempt(env, ' GHOST@example.com ', 'whatever')).status, 429);
+
+    // Time passes identically: ten minutes in, five remain.
+    env.sqlite.exec(`UPDATE users SET locked_until = locked_until - 600000;
+      UPDATE auth_events SET created_at = strftime('%Y-%m-%d %H:%M:%f', created_at, '-10 minutes') WHERE email = 'ghost@example.com'`);
+    const knownLater = await attempt(env, 'session@example.com', 'wrong-password');
+    const unknownLater = await attempt(env, 'ghost@example.com', 'wrong-password');
+    assert.deepEqual(unknownLater, knownLater);
+    assert.match(knownLater.body.error, /try again in 5 minutes/);
+
+    // After expiry both start counting from zero again: seven more misses, then the lock returns.
+    env.sqlite.exec(`UPDATE users SET locked_until = 1;
+      UPDATE auth_events SET created_at = strftime('%Y-%m-%d %H:%M:%f', created_at, '-10 minutes') WHERE email = 'ghost@example.com'`);
+    const knownAgain = await sequence('session@example.com', 'wrong-password');
+    const unknownAgain = await sequence('ghost@example.com', 'wrong-password');
+    assert.deepEqual(unknownAgain, knownAgain);
+    assert.deepEqual(knownAgain.map((r) => r.status), [401, 401, 401, 401, 401, 401, 401, 429, 429, 429]);
+  } finally { env.sqlite.close(); }
+});
+
+test('login: locking an unregistered address leaves real accounts alone and stores nothing new', async () => {
+  const env = await createAuthEnv();
+  try {
+    for (let i = 0; i < 9; i += 1) await attempt(env, 'ghost@example.com', 'wrong-password');
+    assert.equal((await attempt(env, 'ghost@example.com', 'wrong-password')).status, 429);
+    // Another address, and the registered account, are unaffected.
+    assert.equal((await attempt(env, 'other-ghost@example.com', 'wrong-password')).status, 401);
+    assert.equal((await attempt(env, 'session@example.com', env.password)).status, 200);
+    assert.deepEqual({ ...env.sqlite.prepare('SELECT failed_attempts, locked_until FROM users WHERE id = 1').get() },
+      { failed_attempts: 0, locked_until: null });
+
+    // Only auth_events rows for the normalized address were written; no user rows appear.
+    assert.equal(userCount(env), 1);
+    const events = env.sqlite.prepare("SELECT event_type, user_id FROM auth_events WHERE email = 'ghost@example.com' ORDER BY id").all();
+    assert.equal(events.filter((e) => e.event_type === 'login_failed').length, 8);
+    assert.equal(events.filter((e) => e.event_type === 'account_locked').length, 1);
+    assert.ok(events.every((e) => e.user_id === null));
+
+    // An address that gets registered later starts clean: the old probing doesn't lock the new owner.
+    env.sqlite.prepare('INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, 1)')
+      .run('ghostowner', 'ghost@example.com', await bcrypt.hash('ghost-password', 4));
+    assert.equal((await attempt(env, 'ghost@example.com', 'ghost-password')).status, 200);
+  } finally { env.sqlite.close(); }
+});
+
+test('login: the per-IP failure cap answers the same for registered and unregistered addresses', async () => {
+  const env = await createAuthEnv();
+  try {
+    const headers = { 'CF-Connecting-IP': '203.0.113.9' };
+    // 20 failures from one IP spread over addresses that never reach their own lock.
+    for (let i = 0; i < 20; i += 1) await attempt(env, `ghost${i}@example.com`, 'wrong-password', headers);
+    const known = await attempt(env, 'session@example.com', env.password, headers);
+    const unknown = await attempt(env, 'ghost-new@example.com', 'wrong-password', headers);
+    assert.equal(known.status, 429);
+    assert.deepEqual(unknown, known);
+  } finally { env.sqlite.close(); }
+});
