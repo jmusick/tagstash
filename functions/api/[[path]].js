@@ -1168,6 +1168,90 @@ const clearLoginLockout = async (db, user) => {
   await db.prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?').bind(user.id).run();
 };
 
+// Lockout for addresses with no account (issue #140). A registered email locks after
+// LOGIN_MAX_FAILED_ATTEMPTS wrong passwords, so an unregistered one has to lock the same way or
+// the 429 itself says "this account exists". There is no users row to hold a counter, so the
+// state lives in auth_events (user_id NULL, per normalized email, only ever read by this path):
+// each wrong password is a `login_failed` row, and the lock is an `account_locked` marker row.
+// Counting starts again once the last marker's lock has run out, as a users counter restarts
+// from zero when a lock is applied. These rows carry millisecond timestamps (the table default is
+// whole seconds) so the lock expiry and the "N minutes" wording match a real account's. The
+// email is stored exactly as login_failed has always stored it; nothing new is kept.
+// Every timestamp here is the Worker's clock (Date.now), bound in as a parameter and never SQLite's
+// 'now': a real account derives locked_until from Date.now(), D1 runs on another machine whose
+// clock can differ, and any gap between the two would change the "N minutes" wording and tell
+// the two kinds of address apart. Same fixed-width format as strftime('%f'), so strings order.
+const authEventTimestamp = (ms) => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
+const authEventTimeMs = (value) => Date.parse(`${String(value).replace(' ', 'T')}Z`);
+
+// Epoch ms until which this unregistered address is locked, or null. Read before bcrypt, like
+// getLockedUntil, so a locked address costs no hashing work. Fails open without auth_events.
+const getUnknownEmailLockedUntil = async (db, email) => {
+  const now = Date.now();
+  try {
+    const row = await db
+      .prepare(
+        `SELECT MAX(created_at) AS locked_at FROM auth_events
+         WHERE event_type = 'account_locked' AND email = ? AND user_id IS NULL
+           AND created_at > ?`
+      )
+      .bind(email, authEventTimestamp(now - LOGIN_LOCKOUT_MS))
+      .first();
+    if (!row?.locked_at) return null;
+    const lockedUntil = authEventTimeMs(row.locked_at) + LOGIN_LOCKOUT_MS;
+    return lockedUntil > now ? lockedUntil : null;
+  } catch {
+    return null;
+  }
+};
+
+// Counterpart of recordFailedLogin for an address with no account; returns true if the address
+// is now locked. Concurrent misses can't overwrite or double-count each other: each inserts its
+// own row, then asks how many counted failures sit at or below its row id. That rank never
+// changes, so exactly the miss that reaches the limit applies the lock, and later in-flight
+// misses (rank above it) report the lock too, as the atomic UPDATE does for a real account.
+// Never throws; before migration 0012 it does nothing and the caller just answers 401.
+const recordUnknownEmailFailedLogin = async (db, request, email) => {
+  console.warn('[auth] login_failed', JSON.stringify({ userId: null }));
+  try {
+    const inserted = await db
+      .prepare(
+        `INSERT INTO auth_events (event_type, email, user_id, ip, created_at)
+         VALUES ('login_failed', ?, NULL, ?, ?) RETURNING id`
+      )
+      .bind(email, getClientIp(request), authEventTimestamp(Date.now()))
+      .first();
+    const rank = await db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM auth_events
+         WHERE event_type = 'login_failed' AND email = ?1 AND user_id IS NULL AND id <= ?2
+           AND created_at > COALESCE(
+             (SELECT strftime('%Y-%m-%d %H:%M:%f', MAX(created_at), ?3) FROM auth_events
+              WHERE event_type = 'account_locked' AND email = ?1 AND user_id IS NULL), '')`
+      )
+      .bind(email, inserted.id, `+${LOGIN_LOCKOUT_MS / 1000} seconds`)
+      .first();
+    const failures = Number(rank?.n || 0);
+    if (failures === LOGIN_MAX_FAILED_ATTEMPTS) {
+      console.warn('[auth] account_locked', JSON.stringify({ userId: null }));
+      await db
+        .prepare(
+          `INSERT INTO auth_events (event_type, email, user_id, ip, created_at)
+           VALUES ('account_locked', ?, NULL, ?, ?)`
+        )
+        .bind(email, getClientIp(request), authEventTimestamp(Date.now()))
+        .run();
+    }
+    await db
+      .prepare(`DELETE FROM auth_events WHERE created_at < datetime('now', '-${AUTH_EVENT_RETENTION_DAYS} days')`)
+      .run();
+    return failures >= LOGIN_MAX_FAILED_ATTEMPTS;
+  } catch (err) {
+    console.error('[auth] failed to record auth event:', err?.message ?? err);
+    return false;
+  }
+};
+
 // Password re-entry on an already-signed-in account (change username/email/password). These
 // routes are a guessing oracle for a stolen session, so they share login's budgets: the same
 // per-account counter and lock (so rotating between endpoints, or between them and /login,
@@ -2385,9 +2469,21 @@ async function handleAuth(request, env, segments, context = {}) {
     // Login never applies the new-password policy: a grandfathered password of any length that
     // matches its hash keeps working (bcrypt compares its first 72 bytes, exactly as when it was
     // set). Only the request body cap bounds what is compared.
+    // An unregistered address walks the same sequence as a registered one (8 misses, then a 429
+    // lockout for 15 minutes, no hashing while locked) so the lockout can't be used to probe
+    // for accounts. Keep every branch below in step with this one.
     if (!user) {
+      const unknownLockedUntil = await getUnknownEmailLockedUntil(db, normalizedEmail);
+      if (unknownLockedUntil) {
+        await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail });
+        return rateLimitedResponse(lockedOutMessage(unknownLockedUntil));
+      }
       await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
-      await recordAuthEvent(db, request, 'login_failed', { email: normalizedEmail });
+      if (await recordUnknownEmailFailedLogin(db, request, normalizedEmail)) {
+        return rateLimitedResponse(
+          lockedOutMessage((await getUnknownEmailLockedUntil(db, normalizedEmail)) || Date.now() + LOGIN_LOCKOUT_MS)
+        );
+      }
       return jsonResponse({ error: 'Invalid email or password' }, 401);
     }
 
