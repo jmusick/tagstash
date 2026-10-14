@@ -340,6 +340,42 @@ test('login: locking an unregistered address leaves real accounts alone and stor
   } finally { env.sqlite.close(); }
 });
 
+// The Worker's clock and the database's clock are different machines in production, and Workers
+// freeze Date.now() while a request runs. The lock wording must come from the Worker clock alone.
+for (const [label, offsetMs] of [['behind the database clock', -5000], ['ahead of the database clock', 5000], ['an hour off', -3600000]]) {
+  test(`login: lockout wording is identical when the Worker clock is ${label}`, async () => {
+    const env = await createAuthEnv();
+    const realNow = Date.now;
+    const frozen = realNow() + offsetMs;
+    Date.now = () => frozen;
+    try {
+      const known = [];
+      const unknown = [];
+      for (let i = 0; i < 9; i += 1) known.push(await attempt(env, 'session@example.com', 'wrong-password'));
+      for (let i = 0; i < 9; i += 1) unknown.push(await attempt(env, 'ghost@example.com', 'wrong-password'));
+      assert.deepEqual(unknown, known);
+      assert.deepEqual(known.map((r) => r.status), [401, 401, 401, 401, 401, 401, 401, 429, 429]);
+      assert.match(known[7].body.error, /try again in 15 minutes/);
+      assert.match(unknown[8].body.error, /try again in 15 minutes/);
+
+      // Everything the unregistered path stamped came from the (frozen) Worker clock, not SQLite's.
+      const stamp = new Date(frozen).toISOString().replace('T', ' ').replace('Z', '');
+      const times = env.sqlite.prepare("SELECT DISTINCT created_at FROM auth_events WHERE email = 'ghost@example.com' AND user_id IS NULL AND event_type IN ('login_failed', 'account_locked')").all();
+      assert.deepEqual(times.map((t) => t.created_at), [stamp]);
+
+      // Advance the Worker clock eleven minutes: five left, then expiry, in step for both.
+      Date.now = () => frozen + 11 * 60000;
+      const knownLater = await attempt(env, 'session@example.com', 'wrong-password');
+      const unknownLater = await attempt(env, 'ghost@example.com', 'wrong-password');
+      assert.deepEqual(unknownLater, knownLater);
+      assert.match(knownLater.body.error, /try again in 4 minutes/);
+      Date.now = () => frozen + 16 * 60000;
+      assert.equal((await attempt(env, 'session@example.com', 'wrong-password')).status, 401);
+      assert.equal((await attempt(env, 'ghost@example.com', 'wrong-password')).status, 401);
+    } finally { Date.now = realNow; env.sqlite.close(); }
+  });
+}
+
 test('login: the per-IP failure cap answers the same for registered and unregistered addresses', async () => {
   const env = await createAuthEnv();
   try {

@@ -1177,24 +1177,29 @@ const clearLoginLockout = async (db, user) => {
 // from zero when a lock is applied. These rows carry millisecond timestamps (the table default is
 // whole seconds) so the lock expiry and the "N minutes" wording match a real account's. The
 // email is stored exactly as login_failed has always stored it; nothing new is kept.
-const AUTH_EVENT_NOW_MS = "strftime('%Y-%m-%d %H:%M:%f', 'now')";
+// Every timestamp here is the Worker's clock (Date.now), bound in as a parameter and never SQLite's
+// 'now': a real account derives locked_until from Date.now(), D1 runs on another machine whose
+// clock can differ, and any gap between the two would change the "N minutes" wording and tell
+// the two kinds of address apart. Same fixed-width format as strftime('%f'), so strings order.
+const authEventTimestamp = (ms) => new Date(ms).toISOString().replace('T', ' ').replace('Z', '');
 const authEventTimeMs = (value) => Date.parse(`${String(value).replace(' ', 'T')}Z`);
 
 // Epoch ms until which this unregistered address is locked, or null. Read before bcrypt, like
 // getLockedUntil, so a locked address costs no hashing work. Fails open without auth_events.
 const getUnknownEmailLockedUntil = async (db, email) => {
+  const now = Date.now();
   try {
     const row = await db
       .prepare(
         `SELECT MAX(created_at) AS locked_at FROM auth_events
          WHERE event_type = 'account_locked' AND email = ? AND user_id IS NULL
-           AND created_at > strftime('%Y-%m-%d %H:%M:%f', 'now', ?)`
+           AND created_at > ?`
       )
-      .bind(email, `-${LOGIN_LOCKOUT_MS / 1000} seconds`)
+      .bind(email, authEventTimestamp(now - LOGIN_LOCKOUT_MS))
       .first();
     if (!row?.locked_at) return null;
     const lockedUntil = authEventTimeMs(row.locked_at) + LOGIN_LOCKOUT_MS;
-    return lockedUntil > Date.now() ? lockedUntil : null;
+    return lockedUntil > now ? lockedUntil : null;
   } catch {
     return null;
   }
@@ -1212,9 +1217,9 @@ const recordUnknownEmailFailedLogin = async (db, request, email) => {
     const inserted = await db
       .prepare(
         `INSERT INTO auth_events (event_type, email, user_id, ip, created_at)
-         VALUES ('login_failed', ?, NULL, ?, ${AUTH_EVENT_NOW_MS}) RETURNING id`
+         VALUES ('login_failed', ?, NULL, ?, ?) RETURNING id`
       )
-      .bind(email, getClientIp(request))
+      .bind(email, getClientIp(request), authEventTimestamp(Date.now()))
       .first();
     const rank = await db
       .prepare(
@@ -1232,9 +1237,9 @@ const recordUnknownEmailFailedLogin = async (db, request, email) => {
       await db
         .prepare(
           `INSERT INTO auth_events (event_type, email, user_id, ip, created_at)
-           VALUES ('account_locked', ?, NULL, ?, ${AUTH_EVENT_NOW_MS})`
+           VALUES ('account_locked', ?, NULL, ?, ?)`
         )
-        .bind(email, getClientIp(request))
+        .bind(email, getClientIp(request), authEventTimestamp(Date.now()))
         .run();
     }
     await db
