@@ -304,6 +304,8 @@ Request bodies must be JSON objects sent as `application/json` (415 otherwise) a
 
 This is a stable, documented public API meant for third-party consumption (not just internal page-support data) — Settings surfaces ready-to-copy URLs for it. Responses are JSON with CORS enabled for all origins, so it can be fetched directly from another site's frontend or from a server-side build/SSR step. The site's Content Security Policy governs only Tagstash's own pages, not consumers of this API.
 
+Successful responses are cached at the Cloudflare edge for 60 seconds (`Cache-Control: public, max-age=0, s-maxage=60`; browsers always revalidate), keyed on the username and `?tag=` filters only. A change to a profile's bookmarks can therefore take up to a minute to show up, and a profile that is made private or suspended can keep being served for up to a minute from data centers that were not purged. Errors and 404s are never cached.
+
 Optional repeatable `?tag=` query param filters to bookmarks that have *all* of the given tags (AND):
 
 ```

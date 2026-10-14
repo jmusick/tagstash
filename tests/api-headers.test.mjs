@@ -101,3 +101,26 @@ test('local HTTP development gets the headers but no HSTS', async () => {
     assertHardened(preflight, 'local preflight', { https: false });
   } finally { env.sqlite.close(); }
 });
+
+test('only a successful public profile response may be shared-cacheable; everything else stays no-store', async () => {
+  const env = await createAuthEnv();
+  try {
+    env.sqlite.prepare("UPDATE users SET profile_public = 1 WHERE username = 'sessiontester'").run();
+    const ok = await onRequest({ env, request: request('profiles/sessiontester', { headers: { Origin: 'https://example.com' } }) });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get('Cache-Control'), 'public, max-age=0, s-maxage=60');
+    for (const name of ['X-Content-Type-Options', 'Referrer-Policy', 'X-Frame-Options', 'Content-Security-Policy', 'Strict-Transport-Security']) {
+      assert.ok(ok.headers.get(name), name);
+    }
+    assert.equal(ok.headers.get('Access-Control-Allow-Origin'), '*');
+    assert.equal(ok.headers.get('Vary'), 'Origin');
+
+    const preflight = await onRequestOptions({ env, request: new Request('https://tagsta.sh/api/profiles/sessiontester', { method: 'OPTIONS', headers: { Origin: 'https://example.com' } }) });
+    assert.equal(preflight.headers.get('Cache-Control'), 'no-store');
+
+    for (const path of ['profiles/nobody', 'health', 'bookmarks', 'auth/me', 'nope']) {
+      const response = await onRequest({ env, request: request(path) });
+      assert.equal(response.headers.get('Cache-Control'), 'no-store', path);
+    }
+  } finally { env.sqlite.close(); }
+});
