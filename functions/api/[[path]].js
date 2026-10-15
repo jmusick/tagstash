@@ -814,6 +814,19 @@ const clampText = (value, max) =>
 
 const quoteForError = (value) => `"${clampText(value, 40)}${value.length > 40 ? '…' : ''}"`;
 
+// One tag name as stored: trimmed and lowercased (tag names match case-sensitively, so
+// every writer must lowercase), a single word, at most INPUT_LIMITS.tagName characters.
+// A blank name comes back as `{ name: '' }` for the caller to drop or reject.
+const normalizeTagName = (tag) => {
+  const name = tag.trim().toLowerCase();
+  if (!name) return { name };
+  if (/\s/.test(name)) return { error: `Tag ${quoteForError(tag)} must be a single word with no spaces` };
+  if (name.length > INPUT_LIMITS.tagName) {
+    return { error: `Tag ${quoteForError(name)} must be ${INPUT_LIMITS.tagName} characters or less` };
+  }
+  return { name };
+};
+
 // Normalizes a create/update `tags` field. `undefined` means "leave tags alone", `null` an
 // empty list. Every entry must be a single-word string; blanks are dropped and duplicates
 // merged, and the limits apply after that.
@@ -825,12 +838,9 @@ const normalizeTagList = (tags) => {
   const names = new Set();
   for (const tag of tags) {
     if (typeof tag !== 'string') return { error: 'Tags must be an array of strings' };
-    const name = tag.trim().toLowerCase();
+    const { name, error } = normalizeTagName(tag);
+    if (error) return { error };
     if (!name) continue;
-    if (/\s/.test(name)) return { error: `Tag ${quoteForError(tag)} must be a single word with no spaces` };
-    if (name.length > INPUT_LIMITS.tagName) {
-      return { error: `Tag ${quoteForError(name)} must be ${INPUT_LIMITS.tagName} characters or less` };
-    }
     names.add(name);
   }
   if (names.size > INPUT_LIMITS.tagsPerBookmark) {
@@ -1671,6 +1681,79 @@ const linkTagNamesStatement = (db, bookmarkIdSql, bookmarkIdBinds, names, { afte
        WHERE ${afterGuardedInsert ? 'changes() > 0 AND ' : ''}t.name IN (SELECT value FROM json_each(?))`
     )
     .bind(...bookmarkIdBinds, JSON.stringify(names));
+
+// Per-user tag edits (merge, rename, delete). `tags` rows are shared by every account, so
+// these only ever touch the requesting user's bookmark_tags and favorite_tags rows; a global
+// tag row is deleted only once nothing references it any more. Another user's favorite counts
+// as a reference too, since deleting the row would cascade into their favorite_tags.
+
+// Number of the user's bookmarks carrying the tag (0 for a tag they don't use or that doesn't exist).
+const userTagUsageCount = async (db, userId, tagId) => {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM bookmark_tags bt
+       JOIN bookmarks b ON bt.bookmark_id = b.id
+       WHERE bt.tag_id = ? AND b.user_id = ?`
+    )
+    .bind(tagId, userId)
+    .first();
+  return Number(row?.count || 0);
+};
+
+const parseTagIdSegment = (value) => {
+  const id = Number(value);
+  return /^\d+$/.test(value || '') && Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
+// Removes the tag from the user's bookmarks and favorites, then drops the global row if orphaned.
+// The first statement's meta.changes is the number of the user's bookmarks that lost the tag.
+const detachUserTagStatements = (db, userId, tagId, { hasFavoriteTagsTable }) => [
+  db
+    .prepare(
+      `DELETE FROM bookmark_tags
+       WHERE tag_id = ? AND bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)`
+    )
+    .bind(tagId, userId),
+  ...(hasFavoriteTagsTable
+    ? [db.prepare('DELETE FROM favorite_tags WHERE user_id = ? AND tag_id = ?').bind(userId, tagId)]
+    : []),
+  db
+    .prepare(
+      `DELETE FROM tags WHERE id = ?
+         AND NOT EXISTS (SELECT 1 FROM bookmark_tags WHERE tag_id = ?)
+         ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags WHERE tag_id = ?)' : ''}`
+    )
+    .bind(...(hasFavoriteTagsTable ? [tagId, tagId, tagId] : [tagId, tagId])),
+];
+
+// Re-points the user's bookmarks from one tag to another (a bookmark that already has the
+// target keeps a single link), then detaches the source as above. `target` is a trusted SQL
+// expression yielding the target tag id, with its binds, so a rename can name a tag upserted
+// earlier in the same batch. With `keepFavorite`, a favorited source leaves the target favorited.
+const moveUserTagStatements = (db, userId, sourceId, target, { hasFavoriteTagsTable, keepFavorite = false }) => [
+  db
+    .prepare(
+      `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
+       SELECT bt.bookmark_id, ${target.sql}
+       FROM bookmark_tags bt
+       JOIN bookmarks b ON bt.bookmark_id = b.id
+       WHERE bt.tag_id = ? AND b.user_id = ?`
+    )
+    .bind(...target.binds, sourceId, userId),
+  ...(hasFavoriteTagsTable && keepFavorite
+    ? [
+        db
+          .prepare(
+            `INSERT OR IGNORE INTO favorite_tags (user_id, tag_id)
+             SELECT ft.user_id, ${target.sql} FROM favorite_tags ft
+             WHERE ft.user_id = ? AND ft.tag_id = ?`
+          )
+          .bind(...target.binds, userId, sourceId),
+      ]
+    : []),
+  ...detachUserTagStatements(db, userId, sourceId, { hasFavoriteTagsTable }),
+];
 
 // [{ id, name }] for the given tag names, in the same order.
 const loadTagsInOrder = async (db, names) => {
@@ -3829,54 +3912,108 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: 'Tag not found' }, 404);
     }
 
-    const ownershipQuery = `
-      SELECT COUNT(*) AS count
-      FROM bookmark_tags bt
-      JOIN bookmarks b ON bt.bookmark_id = b.id
-      WHERE bt.tag_id = ? AND b.user_id = ?
-    `;
     const [sourceUsage, targetUsage] = await Promise.all([
-      db.prepare(ownershipQuery).bind(sourceId, auth.user.id).first(),
-      db.prepare(ownershipQuery).bind(targetId, auth.user.id).first(),
+      userTagUsageCount(db, auth.user.id, sourceId),
+      userTagUsageCount(db, auth.user.id, targetId),
     ]);
 
-    if (Number(sourceUsage?.count || 0) === 0 || Number(targetUsage?.count || 0) === 0) {
+    if (sourceUsage === 0 || targetUsage === 0) {
       return jsonResponse({ error: 'You can only merge tags used by your own bookmarks' }, 404);
     }
 
     const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
 
-    const statements = [
-      db.prepare(
-        `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
-         SELECT bt.bookmark_id, ?
-         FROM bookmark_tags bt
-         JOIN bookmarks b ON bt.bookmark_id = b.id
-         WHERE bt.tag_id = ? AND b.user_id = ?`
-      ).bind(targetId, sourceId, auth.user.id),
-      db.prepare(
-        `DELETE FROM bookmark_tags
-         WHERE tag_id = ? AND bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)`
-      ).bind(sourceId, auth.user.id),
-    ];
-
-    if (hasFavoriteTagsTable) {
-      statements.push(
-        db.prepare('DELETE FROM favorite_tags WHERE user_id = ? AND tag_id = ?').bind(auth.user.id, sourceId)
-      );
-    }
-
-    statements.push(
-      db
-        .prepare('DELETE FROM tags WHERE id = ? AND NOT EXISTS (SELECT 1 FROM bookmark_tags WHERE tag_id = ?)')
-        .bind(sourceId, sourceId)
+    await db.batch(
+      moveUserTagStatements(db, auth.user.id, sourceId, { sql: '?', binds: [targetId] }, { hasFavoriteTagsTable })
     );
-
-    await db.batch(statements);
 
     return jsonResponse({
       message: `Merged "${sourceTag.name}" into "${targetTag.name}"`,
       tag: { id: targetTag.id, name: targetTag.name },
+    });
+  }
+
+  // Rename one of the user's tags everywhere they use it. The global row is never renamed:
+  // the new name is upserted (or an existing row reused) and only this user's links and
+  // favorite move to it. Renaming onto a tag the user already uses merges the two.
+  if (request.method === 'PUT' && segments[1] === 'tags' && segments.length === 3) {
+    const tagId = parseTagIdSegment(segments[2]);
+    if (!tagId) {
+      return jsonResponse({ error: 'Invalid tag id' }, 400);
+    }
+
+    const { name } = await parseBody(request);
+    if (typeof name !== 'string') {
+      return jsonResponse({ error: 'Tag name must be a string' }, 400);
+    }
+    const normalized = normalizeTagName(name);
+    if (normalized.error) {
+      return jsonResponse({ error: normalized.error }, 400);
+    }
+    if (!normalized.name) {
+      return jsonResponse({ error: 'Tag name is required' }, 400);
+    }
+    const newName = normalized.name;
+
+    const [tag, usage] = await Promise.all([
+      db.prepare('SELECT id, name FROM tags WHERE id = ?').bind(tagId).first(),
+      userTagUsageCount(db, auth.user.id, tagId),
+    ]);
+    if (!tag || usage === 0) {
+      return jsonResponse({ error: 'Tag not found' }, 404);
+    }
+
+    if (tag.name === newName) {
+      return jsonResponse({ error: `The tag is already named "${newName}"` }, 400);
+    }
+
+    const existing = await db.prepare('SELECT id FROM tags WHERE name = ?').bind(newName).first();
+    const merged = existing ? (await userTagUsageCount(db, auth.user.id, existing.id)) > 0 : false;
+    const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+
+    await db.batch([
+      upsertTagNamesStatement(db, [newName]),
+      ...moveUserTagStatements(
+        db,
+        auth.user.id,
+        tagId,
+        { sql: '(SELECT id FROM tags WHERE name = ?)', binds: [newName] },
+        { hasFavoriteTagsTable, keepFavorite: true }
+      ),
+    ]);
+
+    const renamed = await db.prepare('SELECT id, name FROM tags WHERE name = ?').bind(newName).first();
+
+    return jsonResponse({
+      message: merged ? `Merged "${tag.name}" into "${newName}"` : `Renamed "${tag.name}" to "${newName}"`,
+      tag: { id: renamed?.id ?? null, name: newName },
+      merged,
+    });
+  }
+
+  // Delete one of the user's tags: unlink it from their bookmarks and favorites only.
+  if (request.method === 'DELETE' && segments[1] === 'tags' && segments.length === 3) {
+    const tagId = parseTagIdSegment(segments[2]);
+    if (!tagId) {
+      return jsonResponse({ error: 'Invalid tag id' }, 400);
+    }
+
+    const [tag, usage] = await Promise.all([
+      db.prepare('SELECT id, name FROM tags WHERE id = ?').bind(tagId).first(),
+      userTagUsageCount(db, auth.user.id, tagId),
+    ]);
+    if (!tag || usage === 0) {
+      return jsonResponse({ error: 'Tag not found' }, 404);
+    }
+
+    const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+    const [unlinked] = await db.batch(detachUserTagStatements(db, auth.user.id, tagId, { hasFavoriteTagsTable }));
+    const removedFrom = Number(unlinked?.meta?.changes || 0);
+
+    return jsonResponse({
+      message: `Deleted "${tag.name}" from ${removedFrom} bookmark${removedFrom === 1 ? '' : 's'}`,
+      tag: { id: tag.id, name: tag.name },
+      removedFrom,
     });
   }
 

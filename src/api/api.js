@@ -123,6 +123,12 @@ export const bookmarksAPI = {
   mergeTags: (sourceTagId, targetTagId) =>
     api.post('/bookmarks/tags/merge', { sourceTagId, targetTagId }),
 
+  renameTag: (id, name) =>
+    api.put(`/bookmarks/tags/${id}`, { name }),
+
+  deleteTag: (id) =>
+    api.delete(`/bookmarks/tags/${id}`),
+
   importBookmarks: (bookmarks) =>
     api.post('/bookmarks/import', { bookmarks }),
 };
