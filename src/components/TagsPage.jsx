@@ -4,6 +4,7 @@ import { bookmarksAPI } from '../api/api'
 import { findPluralTagPairs } from '../utils/pluralTagPairs'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
 import TagCloud from './TagCloud'
+import TagEditSection from './TagEditSection'
 
 function TagsPage() {
   useDocumentMeta({ title: 'Manage Tags - Tagstash', path: '/tags', noindex: true })
@@ -55,11 +56,12 @@ function TagsPage() {
       setTargetTagId(null)
       return
     }
-    if (!sourceTagId) {
+    // Check the resolved tags, not the ids: a rename or delete below can remove a picked tag.
+    if (!sourceTag) {
       setSourceTagId(tag.id)
       return
     }
-    if (!targetTagId) {
+    if (!targetTag) {
       setTargetTagId(tag.id)
       return
     }
@@ -261,6 +263,20 @@ function TagsPage() {
           />
         )}
       </section>
+
+      <TagEditSection
+        tags={tags}
+        loading={loading}
+        onDone={async (message) => {
+          setError('')
+          setSuccess(message)
+          await fetchTags()
+        }}
+        onError={(message) => {
+          setSuccess('')
+          setError(message)
+        }}
+      />
     </div>
   )
 }

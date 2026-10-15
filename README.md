@@ -19,7 +19,7 @@ Current status at a glance:
 - Opt-in public profiles let users share a read-only, tag-filterable view of their bookmarks
 - Browser extension support exists in the companion [tagstash-extension repository](https://github.com/jmusick/tagstash-extension)
 - Manual and background refresh keep the bookmark list in sync with saves made via the browser extension
-- A dedicated Tag Management page supports merging tags together
+- A dedicated Tag Management page supports merging, renaming and deleting tags
 
 ## Features
 
@@ -42,7 +42,7 @@ Current status at a glance:
 - Firefox/browser extension companion for saving the current tab quickly
 - Refresh button plus a quiet 5-minute background poll so bookmarks saved elsewhere (e.g. the browser extension) show up without a page reload
 - Random button for jumping straight to a random bookmark in edit mode
-- Tag Management page (`/tags`) for merging two tags into one, with a confirmation step since it can't be undone
+- Tag Management page (`/tags`) for merging two tags into one, renaming a tag on every bookmark that uses it (renaming onto an existing tag merges them), and deleting a tag from all of your bookmarks, with a confirmation step for anything that can't be undone
 - Self-service username, email, and password changes, plus a forgot-password email flow
 - Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
 - Password policy for new passwords (sign-up, change, reset): at least 8 characters and at most 72 UTF-8 bytes (bcrypt's limit), and passwords found in known breaches are refused via a Have I Been Pwned k-anonymity lookup (only a 5-character hash prefix is sent; the check fails open if the service is unreachable). Existing passwords keep working.
@@ -292,6 +292,8 @@ These use an isolated in-memory database and never access production.
 - `POST /api/bookmarks/import` — up to 2000 bookmarks per request; reports `imported`, `skipped`, `duplicates`, `invalid` (with `invalidRows`), `truncated` and `droppedTags`
 - `GET /api/bookmarks/tags/all`
 - `POST /api/bookmarks/tags/merge`
+- `PUT /api/bookmarks/tags/:id` — rename a tag on all of your bookmarks (`{ "name": "..." }`); renaming onto a tag you already use merges them (`merged: true`)
+- `DELETE /api/bookmarks/tags/:id` — remove a tag from all of your bookmarks (bookmarks are kept); reports `removedFrom`
 - `POST /api/bookmarks/tags/:id/favorite`
 - `POST /api/bookmarks/:id/favorite`
 - `POST /api/bookmarks/:id/private`

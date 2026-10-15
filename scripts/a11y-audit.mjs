@@ -12,7 +12,8 @@
 //               /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, edit mode, add form), /settings (every tab,
 //               plus an error, a success banner and the import preview), /tags
-//               (empty merge slots and a selected merge pair)
+//               (empty merge slots, a selected merge pair, the rename form with a
+//               name error and a would-merge name, and both inline confirmations)
 //   admin     : /settings -> Admin
 // The cookie consent banner is visible in every scan (each theme/role runs in a
 // fresh browser context with no stored choice). Exit code is 1 on any violation.
@@ -54,7 +55,7 @@ const THEMES = list(setting('--themes', 'A11Y_THEMES', 'slate,midnight,light'))
 const ROLES = list(setting('--roles', 'A11Y_ROLES', 'anon,owner,admin'))
 // --contrast-report also prints the measured ratio of the banner/button/label elements fixed for #132 and #22.
 const CONTRAST_REPORT = process.argv.includes('--contrast-report')
-const REPORT_SELECTORS = /auth-error|settings-error|settings-success|import-note|tag-merge-slot-label|cc-btn|cc-actions|preferred-badge|btn-danger/
+const REPORT_SELECTORS = /auth-error|settings-error|settings-success|import-note|tag-merge-slot-label|tag-edit-hint|tag-edit-confirm|cc-btn|cc-actions|preferred-badge|btn-danger/
 const SKIP_SEED = process.argv.includes('--skip-seed') || process.env.A11Y_SKIP_SEED === '1'
 
 // Local-only test accounts. The admin email must equal SUPER_ADMIN_EMAIL in .dev.vars.
@@ -365,6 +366,29 @@ async function owner(browser, theme) {
   await picks.nth(1).click()
   await page.locator('.tag-merge-preview').waitFor()
   await scan('/tags (merge pair selected)')
+  await page.getByRole('button', { name: 'Clear Selection', exact: true }).click()
+
+  // Rename / delete section: the form, a rename that would merge, both inline confirmations.
+  // Every confirmation is cancelled, so the seeded tags are left as they were.
+  const editSection = page.locator('section', { has: page.getByRole('heading', { name: 'Rename or Delete a Tag' }) })
+  await editSection.locator('.tag-cloud-chip-name', { hasText: 'reading' }).click()
+  const renameInput = editSection.getByLabel('New name')
+  await renameInput.waitFor()
+  await scan('/tags (rename form)')
+  await renameInput.fill('two words')
+  await editSection.locator('.tag-edit-hint--error').waitFor()
+  await scan('/tags (rename name error)')
+  await renameInput.fill('design')
+  await editSection.locator('.tag-merge-preview').waitFor()
+  await scan('/tags (rename would merge)')
+  await editSection.getByRole('button', { name: 'Rename and Merge' }).click()
+  await editSection.locator('.tag-edit-confirm').waitFor()
+  await scan('/tags (rename merge confirmation)')
+  await editSection.getByRole('button', { name: 'Cancel' }).click()
+  await editSection.getByRole('button', { name: 'Delete Tag' }).click()
+  await editSection.locator('.tag-edit-confirm').waitFor()
+  await scan('/tags (delete confirmation)')
+  await editSection.getByRole('button', { name: 'Cancel' }).click()
   await context.close()
 }
 
