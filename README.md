@@ -267,6 +267,22 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/admin/users/:id/make-private` — force the profile private
 - `GET /api/auth/admin/auth-events` — recent security and moderation events
 
+Admin account deletion requires migration `0018_account_deletion.sql`. Once deletion
+starts, the account cannot sign in or use existing sessions. Its Stripe customer
+is removed first, immediately canceling that customer's active subscriptions;
+legacy accounts with only a subscription ID have that subscription canceled.
+Accounts without Stripe identifiers need no billing configuration. No refunds are
+issued by this operation.
+
+Billing failures retain the account data and return `502` (`503` for missing
+configuration). Retry the same delete action to finish a pending deletion. After
+billing is stopped, one D1 transaction removes the account, bookmarks, private
+tokens, API keys, favorites, and associated security-log records. Tags shared with
+other accounts are preserved. If that transaction fails, the data is retained and
+deletion stays pending; retry does not resume billing. Stripe retains its own
+historical records according to its policies. Self-service deletion and account
+reset remain follow-up work in [issue #11](https://github.com/jmusick/tagstash/issues/11).
+
 ### Billing
 
 - `GET /api/billing/plans`

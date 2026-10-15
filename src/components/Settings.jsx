@@ -231,7 +231,7 @@ function Settings({
 
   const handleDeleteAdminUser = async (member) => {
     const confirmed = window.confirm(
-      `Delete ${member.email}? This will permanently remove the account and all of their bookmarks.`
+      `Delete ${member.email}? This will immediately stop their Stripe subscriptions and permanently remove the account, bookmarks, and account data. This cannot be undone. If deletion fails, retry to finish it.`
     );
 
     if (!confirmed) {

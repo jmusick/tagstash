@@ -48,5 +48,45 @@ links; its earlier release record reports application to local and production D1
 on October 2. That historical claim was not rechecked against database contents
 in this organizational pass.
 
+## Account deletion change (issue #11)
+
+Apply `0018_account_deletion.sql` before using the revised admin delete action.
+It adds one nullable `users.deletion_started_at` column without changing existing
+accounts. A Worker deployed before the migration refuses deletion with `503`;
+ordinary login and checkout continue to work. No production migration or Stripe
+operation is performed by the automated tests.
+
+Deletion marks the account pending, blocks its sessions and logins, and removes
+its Stripe customer before deleting D1 data. The customer's active subscriptions
+stop immediately. A legacy row with only a subscription ID uses immediate
+cancellation without proration or a final invoice. This does not issue a refund.
+Stripe customer deletion also removes its payment details and prevents new
+operations on that customer; historical Stripe records remain retrievable.
+See [Stripe customer deletion](https://docs.stripe.com/api/customers/delete)
+and [subscription cancellation](https://docs.stripe.com/api/subscriptions/cancel)
+(checked October 14, 2026).
+
+If Stripe fails or the D1 cleanup transaction rolls back, retain the pending row
+and retry the same admin delete. Billing may already be stopped even when the
+request timed out. Do not clear the marker to restore access while that state is
+uncertain. Finish pending deletions before rolling back to a Worker without the
+session/checkout guards; keep the additive column in place. Public profile cache
+purging still runs after successful cleanup and remains best effort with the
+existing 60-second staleness bound.
+
+Release verification: run build, lint, and the full test suite. The deletion
+regressions mock Stripe and use isolated in-memory D1; they cover billing errors,
+timeouts, repeated deletion, cleanup rollback, shared tags, session rejection,
+missing migrations, and checkout racing deletion. Self-service deletion and
+account reset are outside this change.
+
+Local verification on October 14, 2026: all 193 tests, lint, and production build
+passed. The Admin view passed three axe scans (slate, midnight, light) with no
+violations; three incomplete results still require human review. A Chromium check
+accepted the updated confirmation, deleted the seeded free account through the
+real API against isolated local D1, verified the refreshed admin list, and
+confirmed that its public profile API returned 404. No live Stripe calls or
+production migrations were performed.
+
 References: [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/)
 and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/functions/wrangler-configuration/).
