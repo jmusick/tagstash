@@ -4407,11 +4407,11 @@ async function handleBilling(request, env, segments) {
       return jsonResponse({ error: 'Stripe is not configured' }, 503);
     }
     const { plan } = await parseBody(request);
-    const priceMap = {
-      monthly: env.STRIPE_MONTHLY_PRICE_ID,
-      annual: env.STRIPE_ANNUAL_PRICE_ID,
-    };
-    const priceId = priceMap[plan];
+    const priceMap = new Map([
+      ['monthly', env.STRIPE_MONTHLY_PRICE_ID],
+      ['annual', env.STRIPE_ANNUAL_PRICE_ID],
+    ]);
+    const priceId = typeof plan === 'string' ? priceMap.get(plan) : undefined;
     if (!priceId) {
       return jsonResponse({ error: 'Invalid or unavailable plan' }, 400);
     }
