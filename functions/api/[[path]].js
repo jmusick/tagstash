@@ -259,11 +259,12 @@ const UPSTREAM_TIMEOUT_MS = {
 // A fixed upstream service failed, timed out or was unreachable. routeRequest answers it with a
 // 502 (503 is reserved for "not configured"), never the generic 500.
 class UpstreamError extends Error {
-  constructor(service, message, { status = null, cause } = {}) {
+  constructor(service, message, { status = null, code = null, cause } = {}) {
     super(message, cause ? { cause } : undefined);
     this.name = 'UpstreamError';
     this.service = service;
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -1081,7 +1082,7 @@ const requireAuth = async (request, env) => {
   // token_version keeps this working before migration 0011 is applied; tokens issued before
   // it carry no `tv` claim and match version 0.
   const dbUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(payload.id).first();
-  if (!dbUser || Number(dbUser.token_version || 0) !== Number(payload.tv || 0)) {
+  if (!dbUser || dbUser.deletion_started_at || Number(dbUser.token_version || 0) !== Number(payload.tv || 0)) {
     return { error: jsonResponse({ error: 'Invalid or expired token' }, 403) };
   }
 
@@ -2324,7 +2325,9 @@ const stripeRequest = async (method, path, params, env, { idempotencyKey } = {})
   const response = await fetchUpstream('stripe', url, options);
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) {
-    throw new UpstreamError('stripe', data?.error?.message || `Stripe API error: ${response.status}`, { status: response.status });
+    throw new UpstreamError('stripe', data?.error?.message || `Stripe API error: ${response.status}`, {
+      status: response.status, code: data?.error?.code,
+    });
   }
   return data;
 };
@@ -2367,17 +2370,107 @@ const updateStripeCustomer = async (customerId, dbUser, env) =>
     env
   );
 
-const saveStripeCustomerId = async (db, userId, customerId) => {
-  await db
-    .prepare('UPDATE users SET stripe_customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+const saveStripeCustomerId = async (db, userId, customerId, env) => {
+  const hasDeletionState = await usersTableHasColumn(db, 'deletion_started_at');
+  const result = await db
+    .prepare(`UPDATE users SET stripe_customer_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?${hasDeletionState ? ' AND deletion_started_at IS NULL' : ''}`)
     .bind(customerId, userId)
     .run();
+  if (!result.meta?.changes) {
+    // A checkout may have created this customer while an admin started deleting the
+    // account. Never attach it or create a subscription; remove the unused customer.
+    await removeStripeResourceForDeletion('customers', customerId, env);
+    throw new HttpError(409, 'Account deletion is in progress. Checkout is unavailable.');
+  }
+};
+
+// DELETE is safe to retry after an upstream timeout or a failed D1 transaction. Only
+// Stripe's structured resource_missing 404 counts as already removed; other errors
+// must keep the account. Never log the provider's message (it can contain user data).
+const removeStripeResourceForDeletion = async (resource, id, env) => {
+  try {
+    if (resource === 'subscriptions') {
+      const subscription = await stripeRequest('GET', `/subscriptions/${encodeURIComponent(id)}`, null, env);
+      if (subscription.id !== id) throw new UpstreamError('stripe', 'Subscription identity was not confirmed');
+      if (['canceled', 'incomplete_expired'].includes(subscription.status)) return;
+    }
+    const result = await stripeRequest('DELETE', `/${resource}/${encodeURIComponent(id)}`, null, env);
+    const removed = result.id === id && (resource === 'customers' ? result.deleted === true : result.status === 'canceled');
+    if (!removed) throw new UpstreamError('stripe', 'Billing deletion was not confirmed');
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404 && error.code === 'resource_missing') return;
+    throw new UpstreamError('stripe', 'Account billing deletion failed', { status: error.status });
+  }
+};
+
+const deleteAccount = async (db, user, env) => {
+  if (!(await usersTableHasColumn(db, 'deletion_started_at'))) {
+    throw new HttpError(503, 'Account deletion is not configured yet.');
+  }
+  if ((user.stripe_customer_id || user.stripe_subscription_id) && !env.STRIPE_SECRET_KEY) {
+    throw new HttpError(503, 'Stripe is not configured. The account has not been deleted.');
+  }
+
+  // Durable across retries: stop new sessions/checkouts before touching Stripe. Read
+  // billing IDs again after this claim so an in-flight customer creation is either
+  // included here or refused by saveStripeCustomerId's conditional update.
+  await db.prepare('UPDATE users SET deletion_started_at = COALESCE(deletion_started_at, CURRENT_TIMESTAMP) WHERE id = ?')
+    .bind(user.id).run();
+  const current = await db.prepare('SELECT * FROM users WHERE id = ?').bind(user.id).first();
+  if (!current) return;
+  if (current.stripe_customer_id || current.stripe_subscription_id) {
+    if (!env.STRIPE_SECRET_KEY) throw new HttpError(503, 'Stripe is not configured. Retry account deletion once billing is available.');
+    if (current.stripe_customer_id) {
+      // Stripe customer deletion immediately cancels all its active subscriptions,
+      // including ones missing from the local row, and prevents future operations.
+      await removeStripeResourceForDeletion('customers', current.stripe_customer_id, env);
+    } else {
+      await removeStripeResourceForDeletion('subscriptions', current.stripe_subscription_id, env);
+    }
+  }
+
+  const hasEmailChanges = await tableExists(db, 'email_change_tokens');
+  const authEventColumns = await db.prepare('PRAGMA table_info(auth_events)').all();
+  const hasAuthEvents = authEventColumns.results?.some((column) => column.name === 'user_id');
+  const hasActor = authEventColumns.results?.some((column) => column.name === 'actor_user_id');
+  const hasSuspendedBy = await usersTableHasColumn(db, 'suspended_by');
+  const statements = [
+    // Tags are global. Remove only this account's otherwise-unused names, preserving
+    // every other user's links and favorites (including stale favorites).
+    db.prepare(`DELETE FROM tags WHERE id IN (
+      SELECT bt.tag_id FROM bookmark_tags bt JOIN bookmarks b ON b.id = bt.bookmark_id WHERE b.user_id = ?
+      UNION SELECT tag_id FROM favorite_tags WHERE user_id = ?
+    ) AND NOT EXISTS (
+      SELECT 1 FROM bookmark_tags bt JOIN bookmarks b ON b.id = bt.bookmark_id WHERE bt.tag_id = tags.id AND b.user_id != ?
+    ) AND NOT EXISTS (SELECT 1 FROM favorite_tags f WHERE f.tag_id = tags.id AND f.user_id != ?)`)
+      .bind(user.id, user.id, user.id, user.id),
+    db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)').bind(user.id),
+    db.prepare('DELETE FROM bookmarks WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM favorite_tags WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM api_keys WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM email_verification_tokens WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').bind(user.id),
+  ];
+  if (hasEmailChanges) statements.push(db.prepare('DELETE FROM email_change_tokens WHERE user_id = ?').bind(user.id));
+  if (hasAuthEvents) {
+    statements.push(db.prepare('DELETE FROM auth_events WHERE user_id = ? OR (user_id IS NULL AND LOWER(email) = LOWER(?))').bind(user.id, current.email));
+    if (hasActor) statements.push(db.prepare('UPDATE auth_events SET actor_user_id = NULL WHERE actor_user_id = ?').bind(user.id));
+  }
+  if (hasSuspendedBy) statements.push(db.prepare('UPDATE users SET suspended_by = NULL WHERE suspended_by = ?').bind(user.id));
+  statements.push(db.prepare('DELETE FROM users WHERE id = ?').bind(user.id));
+  try {
+    await db.batch(statements);
+  } catch (error) {
+    console.error('[account-deletion] data cleanup failed:', error?.name || 'error');
+    throw new HttpError(503, 'Account data could not be removed. Deletion is still pending; retry to finish cleanup.');
+  }
 };
 
 const clearStripeBillingState = async (db, userId) => {
+  const hasDeletionState = await usersTableHasColumn(db, 'deletion_started_at');
   await db
     .prepare(
-      'UPDATE users SET membership_tier = ?, stripe_customer_id = NULL, stripe_subscription_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+      `UPDATE users SET membership_tier = ?, stripe_customer_id = NULL, stripe_subscription_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?${hasDeletionState ? ' AND deletion_started_at IS NULL' : ''}`
     )
     .bind(MEMBERSHIP_TIERS.FREE, userId)
     .run();
@@ -2414,6 +2507,8 @@ const verifyStripeSignature = async (rawBody, sigHeader, secret) => {
 const processStripeEvent = async (db, event) => {
   const { type, data } = event;
   const obj = data?.object;
+  const activeAccountCondition = await usersTableHasColumn(db, 'deletion_started_at')
+    ? ' AND deletion_started_at IS NULL' : '';
 
   if (type === 'checkout.session.completed') {
     const customerId = obj?.customer;
@@ -2430,10 +2525,10 @@ const processStripeEvent = async (db, event) => {
         .bind(email)
         .first();
     }
-    if (!user) return { handled: false, reason: 'No matching user' };
+    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user' };
     await db
       .prepare(
-        'UPDATE users SET membership_tier = ?, stripe_customer_id = ?, stripe_subscription_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        `UPDATE users SET membership_tier = ?, stripe_customer_id = ?, stripe_subscription_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`
       )
       .bind(MEMBERSHIP_TIERS.PAID, customerId, subscriptionId, user.id)
       .run();
@@ -2446,10 +2541,10 @@ const processStripeEvent = async (db, event) => {
       .prepare('SELECT * FROM users WHERE stripe_customer_id = ?')
       .bind(customerId)
       .first();
-    if (!user) return { handled: false, reason: 'No matching user for customer' };
+    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user for customer' };
     await db
       .prepare(
-        'UPDATE users SET membership_tier = ?, stripe_subscription_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        `UPDATE users SET membership_tier = ?, stripe_subscription_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`
       )
       .bind(MEMBERSHIP_TIERS.FREE, user.id)
       .run();
@@ -2463,11 +2558,11 @@ const processStripeEvent = async (db, event) => {
       .prepare('SELECT * FROM users WHERE stripe_customer_id = ?')
       .bind(customerId)
       .first();
-    if (!user) return { handled: false, reason: 'No matching user for customer' };
+    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user for customer' };
     const tier = ['active', 'trialing'].includes(status) ? MEMBERSHIP_TIERS.PAID : MEMBERSHIP_TIERS.FREE;
     if (user.membership_tier !== tier) {
       await db
-        .prepare('UPDATE users SET membership_tier = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .prepare(`UPDATE users SET membership_tier = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`)
         .bind(tier, user.id)
         .run();
     }
@@ -2702,6 +2797,10 @@ async function handleAuth(request, env, segments, context = {}) {
 
     if (!user.email_verified) {
       return jsonResponse({ error: 'Please verify your email address before logging in.' }, 403);
+    }
+
+    if (user.deletion_started_at) {
+      return jsonResponse({ error: 'Account deletion is in progress. Contact support for help.' }, 403);
     }
 
     await ensureUserRoleMatchesConfig(db, user, env);
@@ -3537,7 +3636,7 @@ async function handleAuth(request, env, segments, context = {}) {
     }
 
     const targetUser = await db
-      .prepare('SELECT id, username, email, role FROM users WHERE id = ?')
+      .prepare('SELECT * FROM users WHERE id = ?')
       .bind(targetId)
       .first();
 
@@ -3552,15 +3651,7 @@ async function handleAuth(request, env, segments, context = {}) {
     // Collected before the delete (it removes the tags this looks up), purged after.
     const profileCacheKeys = await collectProfileCacheKeys(db, request, targetId, targetUser.username);
 
-    await db.batch([
-      db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)').bind(targetId),
-      db.prepare('DELETE FROM bookmarks WHERE user_id = ?').bind(targetId),
-      db.prepare('DELETE FROM favorite_tags WHERE user_id = ?').bind(targetId),
-      db.prepare('DELETE FROM api_keys WHERE user_id = ?').bind(targetId),
-      db.prepare('DELETE FROM email_verification_tokens WHERE user_id = ?').bind(targetId),
-      db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').bind(targetId),
-      db.prepare('DELETE FROM users WHERE id = ?').bind(targetId),
-    ]);
+    await deleteAccount(db, targetUser, env);
     await purgeProfileCacheKeys(context, profileCacheKeys);
 
     return jsonResponse({ message: 'User account and bookmarks deleted successfully' });
@@ -4424,7 +4515,7 @@ async function handleBilling(request, env, segments) {
     if (!customerId) {
       const customer = await createStripeCustomer(dbUser, env);
       customerId = customer.id;
-      await saveStripeCustomerId(db, dbUser.id, customerId);
+      await saveStripeCustomerId(db, dbUser.id, customerId, env);
     } else {
       await updateStripeCustomer(customerId, dbUser, env);
     }
@@ -4455,7 +4546,7 @@ async function handleBilling(request, env, segments) {
       const staleCustomerId = customerId;
       const customer = await createStripeCustomer(dbUser, env, staleCustomerId);
       customerId = customer.id;
-      await saveStripeCustomerId(db, dbUser.id, customerId);
+      await saveStripeCustomerId(db, dbUser.id, customerId, env);
       session = await createCheckoutSession({
         ...checkoutParams,
         customer: customerId,

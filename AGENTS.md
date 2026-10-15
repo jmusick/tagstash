@@ -135,6 +135,24 @@ Merge (`POST /bookmarks/tags/merge`), rename (`PUT /bookmarks/tags/:id`, body `{
 
 ## Token revocation: `requireAuth` re-reads the user
 
+Admin account deletion goes through `deleteAccount` (issue #11). Migration `0018`
+adds `users.deletion_started_at`; the delete route fails closed before it exists.
+The durable marker blocks sessions in `requireAuth` and new logins after password
+verification. Never clear it automatically after a failure: Stripe may already
+have stopped billing. Retry the admin delete to finish. Stripe customer deletion
+cancels all its active subscriptions; subscription-only legacy rows use explicit
+cancellation. Only a structured Stripe `resource_missing` 404 counts as an absent
+resource, and success bodies are checked. The cleanup is one D1 batch, including
+email-change tokens, user/email-linked auth events, and unused tag names; other
+users' bookmarks and favorites must survive. Optional older tables/columns are
+detected. `saveStripeCustomerId` conditionally refuses a new customer once deletion
+has started (or the row is gone) and removes that unused customer, so a checkout
+already in flight cannot attach new billing. Keep that guard on every new
+customer-creation path. Tests: `tests/account-deletion.test.mjs`.
+Webhook updates and billing-state clearing also guard the marker in their SQL,
+so requests already in flight cannot replace/remove the billing IDs needed for
+deletion. Keep those conditions atomic rather than relying only on a prior read.
+
 `requireAuth` verifies the JWT and then loads the `users` row on every request, rejecting the token if the account is gone or its `tv` claim doesn't match `users.token_version`. `auth.user` is built from that row, not from the token payload. Call `bumpTokenVersion(db, userId)` to sign a user out everywhere — password change and password reset already do. If the current session should survive (as with password change), sign a fresh token with `signUserToken(user, env, request)` and return it through `sessionResponse(request, data)`; web clients receive a replacement cookie, bearer clients a JSON token. Tokens issued before `0011_token_version.sql` have no `tv` claim and count as version 0.
 
 JWT validation goes beyond the signature: `jwtVerify` pins HS256 and requires `exp` + `iat` (every token ever issued has both), and `hasValidSessionClaims` requires an integer `id`, an integer `tv` if present, `session` absent or `'web'`, `iat` not in the future, and `exp - iat` no longer than the type's lifetime (7 days web, 60 days bearer, plus 60s skew). `signUserToken` has issued `iss: 'tagsta.sh'` / `aud: 'tagstash-api'` since this change, but they are only checked **when present**: bearer tokens without them stay valid for up to 60 days after the deploy that started issuing them. After that window, make them required (`issuer`/`audience` options on `jwtVerify`). Lengthening a session type means raising its cap in `hasValidSessionClaims` too.
