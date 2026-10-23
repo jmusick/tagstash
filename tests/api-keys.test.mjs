@@ -107,14 +107,14 @@ test('active keys are capped per user; revoking one frees a slot', async () => {
   } finally { env.sqlite.close(); }
 });
 
-test('a personal API key cannot be used as a bearer token', async () => {
+test('a personal API key cannot authenticate account or key-management routes', async () => {
   const { env, call } = await setup();
   try {
     const { apiKey } = await (await call('POST', 'api-keys', { name: 'bearer' })).json();
-    for (const path of ['auth/me', 'auth/api-keys', 'bookmarks']) {
+    for (const path of ['auth/me', 'auth/api-keys']) {
       const response = await onRequest({ env, request: new Request(`https://tagsta.sh/api/${path}`, {
         headers: { Authorization: `Bearer ${apiKey}` } }) });
-      // requireAuth answers 403 for a bearer value that is not a valid JWT.
+      // Key credentials never grant account or key-management access.
       assert.ok([401, 403].includes(response.status), `${path} -> ${response.status}`);
     }
     const lastUsed = env.sqlite.prepare('SELECT last_used_at FROM api_keys').get().last_used_at;

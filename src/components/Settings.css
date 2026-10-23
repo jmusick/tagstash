@@ -220,6 +220,13 @@
   gap: 0.75rem;
 }
 
+.api-keys-description {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+
 .generated-key-box {
   border: 1px solid var(--color-border);
   background: var(--color-primary-soft);
@@ -233,7 +240,7 @@
 .generated-key-note {
   margin: 0;
   font-size: 0.85rem;
-  opacity: 0.9;
+  color: var(--color-text);
 }
 
 .generated-key-box code {
@@ -377,7 +384,7 @@
   align-items: center;
   gap: 0.45rem;
   font-size: 0.82rem;
-  opacity: 0.85;
+  color: var(--color-text-muted);
   cursor: pointer;
 }
 
@@ -405,7 +412,7 @@
 
 .api-key-meta {
   margin: 0.3rem 0 0;
-  opacity: 0.78;
+  color: var(--color-text-muted);
   font-size: 0.82rem;
 }
 
@@ -439,7 +446,7 @@
 
 .api-keys-empty {
   margin: 0;
-  opacity: 0.75;
+  color: var(--color-text-muted);
   font-size: 0.9rem;
 }
 

@@ -46,7 +46,7 @@ Current status at a glance:
 - Tag Management page (`/tags`) for merging two tags into one, renaming a tag on every bookmark that uses it (renaming onto an existing tag merges them), and deleting a tag from all of your bookmarks, with a confirmation step for anything that can't be undone
 - Self-service username, email, and password changes, plus a forgot-password email flow
 - Settings → Reset Library wipes your bookmarks, tag links and favorite tags but keeps the account and subscription; Settings → Delete Account permanently deletes the account and cancels any subscription immediately (both require your password and a typed confirmation)
-- Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
+- Personal API keys (Settings → API Keys) authenticate bookmark and tag operations, including import/export. They cannot manage accounts, billing, keys, deletion/reset, admin actions or support. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
 - Password policy for new passwords (sign-up, change, reset): at least 8 characters and at most 72 UTF-8 bytes (bcrypt's limit), and passwords found in known breaches are refused via a Have I Been Pwned k-anonymity lookup (only a 5-character hash prefix is sent; the check fails open if the service is unreachable). Existing passwords keep working.
 - Account-enumeration resistance: sign-up, password reset and verification resend give the same answer (and timing, with the email sent after the response) whether or not an address has an account; signing up with a registered address emails its owner instead. Usernames are public, so "username taken" is reported.
 - Brute-force protection: 8 failed logins lock an account for 15 minutes, with per-IP/per-email throttling of login, sign-up, verification resends and password-reset requests; auth events are logged for super admins in Settings → Admin
@@ -229,12 +229,26 @@ Plain HTTP loopback development uses `tagstash-session` without `Secure`.
 
 The browser extension and other bearer clients retain the existing 60-day JWT flow:
 omit the web-client header on login and send the returned token as `Authorization: Bearer`.
-Personal API keys are still not an authentication path. Web cookie tokens cannot be used
-as bearer credentials, and bearer tokens cannot be used as cookies. Password changes
-and resets revoke both types through `token_version`; password changes replace the
+Web cookie tokens cannot be used as bearer credentials, and bearer tokens cannot be used
+as cookies. Password changes and resets revoke both session types through `token_version`; password changes replace the
 current session. Existing web tokens are exchanged for cookies on the next app visit
 and removed from localStorage. Previously issued bearer tokens keep their original
 expiry unless revoked by a password change/reset.
+
+Personal API keys are a separate, **library-only** authentication method. Create one in
+Settings → API Keys and send `Authorization: Bearer tsk_<48 lowercase hex characters>`
+on `/api/bookmarks` routes (including tag operations, metadata and import).
+`GET /api/bookmarks` returns the complete library, including private bookmarks, for export.
+For example: `curl https://tagsta.sh/api/bookmarks -H "Authorization: Bearer $TAGSTASH_API_KEY"`.
+Keys cannot authenticate account/password/email changes, billing/Stripe, API-key management,
+account deletion, library reset, admin/moderation or support routes (403).
+Use a signed-in web session or bearer JWT for protected account operations.
+Keys are independent of session `token_version`: password changes/resets and confirmed email
+changes revoke sessions but leave keys valid until revoked in Settings. Suspended or deleting
+accounts cannot use keys; unsuspending restores unrevoked keys. Free-plan limits still apply.
+Keys belong in the Authorization header, never a cookie. Script clients need no web-client
+header or cookie-origin proof; browser CORS permissions and cookie CSRF protection are unchanged.
+Last use is recorded at most once per minute when the existing database column is available.
 
 Auth regression checks: `npm run test:auth` (Node 22.13+ with built-in SQLite).
 These use an isolated in-memory database and never access production.

@@ -705,8 +705,7 @@ const storeEmailToken = async (db, table, userId, token, expiresAt) => {
     .bind(userId, `sha256:${tokenHash}`, tokenHash, expiresAt).run();
 };
 
-// Personal API keys are stored hash-only (show once at creation) and are NOT an auth
-// path: requireAuth never consults api_keys.
+// Personal API keys are hash-only, show-once credentials for library routes only.
 const MAX_ACTIVE_API_KEYS_PER_USER = 10;
 const API_KEY_METADATA_COLUMNS = 'id, name, key_prefix, key_last4, created_at, last_used_at, revoked_at';
 const toApiKeyMetadata = (row) => ({
@@ -1038,6 +1037,9 @@ const getBearerToken = (request) => {
   return token;
 };
 
+// Recognize malformed key headers too, so whitespace cannot turn a key attempt into cookie auth.
+const isApiKeyBearerRequest = (request) => /^Bearer\s+tsk_/i.test(request.headers.get('Authorization') || '');
+
 // Every token signUserToken has ever issued carries iat + exp (7d originally, 60d bearer since
 // v1.5.2, 7d web cookies since v1.28.0), so requiring them logs no live session out. Beyond the
 // signature, a token must look like one we issue: an integer user id, a numeric token version
@@ -1061,21 +1063,39 @@ const hasValidSessionClaims = (payload) => {
   return true;
 };
 
-const requireAuth = async (request, env) => {
+const requireAuth = async (request, env, { allowApiKey = false } = {}) => {
   const bearerToken = getBearerToken(request);
   const token = bearerToken || getSessionCookie(request);
   if (!token) {
     return { error: jsonResponse({ error: 'Access token required' }, 401) };
   }
 
+  const invalidToken = () => ({ error: jsonResponse({ error: 'Invalid or expired token' }, 403) });
+  if (!bearerToken && /^Bearer(?:\s|$)/i.test(request.headers.get('Authorization') || '')) return invalidToken();
+  const isApiKey = isApiKeyBearerRequest(request);
   let payload;
-  try {
-    ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'], requiredClaims: ['exp', 'iat'] }));
-    if (!hasValidSessionClaims(payload)) throw new Error('Unexpected token claims');
-    // A web session is only valid as an HttpOnly cookie; legacy/extension JWTs only as bearer tokens.
-    if (bearerToken ? payload.session === 'web' : payload.session !== 'web') throw new Error('Wrong token type');
-  } catch {
-    return { error: jsonResponse({ error: 'Invalid or expired token' }, 403) };
+  let apiKey;
+  if (isApiKey) {
+    // Never fall back to a cookie for an explicit key, including malformed or disallowed keys.
+    if (!allowApiKey || !/^tsk_[0-9a-f]{48}$/.test(bearerToken) || request.headers.get('Authorization').split(' ').length !== 2) {
+      return invalidToken();
+    }
+    const columns = await env.DB.prepare('PRAGMA table_info(api_keys)').all();
+    const hasLastUsedAt = (columns.results || []).some((column) => column.name === 'last_used_at');
+    // One hash lookup with the same predicate for unknown and revoked keys; never query plaintext.
+    apiKey = await env.DB.prepare(`SELECT id, user_id${hasLastUsedAt ? ', last_used_at' : ''}
+      FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL`)
+      .bind(await hashApiKey(bearerToken)).first();
+    if (!apiKey) return invalidToken();
+  } else {
+    try {
+      ({ payload } = await jwtVerify(token, getJwtSecret(env), { algorithms: ['HS256'], requiredClaims: ['exp', 'iat'] }));
+      if (!hasValidSessionClaims(payload)) throw new Error('Unexpected token claims');
+      // A web session is only valid as an HttpOnly cookie; legacy/extension JWTs only as bearer tokens.
+      if (bearerToken ? payload.session === 'web' : payload.session !== 'web') throw new Error('Wrong token type');
+    } catch {
+      return invalidToken();
+    }
   }
 
   // The signature only proves we issued the token, not that it's still valid. Re-read the
@@ -1083,9 +1103,28 @@ const requireAuth = async (request, env) => {
   // reset) stop working immediately rather than at expiry. SELECT * rather than naming
   // token_version keeps this working before migration 0011 is applied; tokens issued before
   // it carry no `tv` claim and match version 0.
-  const dbUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(payload.id).first();
-  if (!dbUser || dbUser.deletion_started_at || Number(dbUser.token_version || 0) !== Number(payload.tv || 0)) {
-    return { error: jsonResponse({ error: 'Invalid or expired token' }, 403) };
+  const dbUser = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(apiKey ? apiKey.user_id : payload.id).first();
+  // token_version revokes sessions, not independently revocable API keys. Suspension blocks keys
+  // even though suspended owners may still sign in to their private library with a session.
+  if (!dbUser || dbUser.deletion_started_at || (apiKey
+    ? dbUser.suspended_at
+    : Number(dbUser.token_version || 0) !== Number(payload.tv || 0))) {
+    return invalidToken();
+  }
+
+  if (apiKey && Object.hasOwn(apiKey, 'last_used_at')) {
+    const lastUsed = Date.parse(`${apiKey.last_used_at?.replace(' ', 'T')}Z`);
+    if (!Number.isFinite(lastUsed) || lastUsed <= Date.now() - 60_000) {
+      try {
+        // Re-check in SQL too so concurrent requests write at most once per minute.
+        await env.DB.prepare(`UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP
+          WHERE id = ? AND revoked_at IS NULL
+          AND (last_used_at IS NULL OR last_used_at <= datetime('now', '-1 minute'))`)
+          .bind(apiKey.id).run();
+      } catch {
+        // Usage metadata is best-effort; a failed timestamp write must not break the library.
+      }
+    }
   }
 
   return {
@@ -4031,7 +4070,7 @@ async function handleAuth(request, env, segments, context = {}) {
 
 async function handleBookmarks(request, env, segments) {
   const db = env.DB;
-  const auth = await requireAuth(request, env);
+  const auth = await requireAuth(request, env, { allowApiKey: true });
   if (auth.error) return auth.error;
 
   if (request.method === 'GET' && segments.length === 1) {
@@ -5019,6 +5058,12 @@ async function routeRequest(context) {
 
     if (request.method === 'GET' && segments[1] === 'health') {
       return jsonResponse({ status: 'ok', message: 'Tagstash API is running' });
+    }
+
+    // Keys cannot be credentials for any non-library handler, including anonymous auth/support
+    // flows. Protected handlers must also opt in via requireAuth; this is not an auth grant.
+    if (segments[1] !== 'bookmarks' && isApiKeyBearerRequest(request)) {
+      return jsonResponse({ error: 'Invalid or expired token' }, 403);
     }
 
     if (!env.DB) {
