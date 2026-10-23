@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
@@ -44,6 +44,29 @@ function Settings({
   const [generatedApiKey, setGeneratedApiKey] = useState('');
   const [showRevokedKeys, setShowRevokedKeys] = useState(false);
   const [publicApiTagInput, setPublicApiTagInput] = useState('');
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const signOutConfirmRef = useRef(null);
+  const signOutButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (confirmSignOut) signOutConfirmRef.current?.focus();
+  }, [confirmSignOut]);
+
+  const handleSignOutEverywhere = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
+    setError('');
+    try {
+      await authAPI.logoutEverywhere();
+      localStorage.removeItem('token');
+      updateUser(null);
+      navigate('/', { replace: true, state: { accountNotice: 'signedOutEverywhere' } });
+    } catch (err) {
+      setError(err.response?.data?.error || 'We could not confirm that all devices were signed out. Try again. If this session has ended, sign in again.');
+      setSigningOut(false);
+    }
+  };
 
   // Billing state
   const [plans, setPlans] = useState([]);
@@ -646,6 +669,7 @@ function Settings({
     { id: 'username', label: 'Username', onSelect: () => setGeneratedApiKey('') },
     { id: 'email', label: 'Email', onSelect: () => setGeneratedApiKey('') },
     { id: 'password', label: 'Password', onSelect: () => setGeneratedApiKey('') },
+    { id: 'signOut', label: 'Sessions', onSelect: () => setConfirmSignOut(false) },
     { id: 'publicProfile', label: 'Public Profile' },
     { id: 'preferences', label: 'Preferences' },
     // The API Keys tab is hidden for now (its panel below is kept):
@@ -1200,6 +1224,43 @@ function Settings({
             </p>
             <Import onImportComplete={onImportComplete} />
             <Export />
+          </div>
+        )}
+
+        {activeTab === 'signOut' && (
+          <div className="settings-form" aria-busy={signingOut}>
+            <h3 className="settings-delete-heading">Sign out of all devices</h3>
+            <p className="settings-reset-lead">
+              End every web session and browser extension sign-in, including this browser.
+              You will need to sign in again on each device.
+            </p>
+            <p className="settings-reset-lead">
+              Personal API keys are separate credentials and will stay active.
+            </p>
+            {confirmSignOut ? (
+              <div role="group" aria-labelledby="sign-out-confirmation" tabIndex={-1} ref={signOutConfirmRef}>
+                <p id="sign-out-confirmation">Sign out everywhere now?</p>
+                <div className="settings-sign-out-actions">
+                  <button type="button" className="btn-danger" disabled={signingOut} onClick={handleSignOutEverywhere}>
+                    {signingOut ? 'Signing out...' : 'Confirm sign out'}
+                  </button>
+                  <button type="button" className="btn-secondary" disabled={signingOut} onClick={() => {
+                    setConfirmSignOut(false);
+                    setError('');
+                    setTimeout(() => signOutButtonRef.current?.focus(), 0);
+                  }}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <button type="button" className="btn-danger" ref={signOutButtonRef} onClick={() => {
+                setError('');
+                setSuccess('');
+                setConfirmSignOut(true);
+              }}>Sign out of all devices</button>
+            )}
+            <div role="status" className="live-region">
+              {signingOut && <p className="settings-delete-pending">Signing out of all devices.</p>}
+            </div>
           </div>
         )}
 

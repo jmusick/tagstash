@@ -37,6 +37,8 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotStatus, setForgotStatus] = useState('idle'); // idle | loading | sent | error
   const [forgotError, setForgotError] = useState('');
+  const [signedOutEverywhere, setSignedOutEverywhere] = useState(false);
+  const signedOutNoticeRef = useRef(null);
 
   // After self-service account deletion (issue #153) this page is where the owner lands:
   // 'deleted' confirms it, and 'finishDeletion' lets them finish one that was interrupted (reached
@@ -56,6 +58,8 @@ function Home({ logoSrc, theme, onSelectTheme }) {
     if (!accountNotice) return;
     if (accountNotice === 'deleted') {
       setView('deleted');
+    } else if (accountNotice === 'signedOutEverywhere') {
+      setSignedOutEverywhere(true);
     } else if (accountNotice === 'pending') {
       setFinishInterrupted(true);
       setFinishError('');
@@ -69,6 +73,10 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   useEffect(() => {
     if (view !== 'auth') viewHeadingRef.current?.focus();
   }, [view]);
+
+  useEffect(() => {
+    if (signedOutEverywhere) signedOutNoticeRef.current?.focus();
+  }, [signedOutEverywhere]);
 
   const { login, register } = useAuth();
 
@@ -407,6 +415,11 @@ function Home({ logoSrc, theme, onSelectTheme }) {
         </div>
 
         <div className="auth-card" id="account">
+          {signedOutEverywhere && (
+            <div className="auth-success" role="status" tabIndex={-1} ref={signedOutNoticeRef}>
+              You are signed out of all devices, including browser extensions. Personal API keys are still active.
+            </div>
+          )}
           <h2 className="auth-card-title">
             {isLogin ? 'Log in' : 'Create your account'}
           </h2>

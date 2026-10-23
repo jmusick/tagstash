@@ -17,6 +17,7 @@ export const authAPI = {
     api.post('/auth/session', null, { headers: { Authorization: `Bearer ${token}` } }),
 
   logout: () => api.post('/auth/logout'),
+  logoutEverywhere: () => api.post('/auth/logout-everywhere'),
   register: (username, email, password) =>
     api.post('/auth/register', { username, email, password }),
   
