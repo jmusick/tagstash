@@ -723,6 +723,23 @@ const generateApiKeyValue = () => {
   return `tsk_${toHex(bytes)}`;
 };
 
+// Keep compatibility with installations missing optional usage metadata without a schema query
+// on every library request. Cache the in-flight probe too, sharing it across concurrent requests.
+const apiKeyUsageColumnCache = new WeakMap();
+const apiKeysHaveUsageColumn = (db) => {
+  let probe = apiKeyUsageColumnCache.get(db);
+  if (!probe) {
+    probe = db.prepare('PRAGMA table_info(api_keys)').all()
+      .then(({ results }) => (results || []).some((column) => column.name === 'last_used_at'))
+      .catch((error) => {
+        apiKeyUsageColumnCache.delete(db);
+        throw error;
+      });
+    apiKeyUsageColumnCache.set(db, probe);
+  }
+  return probe;
+};
+
 // Server-side input limits (characters unless noted). The web UI mirrors the user-facing ones
 // in src/utils/inputLimits.js as maxLength/tag-count checks — change both together.
 // New passwords: passwordMinChars code points and passwordMaxBytes UTF-8 bytes (bcrypt ignores
@@ -1080,8 +1097,7 @@ const requireAuth = async (request, env, { allowApiKey = false } = {}) => {
     if (!allowApiKey || !/^tsk_[0-9a-f]{48}$/.test(bearerToken) || request.headers.get('Authorization').split(' ').length !== 2) {
       return invalidToken();
     }
-    const columns = await env.DB.prepare('PRAGMA table_info(api_keys)').all();
-    const hasLastUsedAt = (columns.results || []).some((column) => column.name === 'last_used_at');
+    const hasLastUsedAt = await apiKeysHaveUsageColumn(env.DB);
     // One hash lookup with the same predicate for unknown and revoked keys; never query plaintext.
     apiKey = await env.DB.prepare(`SELECT id, user_id${hasLastUsedAt ? ', last_used_at' : ''}
       FROM api_keys WHERE key_hash = ? AND revoked_at IS NULL`)
@@ -4030,6 +4046,13 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'This reset link has expired. Please request a new one.' }, 400);
     }
 
+    // Account recovery must revoke keys as well as sessions. Fail closed before any change if
+    // the schema cannot support that guarantee; keep this rare recovery probe uncached.
+    const apiKeyColumns = await db.prepare('PRAGMA table_info(api_keys)').all();
+    if (!(apiKeyColumns.results || []).some((column) => column.name === 'revoked_at')) {
+      return jsonResponse({ error: 'Account recovery is temporarily unavailable. Please try again later.' }, 503);
+    }
+
     // Only a live reset link gets as far as the breach check (and its upstream call).
     const breachError = await validateNewPassword(password);
     if (breachError) {
@@ -4054,6 +4077,12 @@ async function handleAuth(request, env, segments, context = {}) {
            WHERE id = ? AND ${tokenStillValid}`
         )
         .bind(passwordHash, record.user_id, record.id, nowIso),
+      // Must immediately follow the password update: a losing/expired redemption has changes()=0
+      // and must not revoke keys created after another redemption already completed recovery.
+      db
+        .prepare(`UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP
+          WHERE user_id = ? AND revoked_at IS NULL AND changes() > 0`)
+        .bind(record.user_id),
       db
         .prepare('UPDATE password_reset_tokens SET used_at = CURRENT_TIMESTAMP WHERE id = ? AND used_at IS NULL AND expires_at > ?')
         .bind(record.id, nowIso),
@@ -4079,7 +4108,7 @@ async function handleAuth(request, env, segments, context = {}) {
     const authToken = await signUserToken(updatedUser, env, request);
 
     return sessionResponse(request, {
-      message: 'Password reset successfully.',
+      message: 'Password reset successfully. All API keys have been revoked.',
       token: authToken,
       user: updatedUser,
     });

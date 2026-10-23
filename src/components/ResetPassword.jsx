@@ -56,8 +56,8 @@ function ResetPassword({ logoSrc }) {
         <div role="status" className="live-region">
           {token && status === 'success' && (
             <>
-              <p className="auth-subtitle">Password updated!</p>
-              <p className="auth-description">You are now signed in. Redirecting…</p>
+              <p className="auth-subtitle">Password reset!</p>
+              <p className="auth-description">All API keys have been revoked. You are now signed in. Redirecting…</p>
             </>
           )}
         </div>

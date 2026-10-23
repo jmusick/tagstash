@@ -10,6 +10,7 @@
 // database, logs in through the real login form, and scans:
 //   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
 //               account" screen (form, error, pending) and the "account deleted" page,
+//               /reset-password (form, recovery unavailable, success with keys revoked),
 //               /features, /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form), /settings (every tab,
 //               plus an error, a success banner, the import preview and API Keys loading,
@@ -323,6 +324,33 @@ async function anonymous(browser, theme) {
   await page.getByRole('button', { name: /forgot/i }).click()
   await page.locator('#forgot-email').waitFor()
   await scan('/ (forgot password form)')
+
+  // Recovery responses are intercepted: no real credentials or API keys are changed.
+  const recoveryPage = await context.newPage()
+  await recoveryPage.addInitScript(() => {
+    const timeout = window.setTimeout.bind(window)
+    // Hold the success screen's 800ms redirect long enough for axe to scan it.
+    window.setTimeout = (callback, delay, ...args) => timeout(callback, delay === 800 ? 60_000 : delay, ...args)
+  })
+  const recoveryScan = makeScanner(recoveryPage, theme, 'anon')
+  const setReset = await interceptJson(recoveryPage, '**/api/auth/reset-password', {
+    status: 503, body: { error: 'Account recovery is temporarily unavailable. Please try again later.' },
+  })
+  const setMe = await interceptJson(recoveryPage, '**/api/auth/me', { status: 401, body: { error: 'Access token required' } })
+  await go(recoveryPage, '/reset-password?token=a11y-intercepted-reset')
+  await recoveryPage.getByLabel('New password', { exact: true }).waitFor()
+  await recoveryScan('/reset-password (form)')
+  await recoveryPage.getByLabel('New password', { exact: true }).fill(TEST_PASSWORD)
+  await recoveryPage.getByLabel('Confirm new password').fill(TEST_PASSWORD)
+  await recoveryPage.getByRole('button', { name: 'Reset password', exact: true }).click()
+  await recoveryPage.locator('.auth-error', { hasText: 'Account recovery is temporarily unavailable' }).waitFor()
+  await recoveryScan('/reset-password (recovery unavailable)')
+  setReset({ status: 200, body: { message: 'Password reset successfully. All API keys have been revoked.' } })
+  setMe({ status: 200, body: { user: { id: 1, username: OWNER.username, email: OWNER.email, membership_tier: 'free', role: 'user', theme } } })
+  await recoveryPage.getByRole('button', { name: 'Reset password', exact: true }).click()
+  await recoveryPage.getByText('Password reset!', { exact: true }).waitFor()
+  await recoveryScan('/reset-password (success, API keys revoked)')
+  await recoveryPage.close()
 
   // Interrupted deletion. A login with the right password for a pending account answers
   // deletionPending; both calls are intercepted, so nothing here touches a real account.

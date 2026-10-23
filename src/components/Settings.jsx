@@ -1026,7 +1026,9 @@ function Settings({
               Use a key to read and edit your bookmarks and tags, including imports and exports.
               Send it as <code>Authorization: Bearer &lt;key&gt;</code> to <code>/api/bookmarks</code> routes.
               Keys cannot manage your account, billing, API keys, library reset or deletion,
-              admin actions, or support requests. Password changes do not revoke keys; revoke them here.
+              admin actions, or support requests. A password reset from the forgot-password email
+              revokes all keys. Changing your password in Settings or signing out of all devices
+              keeps keys active. You can revoke them here.
             </p>
             <form onSubmit={handleCreateApiKey} className="settings-form api-key-create-form">
               <div className="form-field">

@@ -60,6 +60,7 @@ test('keys cannot authenticate any excluded route category, even alongside a val
       ['PUT', 'auth/password'], ['POST', 'auth/forgot-password'], ['POST', 'auth/reset-password'],
       ['PUT', 'auth/email'], ['GET', 'auth/verify-email?token=x'], ['PUT', 'auth/profile-public'],
       ['POST', 'auth/session'], ['POST', 'auth/login'], ['POST', 'auth/logout'],
+      ['POST', 'auth/logout-everywhere'],
       ['GET', 'auth/api-keys'], ['POST', 'auth/api-keys'],
       ['DELETE', 'auth/api-keys/1'], ['DELETE', 'auth/api-keys/1/permanent'],
       ['POST', 'auth/delete-account'], ['POST', 'auth/resume-deletion'], ['POST', 'auth/reset-library'],
@@ -137,9 +138,27 @@ test('key usage timestamps are throttled atomically, optional, and best-effort',
       CREATE TRIGGER fail_usage BEFORE UPDATE OF last_used_at ON api_keys
       BEGIN SELECT RAISE(FAIL, 'usage metadata unavailable'); END;`);
     assert.equal((await call(env, 'bookmarks', { headers })).status, 200);
-    env.sqlite.exec('DROP TRIGGER fail_usage; ALTER TABLE api_keys DROP COLUMN last_used_at;');
-    assert.equal((await call(env, 'bookmarks', { headers })).status, 200);
+    env.sqlite.exec('DROP TRIGGER fail_usage;');
   } finally { env.sqlite.close(); }
+});
+
+test('usage-column probes are shared per binding, including concurrent requests and absent columns', async () => {
+  for (const absent of [false, true]) {
+    const { env, headers } = await setup({ queryLatency: true });
+    try {
+      if (absent) env.sqlite.exec('ALTER TABLE api_keys DROP COLUMN last_used_at');
+      let probes = 0;
+      const prepare = env.DB.prepare.bind(env.DB);
+      env.DB.prepare = (sql) => {
+        if (sql === 'PRAGMA table_info(api_keys)') probes += 1;
+        return prepare(sql);
+      };
+      const responses = await Promise.all(Array.from({ length: 8 }, () => call(env, 'bookmarks', { headers })));
+      assert.ok(responses.every((response) => response.status === 200));
+      assert.equal((await call(env, 'bookmarks', { headers })).status, 200);
+      assert.equal(probes, 1);
+    } finally { env.sqlite.close(); }
+  }
 });
 
 test('hash-only lookup uses the same SQL and generic failure for unknown and revoked keys', async () => {

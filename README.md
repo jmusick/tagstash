@@ -249,8 +249,11 @@ For example: `curl https://tagsta.sh/api/bookmarks -H "Authorization: Bearer $TA
 Keys cannot authenticate account/password/email changes, billing/Stripe, API-key management,
 account deletion, library reset, admin/moderation or support routes (403).
 Use a signed-in web session or bearer JWT for protected account operations.
-Keys are independent of session `token_version`: password changes/resets and confirmed email
-changes revoke sessions but leave keys valid until revoked in Settings. Suspended or deleting
+Keys are independent of session `token_version`: changing your password in Settings, confirming
+an email change or signing out of all devices keeps keys active. A recovery password reset from
+the forgot-password email revokes all active keys together with the password update. You can
+also revoke keys individually in Settings. Recovery returns 503 without changing credentials
+or consuming the reset link if the database cannot support key revocation. Suspended or deleting
 accounts cannot use keys; unsuspending restores unrevoked keys. Free-plan limits still apply.
 Keys belong in the Authorization header, never a cookie. Script clients need no web-client
 header or cookie-origin proof; browser CORS permissions and cookie CSRF protection are unchanged.
