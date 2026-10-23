@@ -274,8 +274,7 @@ migration `0018_account_deletion.sql`. Once deletion starts, the account cannot 
 or use existing sessions. Its Stripe customer
 is removed first, immediately canceling that customer's active subscriptions;
 legacy accounts with only a subscription ID have that subscription canceled.
-Accounts without Stripe identifiers need no billing configuration. No refunds are
-issued by this operation.
+Accounts without Stripe identifiers need no billing configuration.
 
 Billing failures retain the account data and return `502` (`503` for missing
 configuration). Retry to finish a pending deletion (the admin repeats the delete action;
@@ -292,7 +291,7 @@ is tracked in [issue #154](https://github.com/jmusick/tagstash/issues/154).
 cookie session (with the usual `X-Tagstash-Client: web` header and trusted `Origin`) or a
 bearer token. The password goes through the same lockout counter and per-IP cap as login, and
 the typed confirmation is checked by the server too. It runs the same `deleteAccount`
-cleanup as the admin route, so billing is stopped first (immediately, with no refund),
+cleanup as the admin route, so billing is stopped first (immediately),
 then the data is removed in one transaction, and a success response (`{ deleted: true }`)
 also clears the session cookie. Configured super admins get `403`. If the deletion starts
 but cannot finish (`502` for a billing failure, `503` for a database failure or missing

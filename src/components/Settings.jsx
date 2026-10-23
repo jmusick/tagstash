@@ -1153,7 +1153,7 @@ function Settings({
             <h3 className="settings-delete-heading">Delete your account permanently</h3>
             <ul className="settings-delete-list">
               <li>Your bookmarks, tags, favorites, API keys and account details are permanently deleted. This cannot be undone.</li>
-              <li>Any Pro subscription is canceled immediately, not at the end of the billing period. This does not issue a refund.</li>
+              <li>Any Pro subscription is canceled immediately, not at the end of the billing period.</li>
               <li>Your public profile stops working, and you are signed out everywhere.</li>
               <li>Want a copy first? Export your bookmarks from the Import / Export tab.</li>
               <li>If something goes wrong part-way, the account stays locked. Log in with your password to finish deleting it, or contact support.</li>

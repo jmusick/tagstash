@@ -59,7 +59,7 @@ operation is performed by the automated tests.
 Deletion marks the account pending, blocks its sessions and logins, and removes
 its Stripe customer before deleting D1 data. The customer's active subscriptions
 stop immediately. A legacy row with only a subscription ID uses immediate
-cancellation without proration or a final invoice. This does not issue a refund.
+cancellation without proration or a final invoice.
 Stripe customer deletion also removes its payment details and prevents new
 operations on that customer; historical Stripe records remain retrievable.
 See [Stripe customer deletion](https://docs.stripe.com/api/customers/delete)
@@ -91,7 +91,7 @@ production migrations were performed.
 
 Owners delete their own account in Settings → Delete Account. It needs no new migration
 beyond `0018_account_deletion.sql`, and it reuses `deleteAccount`, so everything above applies
-(Stripe customer first, immediate cancellation, no refund, one cleanup transaction). A Worker
+(Stripe customer first, immediate cancellation, one cleanup transaction). A Worker
 deployed before that migration answers `503` and changes nothing.
 
 If a self-service deletion cannot finish, the account stays pending exactly as for an admin

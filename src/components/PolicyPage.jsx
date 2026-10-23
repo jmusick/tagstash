@@ -175,8 +175,8 @@ function PolicyPage({ logoSrc, onBack }) {
             favorites, your API keys, any pending verification, password-reset and email-change
             links, the security log entries tied to your account or email address, and the
             account itself. This cannot be undone. If you have a Pro subscription, it is
-            canceled immediately instead of at the end of the billing period and no refund is
-            issued, and your Stripe customer record is removed. Stripe keeps its own records of
+            canceled immediately instead of at the end of the billing period, and your Stripe
+            customer record is removed. Stripe keeps its own records of
             past payments under its own policies. Messages you sent through the Support form
             are email correspondence rather than account data, so ask us through the Support
             form if you want those removed too.
