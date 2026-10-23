@@ -254,6 +254,8 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/api-keys` — returns the plaintext key once; `GET` lists metadata only
 - `DELETE /api/auth/api-keys/:id`
 - `DELETE /api/auth/api-keys/:id/permanent`
+- `POST /api/auth/delete-account` — self-service deletion of the signed-in account (see below)
+- `POST /api/auth/resume-deletion` — finish a deletion that was interrupted (see below)
 - `POST /api/auth/forgot-password` — the same `200` for registered and unknown addresses; the reset email is sent after the response
 - `POST /api/auth/reset-password`
 
@@ -267,22 +269,52 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/admin/users/:id/make-private` — force the profile private
 - `GET /api/auth/admin/auth-events` — recent security and moderation events
 
-Admin account deletion requires migration `0018_account_deletion.sql`. Once deletion
-starts, the account cannot sign in or use existing sessions. Its Stripe customer
+Account deletion (admin, or the owner's own from Settings → Delete Account) requires
+migration `0018_account_deletion.sql`. Once deletion starts, the account cannot sign in
+or use existing sessions. Its Stripe customer
 is removed first, immediately canceling that customer's active subscriptions;
 legacy accounts with only a subscription ID have that subscription canceled.
-Accounts without Stripe identifiers need no billing configuration. No refunds are
-issued by this operation.
+Accounts without Stripe identifiers need no billing configuration.
 
 Billing failures retain the account data and return `502` (`503` for missing
-configuration). Retry the same delete action to finish a pending deletion. After
+configuration). Retry to finish a pending deletion (the admin repeats the delete action;
+the owner uses the login screen, below). After
 billing is stopped, one D1 transaction removes the account, bookmarks, private
 tokens, API keys, favorites, and associated security-log records. Tags shared with
 other accounts are preserved. If that transaction fails, the data is retained and
 deletion stays pending; retry does not resume billing. Stripe retains its own
-historical records according to its policies. Self-service deletion is tracked in
-[issue #153](https://github.com/jmusick/tagstash/issues/153); account reset is tracked
-in [issue #154](https://github.com/jmusick/tagstash/issues/154).
+historical records according to its policies. Account reset (which keeps the account)
+is tracked in [issue #154](https://github.com/jmusick/tagstash/issues/154).
+
+**Self-service deletion.** `POST /api/auth/delete-account` takes
+`{ "password": "...", "confirmation": "DELETE" }` and needs normal authentication: a web
+cookie session (with the usual `X-Tagstash-Client: web` header and trusted `Origin`) or a
+bearer token. The password goes through the same lockout counter and per-IP cap as login, and
+the typed confirmation is checked by the server too. It runs the same `deleteAccount`
+cleanup as the admin route, so billing is stopped first (immediately),
+then the data is removed in one transaction, and a success response (`{ deleted: true }`)
+also clears the session cookie. Configured super admins get `403`. If the deletion starts
+but cannot finish (`502` for a billing failure, `503` for a database failure or missing
+Stripe configuration), the answer carries `deletionPending: true` and the session is ended:
+the durable marker keeps the account locked and is never cleared automatically.
+
+To resume, a login with the correct password on a pending account answers `403` with
+`deletionPending: true` (only after the password is proved, so it reveals nothing about
+other addresses). The web app then offers "Finish deleting my account", which calls
+`POST /api/auth/resume-deletion` with `{ email, password }`, re-proves the password under the
+same lockout and IP caps, and retries the cleanup. It can only complete a deletion that was
+already started (`409` otherwise) and never restores access.
+
+**Support recovery for a stuck deletion.** Deletion is stuck when a pending account's owner
+cannot finish it from the login screen (for example Stripe keeps failing, or a D1 error
+persists). List pending accounts with
+`wrangler d1 execute tagstash-db --remote --command "SELECT id, email, deletion_started_at FROM users WHERE deletion_started_at IS NOT NULL"`,
+fix the cause (Stripe keys or status, D1 health), then finish the deletion with the admin
+delete action in Settings → Admin, which retries the same cleanup. Do not clear
+`deletion_started_at` to give the owner their account back unless you have checked in the
+Stripe dashboard that the customer and subscription are still in the state the owner wants:
+billing may already have stopped even though the request failed. `docs/deployment.md` has
+the details.
 
 ### Billing
 

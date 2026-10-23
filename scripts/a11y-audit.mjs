@@ -8,16 +8,21 @@
 //
 // It seeds two local test users (an owner and a super admin) into the local D1
 // database, logs in through the real login form, and scans:
-//   anonymous : /, login error + sign-up + forgot-password states, /features,
-//               /privacy, /support, a public profile (/u/<owner>)
+//   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
+//               account" screen (form, error, pending) and the "account deleted" page,
+//               /features, /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, "Without tags" filter, edit mode, add form), /settings (every tab,
 //               plus an error, a success banner and the import preview), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
-//               name error and a would-merge name, and both inline confirmations)
-//   admin     : /settings -> Admin
+//               name error and a would-merge name, and both inline confirmations), and the
+//               Settings -> Delete Account form with its confirmation error, a refused
+//               password, the pending state and the hand-off to "finish deleting"
+//   admin     : /settings -> Admin and Delete Account (the super admin refusal note)
 // The cookie consent banner is visible in every scan by default (each theme/role
 // runs in a fresh context). --check-third-parties adds two scans after consent.
 // Exit code is 1 on any accessibility or style CSP violation.
+// The account-deletion states answer from intercepted requests (page.route), so no real account
+// is ever deleted and the seeded users stay intact.
 //
 // Configuration (flags or env):
 //   --base-url <url>  | A11Y_BASE_URL         default http://127.0.0.1:5000 (localhost only)
@@ -315,6 +320,34 @@ async function anonymous(browser, theme) {
   await page.locator('#forgot-email').waitFor()
   await scan('/ (forgot password form)')
 
+  // Interrupted deletion. A login with the right password for a pending account answers
+  // deletionPending; both calls are intercepted, so nothing here touches a real account.
+  await go(page, '/?signup=0')
+  await interceptJson(page, '**/api/auth/login', {
+    status: 403, body: { error: 'Account deletion was started for this account but has not finished.', deletionPending: true },
+  })
+  const setResume = await interceptJson(page, '**/api/auth/resume-deletion', {
+    status: 502, body: { error: 'Your subscription could not be closed right now.', deletionPending: true },
+  })
+  await page.getByLabel('Email').fill('pending-owner@example.test')
+  await page.getByLabel('Password', { exact: true }).fill(TEST_PASSWORD)
+  await page.getByRole('button', { name: 'Log in', exact: true }).click()
+  await page.getByRole('heading', { name: 'Finish deleting your account' }).waitFor()
+  await scan('/ (finish deleting your account)')
+  await page.getByRole('button', { name: 'Finish deleting my account' }).click()
+  await page.locator('.auth-error').waitFor()
+  await scan('/ (finish deleting, still failing)')
+  let releaseResume
+  setResume({ status: 200, body: { deleted: true }, hold: new Promise((resolve) => { releaseResume = resolve }) })
+  await page.getByRole('button', { name: 'Try again' }).click()
+  await page.getByRole('button', { name: 'Finishing deletion…' }).waitFor()
+  await scan('/ (finish deleting, pending)')
+  releaseResume()
+  await page.getByRole('heading', { name: 'Your account has been deleted' }).waitFor()
+  await scan('/ (account deleted)')
+  await page.unroute('**/api/auth/login')
+  await page.unroute('**/api/auth/resume-deletion')
+
   if (theme === 'slate') {
     // The Pages Function's server-rendered markup before (or without) JavaScript: what crawlers and no-JS visitors get.
     // (Scripts are blocked rather than disabling JS outright, because axe itself must still run.)
@@ -350,6 +383,18 @@ async function anonymous(browser, theme) {
     await scan('/support (Turnstile test widget completed, consent accepted)')
   }
   await context.close()
+}
+
+// Answers an API call from the browser without it reaching the server (used so the deletion
+// flows can be shown without deleting the seeded users). The returned function swaps the answer.
+async function interceptJson(page, pattern, answer) {
+  const state = { answer }
+  await page.route(pattern, async (route) => {
+    const { status, body, hold } = state.answer
+    if (hold) await hold
+    await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
+  })
+  return (next) => { state.answer = next }
 }
 
 async function settingsTab(page, name) {
@@ -463,6 +508,41 @@ async function owner(browser, theme) {
   await editSection.locator('.tag-edit-confirm').waitFor()
   await scan('/tags (delete confirmation)')
   await editSection.getByRole('button', { name: 'Cancel' }).click()
+
+  // Delete Account (its idle form is scanned with the other tabs above). The delete request is
+  // intercepted, so the seeded owner is never deleted. Order matters: the last step signs the
+  // page out locally.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings' }).click()
+  await settingsTab(page, 'Delete Account')
+  const deleteButton = page.getByRole('button', { name: 'Permanently delete my account' })
+  const confirmation = page.getByLabel(/^Type DELETE to confirm/)
+  await page.getByLabel('Password (for verification)').fill(TEST_PASSWORD)
+  await confirmation.fill('delete')
+  await deleteButton.click()
+  await page.locator('.settings-error', { hasText: 'Type DELETE' }).waitFor()
+  await scan('/settings -> Delete Account (confirmation error)')
+
+  const setDelete = await interceptJson(page, '**/api/auth/delete-account', {
+    status: 401, body: { error: 'Incorrect password' },
+  })
+  await confirmation.fill('DELETE')
+  await deleteButton.click()
+  await page.locator('.settings-error', { hasText: 'Incorrect password' }).waitFor()
+  await scan('/settings -> Delete Account (password refused)')
+
+  let releaseDelete
+  setDelete({ status: 401, body: { error: 'Incorrect password' }, hold: new Promise((resolve) => { releaseDelete = resolve }) })
+  await deleteButton.click()
+  await page.getByRole('button', { name: 'Deleting account...' }).waitFor()
+  await scan('/settings -> Delete Account (pending)')
+  releaseDelete()
+  await page.locator('.settings-error', { hasText: 'Incorrect password' }).waitFor()
+
+  // The deletion starts but cannot finish: the session ends and the home page offers to finish it.
+  setDelete({ status: 503, body: { error: 'Account data could not be removed.', deletionPending: true } })
+  await deleteButton.click()
+  await page.getByRole('heading', { name: 'Finish deleting your account' }).waitFor()
+  await scan('/ (finish deleting, session ended by an interrupted deletion)')
   await context.close()
 }
 
@@ -475,6 +555,9 @@ async function admin(browser, theme) {
   await settingsTab(page, 'Admin')
   await page.locator('.admin-user-row, .admin-users, table').first().waitFor().catch(() => {})
   await scan('/settings -> Admin')
+  await settingsTab(page, 'Delete Account')
+  await page.locator('.settings-suspended-notice').waitFor()
+  await scan('/settings -> Delete Account (super admin cannot self-delete)')
   await context.close()
 }
 

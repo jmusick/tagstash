@@ -76,7 +76,8 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const errorMessage = describeAuthError(err, 'Login failed');
       setError(errorMessage);
-      return { success: false, error: errorMessage };
+      // The password was right, but a deletion of this account was started and never finished.
+      return { success: false, error: errorMessage, deletionPending: err.response?.data?.deletionPending === true };
     }
   };
 

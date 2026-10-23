@@ -183,7 +183,9 @@ test('Stripe failures or unconfirmed responses keep all data and leave deletion 
   }
   const login = await call(state.env, 'auth/login', { method: 'POST', body: { email: 'target@example.com', password: state.env.password } });
   assert.equal(login.status, 403);
-  assert.match((await login.json()).error, /deletion is in progress/);
+  const loginBody = await login.json();
+  assert.match(loginBody.error, /deletion was started/);
+  assert.equal(loginBody.deletionPending, true);
   state.stripe(missing);
   assert.equal((await state.delete()).status, 200);
   assertDeleted(state.env);

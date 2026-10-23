@@ -21,7 +21,7 @@ function PolicyPage({ logoSrc, onBack }) {
       </header>
 
       <main id="main" tabIndex={-1} className="privacy-content">
-        <p className="privacy-effective">Effective date: October 13, 2026</p>
+        <p className="privacy-effective">Effective date: October 23, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -169,10 +169,26 @@ function PolicyPage({ logoSrc, onBack }) {
           <h2>Data Retention &amp; Deletion</h2>
           <p>
             Your data is retained as long as your account is active. You may delete individual
-            bookmarks at any time. To request full account deletion and removal of all associated
-            data, use the in-app Support form (see Contact below). Security log entries
-            (email address and IP address, described above) are kept for 30 days and then
-            deleted automatically.
+            bookmarks at any time. You can also delete your whole account yourself: open
+            Settings, choose Delete Account, enter your password and type the confirmation word.
+            Deleting your account permanently removes your bookmarks, your tag links and
+            favorites, your API keys, any pending verification, password-reset and email-change
+            links, the security log entries tied to your account or email address, and the
+            account itself. This cannot be undone. If you have a Pro subscription, it is
+            canceled immediately instead of at the end of the billing period, and your Stripe
+            customer record is removed. Stripe keeps its own records of
+            past payments under its own policies. Messages you sent through the Support form
+            are email correspondence rather than account data, so ask us through the Support
+            form if you want those removed too.
+          </p>
+          <p>
+            If something goes wrong part-way, the account stays locked and cannot be used until
+            deletion finishes. Log in with your password and choose Finish deleting my account, or
+            use the Support form and we will complete it for you. A public profile that was cached
+            may stay visible for up to a minute after deletion. Accounts that are configured as
+            site administrators cannot be deleted from Settings. Security log entries
+            (email address and IP address, described above) that remain are kept for 30 days and
+            then deleted automatically.
           </p>
         </section>
 
