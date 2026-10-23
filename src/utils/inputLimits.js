@@ -14,4 +14,6 @@ export const INPUT_LIMITS = {
   passwordMinChars: 8,
   passwordMaxBytes: 72,
   apiKeyName: 100,
+  // Most bookmarks one bulk action may change (the library caps its selection here).
+  bulkBookmarkIds: 500,
 };

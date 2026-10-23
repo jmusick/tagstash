@@ -28,6 +28,7 @@ Current status at a glance:
 - Bookmark title, URL, description, and tag management
 - Base URL keeps the site root with a trailing slash (for example, `https://www.google.com/`); Trim URL removes queries and fragments
 - Search, sorting, and tag query filtering (click any tag on a bookmark or in the tag panel to filter by it; combine tags to narrow results), plus a "Without tags" filter in your own library for finding and tidying up untagged bookmarks
+- Select mode in your own library (the Select button next to the search box) lets you tick bookmarks, with a live selected count and "Select this page" / "Select all N results" / "Clear selection", then add or remove tags on all of them, open them in new tabs (links beyond 10 ask for confirmation, at most 50 at a time, only http(s) links, and tabs your browser blocks are listed as links), export just that selection as HTML, CSV or JSON, or permanently delete them behind a confirmation that states the exact count. Selecting up to 500 bookmarks at once is supported, and changing a filter clears the selection. Public profiles have no select mode.
 - In your own library, filter by site domain or month saved, with counts for the whole library. Related and the Domain filter group subdomains together (for example, `www.reddit.com` and `old.reddit.com` under `reddit.com`, or `old.reddit.co.uk` under `reddit.co.uk`). Months include the year and use your local time zone. Combine these with search, tags, favorites and "Without tags"; Related resets the filters to the selected bookmark's site.
 - Free tier with a 50-bookmark limit
 - Pro tier with unlimited bookmarks
@@ -390,9 +391,13 @@ profile changes). An account whose deletion has started is refused (`403` from t
 - `POST /api/bookmarks/tags/merge`
 - `PUT /api/bookmarks/tags/:id` — rename a tag on all of your bookmarks (`{ "name": "..." }`); renaming onto a tag you already use merges them (`merged: true`)
 - `DELETE /api/bookmarks/tags/:id` — remove a tag from all of your bookmarks (bookmarks are kept); reports `removedFrom`
+- `POST /api/bookmarks/bulk/delete` — `{ "ids": [1, 2] }`: permanently delete several of your bookmarks at once; reports `requested`, `deleted` and `skipped`
+- `POST /api/bookmarks/bulk/tags` — `{ "ids": [...], "add": ["a"], "remove": ["b"] }`: add and/or remove tags on several of your bookmarks at once; reports `matched`, `skipped`, `overLimit`, `tagsAdded` and `tagsRemoved`
 - `POST /api/bookmarks/tags/:id/favorite`
 - `POST /api/bookmarks/:id/favorite`
 - `POST /api/bookmarks/:id/private`
+
+The bulk routes take 1 to 500 positive integer ids per request (a longer list, a non-integer or an empty list is a `400`; duplicates are merged). Ids that aren't yours, or no longer exist, are skipped and counted in `skipped` (the response never says which exist); each request is one transaction, so it applies completely or not at all. Bulk delete is permanent. A bookmark that would pass 50 tags is left unchanged and counted in `overLimit`.
 
 Request bodies must be JSON objects sent as `application/json` (415 otherwise) and are capped in size (413). Fields are type-checked and length-limited — bookmark title 1000 characters, URL 8192, description 10000, tags 100 characters each and 50 per bookmark — and an invalid create or update returns 400 without changing anything.
 

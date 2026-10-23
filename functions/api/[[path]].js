@@ -758,6 +758,9 @@ const INPUT_LIMITS = {
   passwordMaxBytes: 72,
   apiKeyName: 100,
   importBookmarks: 2000,
+  // Most bookmark ids one bulk request (POST /bookmarks/bulk/*) may name; the web library caps
+  // its selection at the same number. Checked against the raw array, before de-duplication.
+  bulkBookmarkIds: 500,
 };
 
 // Request bodies are streamed and abandoned past these sizes (413). The default fits the
@@ -1876,6 +1879,159 @@ const resetLibraryStatements = (db, userId, { hasFavoriteTagsTable }) => [
   db.prepare('DELETE FROM bookmarks WHERE user_id = ?').bind(userId),
   ...(hasFavoriteTagsTable ? [db.prepare('DELETE FROM favorite_tags WHERE user_id = ?').bind(userId)] : []),
 ];
+
+// --- Bulk operations on the owner's library (POST /bookmarks/bulk/delete and /bulk/tags) ---
+//
+// Both take `{ ids }`: a non-empty array of positive integers, at most INPUT_LIMITS.bulkBookmarkIds
+// long (raw length, so a flood of duplicates is refused too), de-duplicated here. Ownership is
+// enforced inside every statement (`user_id = ?` on the bookmarks row), never by a prior read, so a
+// stale or hostile list can only ever touch the caller's own rows. POLICY for mixed lists: ids that
+// are not the caller's (someone else's, or already deleted) are skipped, not an error, and reported
+// only as a `skipped` count, which never says whether the id exists. Each action is one db.batch(),
+// so it lands whole or not at all.
+const parseBulkBookmarkIds = (ids) => {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { error: 'ids must be a non-empty array of bookmark ids' };
+  }
+  if (ids.length > INPUT_LIMITS.bulkBookmarkIds) {
+    return { error: `Cannot change more than ${INPUT_LIMITS.bulkBookmarkIds} bookmarks at once` };
+  }
+  if (!ids.every((id) => Number.isSafeInteger(id) && id > 0)) {
+    return { error: 'ids must be positive integers' };
+  }
+  return { ids: [...new Set(ids)] };
+};
+
+// SQL fragment: the caller's bookmarks among the selected ids. Bind order: userId, ids JSON.
+const OWNED_SELECTED_BOOKMARKS_SQL =
+  'SELECT b.id FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))';
+
+// Permanently deletes the caller's bookmarks among `ids` (and their tag links), then drops the
+// global tag rows nothing references any more. This is the ONE place bulk delete happens: a trash
+// feature (#61) should replace this function (soft-delete instead of DELETE) without touching the
+// route. Returns how many bookmarks were removed; ids that aren't the caller's are skipped.
+// Same orphan rule as tag delete and account reset: a tags row also stays while any account
+// favorites it, because deleting it would cascade into that favorite_tags row.
+const bulkDeleteBookmarks = async (db, userId, ids) => {
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const idsJson = JSON.stringify(ids);
+  const results = await db.batch([
+    // Runs first: it has to read the links that the next statements remove.
+    db
+      .prepare(
+        `DELETE FROM tags WHERE id IN (
+           SELECT bt.tag_id FROM bookmark_tags bt WHERE bt.bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM bookmark_tags x WHERE x.tag_id = tags.id
+             AND x.bookmark_id NOT IN (${OWNED_SELECTED_BOOKMARKS_SQL})
+         )
+         ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags f WHERE f.tag_id = tags.id)' : ''}`
+      )
+      .bind(userId, idsJson, userId, idsJson),
+    db
+      .prepare(`DELETE FROM bookmark_tags WHERE bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})`)
+      .bind(userId, idsJson),
+    db.prepare('DELETE FROM bookmarks WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))').bind(userId, idsJson),
+  ]);
+  return { deleted: Number(results[2]?.meta?.changes || 0) };
+};
+
+// Adds and/or removes tags (already normalized names) on the caller's bookmarks among `ids`, in
+// one batch. A bookmark never ends up over INPUT_LIMITS.tagsPerBookmark: those that would exceed
+// it are left alone (counted as `overLimit`) and the rest still change, checked inside the link
+// statement so a concurrent edit can't slip past a read. Touched bookmarks get a fresh
+// updated_at, like a single edit. Removed tag names are dropped from `tags` when orphaned.
+const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const idsJson = JSON.stringify(ids);
+  const addJson = JSON.stringify(add);
+  const removeJson = JSON.stringify(remove);
+
+  // How many of the `add` names the bookmark doesn't carry yet (works before the names are
+  // upserted too, since it looks at names, not tag ids), and its tag total after adding them.
+  // Each use binds `addJson` once.
+  const newTagCount = (bookmarkId) =>
+    `(SELECT COUNT(*) FROM json_each(?) j WHERE NOT EXISTS (
+        SELECT 1 FROM bookmark_tags l JOIN tags nt ON nt.id = l.tag_id
+        WHERE l.bookmark_id = ${bookmarkId} AND nt.name = j.value))`;
+  const existingTagCount = (bookmarkId) => `(SELECT COUNT(*) FROM bookmark_tags e WHERE e.bookmark_id = ${bookmarkId})`;
+  const roomFor = (bookmarkId) =>
+    `${existingTagCount(bookmarkId)} + ${newTagCount(bookmarkId)} <= ${INPUT_LIMITS.tagsPerBookmark}`;
+
+  // Informational counts for the response (the guards that matter run inside the statements
+  // below): how many ids are the caller's, and how many of those can't take the new tags.
+  const counts = await db
+    .prepare(
+      `SELECT COUNT(*) AS owned,
+              COALESCE(SUM(CASE WHEN ${add.length ? `NOT (${roomFor('b.id')})` : '0'} THEN 1 ELSE 0 END), 0) AS over_limit
+       FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))`
+    )
+    .bind(...(add.length ? [addJson] : []), userId, idsJson)
+    .first();
+
+  const statements = [];
+  let linkIndex = -1;
+  let unlinkIndex = -1;
+
+  if (add.length) {
+    statements.push(
+      upsertTagNamesStatement(db, add),
+      db
+        .prepare(
+          `UPDATE bookmarks SET updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))
+             AND ${newTagCount('bookmarks.id')} > 0 AND ${roomFor('bookmarks.id')}`
+        )
+        .bind(userId, idsJson, addJson, addJson),
+      db
+        .prepare(
+          `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
+           SELECT b.id, t.id FROM bookmarks b
+           JOIN tags t ON t.name IN (SELECT value FROM json_each(?))
+           WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?)) AND ${roomFor('b.id')}`
+        )
+        .bind(addJson, userId, idsJson, addJson)
+    );
+    linkIndex = statements.length - 1;
+  }
+
+  if (remove.length) {
+    statements.push(
+      db
+        .prepare(
+          `UPDATE bookmarks SET updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))
+             AND EXISTS (SELECT 1 FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
+                         WHERE bt.bookmark_id = bookmarks.id AND t.name IN (SELECT value FROM json_each(?)))`
+        )
+        .bind(userId, idsJson, removeJson),
+      db
+        .prepare(
+          `DELETE FROM bookmark_tags
+           WHERE bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})
+             AND tag_id IN (SELECT id FROM tags WHERE name IN (SELECT value FROM json_each(?)))`
+        )
+        .bind(userId, idsJson, removeJson),
+      db
+        .prepare(
+          `DELETE FROM tags WHERE name IN (SELECT value FROM json_each(?))
+             AND NOT EXISTS (SELECT 1 FROM bookmark_tags WHERE tag_id = tags.id)
+             ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags WHERE tag_id = tags.id)' : ''}`
+        )
+        .bind(removeJson)
+    );
+    unlinkIndex = statements.length - 2;
+  }
+
+  const results = await db.batch(statements);
+  return {
+    owned: Number(counts?.owned || 0),
+    overLimit: Number(counts?.over_limit || 0),
+    tagsAdded: linkIndex >= 0 ? Number(results[linkIndex]?.meta?.changes || 0) : 0,
+    tagsRemoved: unlinkIndex >= 0 ? Number(results[unlinkIndex]?.meta?.changes || 0) : 0,
+  };
+};
 
 // Re-points the user's bookmarks from one tag to another (a bookmark that already has the
 // target keeps a single link), then detaches the source as above. `target` is a trusted SQL
@@ -4403,6 +4559,55 @@ async function handleBookmarks(request, env, segments) {
       message: `Deleted "${tag.name}" from ${removedFrom} bookmark${removedFrom === 1 ? '' : 's'}`,
       tag: { id: tag.id, name: tag.name },
       removedFrom,
+    });
+  }
+
+  // Bulk actions on the owner's library (see the bulk helpers above for the rules).
+  if (request.method === 'POST' && segments[1] === 'bulk' && segments[2] === 'delete' && segments.length === 3) {
+    const parsed = parseBulkBookmarkIds((await parseBody(request)).ids);
+    if (parsed.error) {
+      return jsonResponse({ error: parsed.error }, 400);
+    }
+
+    const { deleted } = await bulkDeleteBookmarks(db, auth.user.id, parsed.ids);
+    return jsonResponse({
+      message: `Deleted ${deleted} bookmark${deleted === 1 ? '' : 's'}`,
+      requested: parsed.ids.length,
+      deleted,
+      skipped: parsed.ids.length - deleted,
+    });
+  }
+
+  if (request.method === 'POST' && segments[1] === 'bulk' && segments[2] === 'tags' && segments.length === 3) {
+    const body = await parseBody(request);
+    const parsed = parseBulkBookmarkIds(body.ids);
+    if (parsed.error) {
+      return jsonResponse({ error: parsed.error }, 400);
+    }
+    const addResult = normalizeTagList(body.add);
+    const removeResult = normalizeTagList(body.remove);
+    if (addResult.error || removeResult.error) {
+      return jsonResponse({ error: addResult.error || removeResult.error }, 400);
+    }
+    const add = addResult.tags || [];
+    const remove = removeResult.tags || [];
+    if (add.length === 0 && remove.length === 0) {
+      return jsonResponse({ error: 'Choose at least one tag to add or remove' }, 400);
+    }
+    if (add.some((name) => remove.includes(name))) {
+      return jsonResponse({ error: 'A tag cannot be added and removed in the same request' }, 400);
+    }
+
+    const result = await bulkChangeBookmarkTags(db, auth.user.id, parsed.ids, { add, remove });
+    const changed = result.owned - result.overLimit;
+    return jsonResponse({
+      message: `Updated tags on ${changed} bookmark${changed === 1 ? '' : 's'}`,
+      requested: parsed.ids.length,
+      matched: result.owned,
+      skipped: parsed.ids.length - result.owned,
+      overLimit: result.overLimit,
+      tagsAdded: result.tagsAdded,
+      tagsRemoved: result.tagsRemoved,
     });
   }
 
