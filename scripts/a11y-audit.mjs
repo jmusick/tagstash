@@ -336,8 +336,18 @@ async function owner(browser, theme) {
     await page.waitForFunction((n) => document.querySelectorAll('.bookmark-card').length === n, count)
   }
   await domain.selectOption('example.com')
-  await expectCards(4)
+  await expectCards(5)
+  const domainOptions = await domain.locator('option').allTextContents()
+  if (domainOptions.join('|') !== 'All domains|example.com (5)|example.org (2)') {
+    throw new Error('Domain picker must group subdomains with their site and count all five example.com bookmarks')
+  }
   await scan('/ (domain filter active)')
+  await page.getByRole('button', { name: 'Clear domain filter', exact: true }).click()
+  await expectCards(7)
+  await page.locator('.bookmark-card').filter({ hasText: 'Reading list for the weekend' })
+    .getByRole('button', { name: 'Show other bookmarks from example.com', exact: true }).click()
+  await expectCards(5)
+  if (await domain.inputValue() !== 'example.com') throw new Error('Related on a subdomain must select the same site as the picker')
   await page.getByRole('button', { name: 'Clear domain filter', exact: true }).click()
   await expectCards(7)
   const monthValues = await month.locator('option').evaluateAll((options) => options.map((o) => o.value))
@@ -363,7 +373,7 @@ async function owner(browser, theme) {
   await expectCards(1)
   await month.selectOption('2026-09')
   await page.getByRole('button', { name: 'Show other bookmarks from example.com', exact: true }).first().click()
-  await expectCards(4)
+  await expectCards(5)
   if (await month.inputValue() || await search.inputValue()) throw new Error('Related must reset month and search')
   if (await page.locator('.active-tag-filter .tag-stock').count()) throw new Error('Related must reset tags')
   await untaggedToggle.click()
@@ -379,7 +389,11 @@ async function owner(browser, theme) {
   await page.getByRole('button', { name: /Random bookmark/i }).click()
   await expectCards(1)
   await page.getByLabel('Tags', { exact: true }).first().waitFor()
-  if (await domain.inputValue() || await month.inputValue()) throw new Error('Random must reset domain and month')
+  // Random clears the underlying controls in a React effect after rendering
+  // the focused card. Wait for that effect, just as we wait for result updates.
+  await page.waitForFunction(() => (
+    document.querySelector('#bookmark-domain').value === '' && document.querySelector('#bookmark-month').value === ''
+  ))
   await page.locator('.bookmark-edit-actions').getByRole('button', { name: 'Cancel' }).first().click()
   await expectCards(7)
 

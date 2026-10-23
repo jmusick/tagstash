@@ -26,19 +26,32 @@ test('countUntagged counts only bookmarks with zero tags', () => {
   assert.equal(countUntagged(undefined), 0);
 });
 
-test('domains ignore www, case, ports and paths but preserve other subdomains', () => {
+test('domains group subdomains and ignore www, case, ports and paths', () => {
   for (const url of ['https://www.Example.COM/a?q=1', 'http://example.com:8080/b', 'https://example.com/']) {
     assert.equal(getBookmarkDomain(url), 'example.com');
   }
-  assert.equal(getBookmarkDomain('https://docs.example.com/a'), 'docs.example.com');
-  assert.equal(getBookmarkDomain('https://www.example.co.uk/'), 'example.co.uk');
+  assert.equal(getBookmarkDomain('https://docs.example.com/a'), 'example.com');
+  assert.equal(getBookmarkDomain('https://www.reddit.com/'), 'reddit.com');
+  assert.equal(getBookmarkDomain('https://old.reddit.com:8080/r/test'), 'reddit.com');
+  assert.equal(getBookmarkDomain('https://deep.docs.example.com/a'), 'example.com');
   assert.equal(getBookmarkDomain('http://127.0.0.1:8080/'), '127.0.0.1');
   assert.equal(getBookmarkDomain('http://[::1]:8080/'), '[::1]');
+});
+
+test('multi-part suffixes keep the registrable label when grouping subdomains', () => {
+  for (const suffix of ['co.uk', 'org.uk', 'co.jp', 'co.nz', 'co.in', 'com.au', 'com.br', 'com.cn', 'co.za', 'co.kr']) {
+    for (const prefix of ['', 'www.', 'old.', 'deep.docs.']) {
+      assert.equal(getBookmarkDomain(`https://${prefix}reddit.${suffix}:8443/path`), `reddit.${suffix}`);
+    }
+  }
+  assert.equal(getBookmarkDomain('https://news.example.test/'), 'example.test');
 });
 
 test('IDN Unicode and ASCII URLs share one canonical domain', () => {
   assert.equal(getBookmarkDomain('https://www.bücher.de/a'), 'xn--bcher-kva.de');
   assert.equal(getBookmarkDomain('https://xn--bcher-kva.de/b'), 'xn--bcher-kva.de');
+  assert.equal(getBookmarkDomain('https://old.bücher.de:8080/c'), 'xn--bcher-kva.de');
+  assert.equal(getBookmarkDomain('https://docs.xn--bcher-kva.de/d'), 'xn--bcher-kva.de');
 });
 
 test('invalid or non-web URLs have no domain and are omitted from counts', () => {
@@ -48,7 +61,9 @@ test('invalid or non-web URLs have no domain and are omitted from counts', () =>
   assert.deepEqual([...countDomains([
     { url: 'https://www.example.com/a' }, { url: 'http://example.com:8080/b' },
     { url: 'https://docs.example.com/' }, { url: 'bad url' }, {},
-  ])], [['example.com', 2], ['docs.example.com', 1]]);
+    { url: 'https://old.reddit.co.uk/' }, { url: 'https://www.reddit.co.uk:8443/' },
+    { url: 'https://docs.bücher.de/' }, { url: 'http://xn--bcher-kva.de:8080/' },
+  ])], [['example.com', 3], ['reddit.co.uk', 2], ['xn--bcher-kva.de', 2]]);
 });
 
 // Separate processes pin real local time zones without changing the test runner's

@@ -1,5 +1,6 @@
 // Pure helpers for the bookmark list filters shared by BookmarkBrowser.
 import { parseSavedDate } from './bookmarkDisplay.js'
+import { getRegistrableDomain } from './domain.js'
 
 // A bookmark is "untagged" when it has no tags at all. The API returns `tags`
 // as an array of { id, name }, but be tolerant of a missing or null value.
@@ -11,14 +12,16 @@ export function countUntagged(bookmarks) {
   return Array.isArray(bookmarks) ? bookmarks.filter(hasNoTags).length : 0
 }
 
-// Related and the domain picker share exact hostnames: ignore www and ports,
-// preserve other subdomains, and let URL canonicalize case and IDNs (punycode).
+// Related and the domain picker share the original site grouping, including its
+// multi-part suffix list. URL canonicalizes case, ports and IDNs (punycode).
 export function getBookmarkDomain(url) {
   if (typeof url !== 'string') return null
   try {
     const parsed = new URL(url)
     if (!['http:', 'https:'].includes(parsed.protocol)) return null
-    return parsed.hostname.replace(/^www\./, '') || null
+    // IP literals have no registrable domain; keep the complete address.
+    if (parsed.hostname.includes(':') || /^\d+\.\d+\.\d+\.\d+$/.test(parsed.hostname)) return parsed.hostname
+    return getRegistrableDomain(url) || null
   } catch {
     return null
   }
