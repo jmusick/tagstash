@@ -787,6 +787,12 @@
   gap: 1rem;
 }
 
+.settings-sign-out-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .settings-delete-heading {
   margin: 0;
   font-size: 1.05rem;
@@ -830,6 +836,10 @@
 
 .settings-form .btn-danger:hover:not(:disabled) {
   background-color: var(--color-danger-solid-hover);
+}
+
+.settings-sign-out-actions .btn-danger {
+  margin-top: 0;
 }
 
 .settings-form .btn-danger:disabled {
