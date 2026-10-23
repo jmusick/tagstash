@@ -31,7 +31,7 @@ const PublicProfile = lazy(() => import('./components/PublicProfile'))
 import { decodeHtmlEntities } from './utils/decodeHtmlEntities'
 import { THEME_STORAGE_KEY, isValidTheme } from './utils/theme'
 import { LINK_TARGET_STORAGE_KEY, getInitialLinkTarget, isValidLinkTarget, linkTargetProps } from './utils/linkTarget'
-import { getRegistrableDomain } from './utils/domain'
+import { getBookmarkDomain, countDomains } from './utils/bookmarkFilters'
 import { INPUT_LIMITS } from './utils/inputLimits'
 import { BookmarkTagList } from './components/BookmarkParts'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
@@ -271,15 +271,7 @@ function App() {
     return Array.from(new Set(tagNames)).sort((left, right) => left.localeCompare(right))
   }, [bookmarks])
 
-  const domainCounts = useMemo(() => {
-    const counts = new Map()
-    for (const bookmark of bookmarks) {
-      const domain = getRegistrableDomain(bookmark.url)
-      if (!domain) continue
-      counts.set(domain, (counts.get(domain) || 0) + 1)
-    }
-    return counts
-  }, [bookmarks])
+  const domainCounts = useMemo(() => countDomains(bookmarks), [bookmarks])
 
   const handleTagFavoriteToggle = async (tag) => {
     if (!tag?.id) return
@@ -720,7 +712,7 @@ function App() {
       : bookmark.favicon_url
     const displayTitle = decodeHtmlEntities(bookmark.title || '')
     const displayDescription = decodeHtmlEntities(bookmark.description || '')
-    const bookmarkDomain = getRegistrableDomain(bookmark.url)
+    const bookmarkDomain = getBookmarkDomain(bookmark.url)
     const hasRelated = bookmarkDomain && (domainCounts.get(bookmarkDomain) || 0) > 1
 
     return (
@@ -1082,6 +1074,8 @@ function App() {
                     onTagFavoriteToggle={handleTagFavoriteToggle}
                     renderCard={renderOwnerCard}
                     showUntaggedFilter
+                    showDomainFilter
+                    showDateFilter
                     focusBookmarkId={focusBookmarkId}
                     onClearFocus={handleCancelEdit}
                     toolbarExtra={(

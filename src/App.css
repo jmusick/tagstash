@@ -720,6 +720,53 @@
 }
 
 /* ---------- Active filter (sidebar) ---------- */
+.library-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 14px;
+  background: var(--color-panel);
+  min-width: 0;
+}
+
+.library-filter-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.library-filter-control label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.library-filter-control select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 7px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.library-filter-control p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.active-tag-filter .text-button {
+  min-height: 24px;
+  min-width: 24px;
+}
+
 .active-tag-filter {
   display: flex;
   flex-direction: column;
@@ -798,6 +845,12 @@
   border-radius: 999px;
   color: var(--color-text);
   font-size: 0.85rem;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.active-domain-filter button {
+  flex-shrink: 0;
 }
 
 .active-domain-filter button:hover {
