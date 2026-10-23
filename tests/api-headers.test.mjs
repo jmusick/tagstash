@@ -1,7 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { onRequest, onRequestOptions } from '../functions/api/[[path]].js';
 import { createAuthEnv } from './helpers/auth-env.mjs';
+
+test('static page CSP permits only same-origin styles without inline-style overrides', () => {
+  const headers = readFileSync(new URL('../public/_headers', import.meta.url), 'utf8');
+  const csp = headers.match(/^\s+Content-Security-Policy: (.+)$/m)?.[1];
+  assert.ok(csp, 'the global static header rule must include a CSP');
+  const styleDirectives = csp.split(';').map((s) => s.trim()).filter((s) => /^style-src(?:\s|-)/.test(s));
+  assert.deepEqual(styleDirectives, ["style-src 'self'"]);
+});
 
 const request = (path, { method = 'GET', headers = {}, body, origin = 'https://tagsta.sh' } = {}) =>
   new Request(`${origin}/api/${path}`, {
