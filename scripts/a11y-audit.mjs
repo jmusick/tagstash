@@ -15,8 +15,9 @@
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations)
 //   admin     : /settings -> Admin
-// The cookie consent banner is visible in every scan (each theme/role runs in a
-// fresh browser context with no stored choice). Exit code is 1 on any violation.
+// The cookie consent banner is visible in every scan by default (each theme/role
+// runs in a fresh context). --check-third-parties adds two scans after consent.
+// Exit code is 1 on any accessibility or style CSP violation.
 //
 // Configuration (flags or env):
 //   --base-url <url>  | A11Y_BASE_URL         default http://127.0.0.1:5000 (localhost only)
@@ -24,6 +25,7 @@
 //   --roles a,b       | A11Y_ROLES            default anon,owner,admin
 //   --chromium <path> | A11Y_CHROMIUM_PATH    default: newest Chromium in the Playwright cache
 //   --skip-seed       | A11Y_SKIP_SEED=1      do not (re)seed the test users
+//   --check-third-parties                   also accept consent/load GA and require a working Turnstile test widget
 //   A11Y_D1_PERSIST_TO                        wrangler --persist-to dir, if the server uses one
 //
 // Safety: refuses any non-loopback host, and only ever seeds with `wrangler d1
@@ -57,6 +59,8 @@ const ROLES = list(setting('--roles', 'A11Y_ROLES', 'anon,owner,admin'))
 const CONTRAST_REPORT = process.argv.includes('--contrast-report')
 const REPORT_SELECTORS = /auth-error|settings-error|settings-success|import-note|tag-merge-slot-label|tag-edit-hint|tag-edit-confirm|cc-btn|cc-actions|preferred-badge|btn-danger/
 const SKIP_SEED = process.argv.includes('--skip-seed') || process.env.A11Y_SKIP_SEED === '1'
+const CHECK_THIRD_PARTIES = process.argv.includes('--check-third-parties')
+const ANALYTICS_COLLECTION = /https:\/\/[^/]*(?:google-analytics\.com|analytics\.google\.com|googletagmanager\.com)\/(?:[\w-]+\/)*collect(?:\?|$)/
 
 // Local-only test accounts. The admin email must equal SUPER_ADMIN_EMAIL in .dev.vars.
 const TEST_PASSWORD = 'a11y-Audit-pass-1'
@@ -182,6 +186,32 @@ const contrastRows = new Set()
 const results = [] // { theme, role, label, violations }
 let scanCount = 0
 let incompleteCount = 0
+const styleCspViolations = []
+
+// Install before any navigation, including the SSR-only context. Console messages
+// catch CSP errors too; the DOM event supplies the effective directive and source.
+async function watchStyleCsp(context) {
+  await context.exposeBinding('reportStyleCspViolation', ({ frame }, details) => {
+    styleCspViolations.push({ url: frame.url(), ...details })
+  })
+  await context.addInitScript(() => {
+    document.addEventListener('securitypolicyviolation', (event) => {
+      if (event.effectiveDirective.startsWith('style-src')) {
+        window.reportStyleCspViolation({
+          directive: event.effectiveDirective, blocked: event.blockedURI,
+          source: event.sourceFile, line: event.lineNumber,
+        })
+      }
+    })
+  })
+  context.on('page', (page) => {
+    page.on('console', (message) => {
+      if (/style-src/.test(message.text()) && /content security policy/i.test(message.text())) {
+        styleCspViolations.push({ url: page.url(), console: message.text() })
+      }
+    })
+  })
+}
 
 function isExcluded(rule, node) {
   return KNOWN_EXCLUSIONS.some((e) => e.rule === rule && node.target.some((t) => String(t).includes(e.selector)))
@@ -233,6 +263,12 @@ function makeScanner(page, theme, role) {
 
 async function newContext(browser, theme) {
   const context = await browser.newContext({ viewport: VIEWPORT, reducedMotion: 'reduce' })
+  await watchStyleCsp(context)
+  if (CHECK_THIRD_PARTIES) {
+    // Load the actual Google scripts, but never send audit visits to the live GA
+    // property. This covers beacon, fetch, XHR and image collection requests.
+    await context.route(ANALYTICS_COLLECTION, (route) => route.fulfill({ status: 204 }))
+  }
   await context.addInitScript((t) => {
     try { window.localStorage.setItem('tagstash-theme', t) } catch { /* storage unavailable */ }
   }, theme)
@@ -240,7 +276,11 @@ async function newContext(browser, theme) {
 }
 
 const go = async (page, path) => {
-  await page.goto(`${BASE_URL}${path}`, { waitUntil: 'load' })
+  const response = await page.goto(`${BASE_URL}${path}`, { waitUntil: 'load' })
+  const styles = response.headers()['content-security-policy']?.split(';').map((s) => s.trim()).filter((s) => /^style-src(?:\s|-)/.test(s))
+  if (JSON.stringify(styles) !== JSON.stringify(["style-src 'self'"])) {
+    throw new Error(`${path}: expected the built site's style-src 'self' CSP; serve dist with Wrangler`)
+  }
 }
 
 async function logIn(page, account) {
@@ -279,6 +319,7 @@ async function anonymous(browser, theme) {
     // The Pages Function's server-rendered markup before (or without) JavaScript: what crawlers and no-JS visitors get.
     // (Scripts are blocked rather than disabling JS outright, because axe itself must still run.)
     const bare = await browser.newContext({ viewport: VIEWPORT })
+    await watchStyleCsp(bare)
     await bare.route('**/*.js', (route) => route.abort())
     const barePage = await bare.newPage()
     await go(barePage, '/')
@@ -291,6 +332,22 @@ async function anonymous(browser, theme) {
     await page.locator('main').first().waitFor()
     if (path.startsWith('/u/')) await page.locator('.bookmark-card').first().waitFor()
     await scan(path.startsWith('/u/') ? '/u/<name> (public profile)' : path)
+  }
+  if (CHECK_THIRD_PARTIES && theme === THEMES[0]) {
+    await go(page, '/')
+    await Promise.all([
+      page.waitForResponse((response) =>
+        response.url().startsWith('https://www.googletagmanager.com/gtag/js?') && response.ok(), { timeout: 30000 }),
+      page.waitForRequest(ANALYTICS_COLLECTION, { timeout: 30000 }),
+      page.getByRole('button', { name: 'Accept', exact: true }).click(),
+    ])
+    await page.waitForFunction(() => !!window.google_tag_manager)
+    await scan('/ (consent accepted, live GA script loaded; collection intercepted)')
+    await go(page, '/support')
+    // The dummy token proves both the live api.js and its test iframe executed.
+    // Fail rather than silently passing with an absent or unconfigured widget.
+    await page.waitForFunction(() => window.turnstile?.getResponse() === 'XXXX.DUMMY.TOKEN.XXXX', null, { timeout: 30000 })
+    await scan('/support (Turnstile test widget completed, consent accepted)')
   }
   await context.close()
 }
@@ -468,6 +525,7 @@ function summarize() {
 assertLocal(BASE_URL)
 for (const t of THEMES) if (!['slate', 'midnight', 'light'].includes(t)) throw new Error(`Unknown theme: ${t}`)
 for (const r of ROLES) if (!RUNNERS[r]) throw new Error(`Unknown role: ${r} (use anon, owner, admin)`)
+if (CHECK_THIRD_PARTIES && !ROLES.includes('anon')) throw new Error('--check-third-parties requires the anon role')
 
 try {
   const probe = await fetch(`${BASE_URL}/api/health`).catch(() => null)
@@ -497,8 +555,10 @@ try {
     await browser.close()
   }
   const code = summarize()
+  console.log(`\nStyle CSP: ${styleCspViolations.length} violation event(s)/console error(s).`)
+  for (const violation of styleCspViolations) console.log(JSON.stringify(violation))
   if (failedRun) console.log('\nOne or more scenarios aborted before finishing (see ERROR lines above) - treating the audit as failed.')
-  process.exit(code || (failedRun ? 1 : 0))
+  process.exit(code || (failedRun || styleCspViolations.length ? 1 : 0))
 } catch (error) {
   console.error(error.message)
   process.exit(2)
