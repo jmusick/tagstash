@@ -672,8 +672,7 @@ function Settings({
     { id: 'signOut', label: 'Sessions', onSelect: () => setConfirmSignOut(false) },
     { id: 'publicProfile', label: 'Public Profile' },
     { id: 'preferences', label: 'Preferences' },
-    // The API Keys tab is hidden for now (its panel below is kept):
-    // { id: 'apiKeys', label: 'API Keys', onSelect: fetchApiKeys },
+    { id: 'apiKeys', label: 'API Keys', onSelect: fetchApiKeys },
     {
       id: 'billing',
       label: 'Billing',
@@ -1021,9 +1020,16 @@ function Settings({
           </div>
         )}
 
-        {/* Unreachable while the API Keys tab button above is commented out */}
         {activeTab === 'apiKeys' && (
           <div className="api-keys-panel">
+            <p className="api-keys-description">
+              Use a key to read and edit your bookmarks and tags, including imports and exports.
+              Send it as <code>Authorization: Bearer &lt;key&gt;</code> to <code>/api/bookmarks</code> routes.
+              Keys cannot manage your account, billing, API keys, library reset or deletion,
+              admin actions, or support requests. A password reset from the forgot-password email
+              revokes all keys. Changing your password in Settings or signing out of all devices
+              keeps keys active. You can revoke them here.
+            </p>
             <form onSubmit={handleCreateApiKey} className="settings-form api-key-create-form">
               <div className="form-field">
                 <label htmlFor="api-key-name">Key Name (optional)</label>
@@ -1033,7 +1039,7 @@ function Settings({
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
                   maxLength={INPUT_LIMITS.apiKeyName}
-                  placeholder="e.g. Chrome extension"
+                  placeholder="e.g. Bookmark script"
                 />
               </div>
 

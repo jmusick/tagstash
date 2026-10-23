@@ -10,13 +10,15 @@
 // database, logs in through the real login form, and scans:
 //   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
 //               account" screen (form, error, pending) and the "account deleted" page,
+//               /reset-password (form, recovery unavailable, success with keys revoked),
 //               /features, /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form,
 //               select mode: none selected, some selected, the tag form with a validation error and a
 //               refused request, export formats, tabs blocked by the browser, the delete confirmation
 //               and a refused delete, and a selection cleared by a filter; every bulk request is
 //               answered by an interception so the seeded library is never changed), /settings (every tab,
-//               plus an error, a success banner and the import preview), /tags
+//               plus an error, a success banner, the import preview and API Keys loading,
+//               empty, generating, show-once/active, revoked and creation-error states), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations), and the
 //               Settings -> Reset Library form (confirmation error, refused password, pending,
@@ -327,6 +329,33 @@ async function anonymous(browser, theme) {
   await page.locator('#forgot-email').waitFor()
   await scan('/ (forgot password form)')
 
+  // Recovery responses are intercepted: no real credentials or API keys are changed.
+  const recoveryPage = await context.newPage()
+  await recoveryPage.addInitScript(() => {
+    const timeout = window.setTimeout.bind(window)
+    // Hold the success screen's 800ms redirect long enough for axe to scan it.
+    window.setTimeout = (callback, delay, ...args) => timeout(callback, delay === 800 ? 60_000 : delay, ...args)
+  })
+  const recoveryScan = makeScanner(recoveryPage, theme, 'anon')
+  const setReset = await interceptJson(recoveryPage, '**/api/auth/reset-password', {
+    status: 503, body: { error: 'Account recovery is temporarily unavailable. Please try again later.' },
+  })
+  const setMe = await interceptJson(recoveryPage, '**/api/auth/me', { status: 401, body: { error: 'Access token required' } })
+  await go(recoveryPage, '/reset-password?token=a11y-intercepted-reset')
+  await recoveryPage.getByLabel('New password', { exact: true }).waitFor()
+  await recoveryScan('/reset-password (form)')
+  await recoveryPage.getByLabel('New password', { exact: true }).fill(TEST_PASSWORD)
+  await recoveryPage.getByLabel('Confirm new password').fill(TEST_PASSWORD)
+  await recoveryPage.getByRole('button', { name: 'Reset password', exact: true }).click()
+  await recoveryPage.locator('.auth-error', { hasText: 'Account recovery is temporarily unavailable' }).waitFor()
+  await recoveryScan('/reset-password (recovery unavailable)')
+  setReset({ status: 200, body: { message: 'Password reset successfully. All API keys have been revoked.' } })
+  setMe({ status: 200, body: { user: { id: 1, username: OWNER.username, email: OWNER.email, membership_tier: 'free', role: 'user', theme } } })
+  await recoveryPage.getByRole('button', { name: 'Reset password', exact: true }).click()
+  await recoveryPage.getByText('Password reset!', { exact: true }).waitFor()
+  await recoveryScan('/reset-password (success, API keys revoked)')
+  await recoveryPage.close()
+
   // Interrupted deletion. A login with the right password for a pending account answers
   // deletionPending; both calls are intercepted, so nothing here touches a real account.
   await go(page, '/?signup=0')
@@ -411,6 +440,61 @@ async function settingsTab(page, name) {
   await page.getByRole('tab', { name, exact: true }).click()
   await page.locator('#settings-tabpanel h2.sr-only', { hasText: name }).waitFor()
   await page.waitForLoadState('networkidle').catch(() => {})
+}
+
+async function apiKeyStates(page, scan) {
+  // Keep the audit's keys in intercepted responses, never in the seeded user's account.
+  const key = { id: 4242, name: 'Bookmark script', key_prefix: 'tsk_abcd', key_last4: 'abcd',
+    created_at: '2026-10-23 12:00:00', last_used_at: '2026-10-23 12:01:00', revoked_at: null }
+  let keys = []
+  let releaseList
+  const listPending = new Promise((resolve) => { releaseList = resolve })
+  let releaseCreate
+  const createPending = new Promise((resolve) => { releaseCreate = resolve })
+  let refuseCreate = false
+  await page.route('**/api/auth/api-keys', async (route) => {
+    if (route.request().method() === 'GET') {
+      await listPending
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ apiKeys: keys }) })
+    } else {
+      await createPending
+      if (refuseCreate) {
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Revoke a key before creating another.' }) })
+      } else {
+        keys = [key]
+        await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ apiKey: `tsk_${'abcd'.repeat(12)}`, apiKeyMetadata: key }) })
+      }
+    }
+  })
+  await page.route('**/api/auth/api-keys/4242', async (route) => {
+    keys = [{ ...key, revoked_at: '2026-10-23 12:02:00' }]
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'API key revoked' }) })
+  })
+  await page.getByRole('tab', { name: 'API Keys', exact: true }).click()
+  await page.getByText('Loading API keys...', { exact: true }).waitFor()
+  await scan('/settings -> API Keys (loading)')
+  releaseList()
+  await page.getByText('No API keys yet.', { exact: true }).waitFor()
+  await scan('/settings -> API Keys (empty)')
+  await page.getByLabel('Key Name (optional)').fill(key.name)
+  await page.getByRole('button', { name: 'Generate API Key' }).click()
+  await page.getByRole('button', { name: 'Generating...' }).waitFor()
+  await scan('/settings -> API Keys (generating)')
+  releaseCreate()
+  await page.locator('.generated-key-box').waitFor()
+  await page.locator('.api-key-item').waitFor()
+  await scan('/settings -> API Keys (show-once key and active metadata)')
+  await page.getByRole('button', { name: 'Revoke', exact: true }).click()
+  await page.locator('.settings-success', { hasText: 'API key revoked' }).waitFor()
+  await page.getByLabel('Show revoked keys').check()
+  await page.locator('.api-key-revoked').waitFor()
+  await scan('/settings -> API Keys (revoked key)')
+  refuseCreate = true
+  await page.getByRole('button', { name: 'Generate API Key' }).click()
+  await page.locator('.settings-error', { hasText: 'Revoke a key' }).waitFor()
+  await scan('/settings -> API Keys (creation error)')
+  await page.unroute('**/api/auth/api-keys')
+  await page.unroute('**/api/auth/api-keys/4242')
 }
 
 async function owner(browser, theme) {
@@ -610,6 +694,8 @@ async function owner(browser, theme) {
     await toggle.click()
     await page.locator('.settings-success', { hasText: 'enabled' }).waitFor()
   }
+
+  await apiKeyStates(page, scan)
 
   // Import preview (shows .import-note).
   const importTab = tabNames.find((n) => /import/i.test(n))
