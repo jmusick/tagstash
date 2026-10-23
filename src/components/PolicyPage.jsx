@@ -169,12 +169,15 @@ function PolicyPage({ logoSrc, onBack }) {
           <h2>Data Retention &amp; Deletion</h2>
           <p>
             Your data is retained as long as your account is active. You may delete individual
-            bookmarks at any time. You can also reset your library in Settings (Reset Library), which
-            permanently removes all of your bookmarks, tag links and favorite tags but keeps your
-            account, subscription and settings. You can delete your whole account yourself: open
+            bookmarks at any time. A deleted bookmark moves to your Trash, where it stays (with its
+            tags) for 30 days so you can restore it, and is then removed permanently and
+            automatically. You can also delete a bookmark forever, or empty your Trash, yourself.
+            You can also reset your library in Settings (Reset Library), which immediately and
+            permanently removes all of your bookmarks, including those in your Trash, tag links and
+            favorite tags but keeps your account, subscription and settings. You can delete your whole account yourself: open
             Settings, choose Delete Account, enter your password and type the confirmation word.
-            Deleting your account permanently removes your bookmarks, your tag links and
-            favorites, your API keys, any pending verification, password-reset and email-change
+            Deleting your account permanently removes your bookmarks (including those in your
+            Trash), your tag links and favorites, your API keys, any pending verification, password-reset and email-change
             links, the security log entries tied to your account or email address, and the
             account itself. This cannot be undone. If you have a Pro subscription, it is
             canceled immediately instead of at the end of the billing period, and your Stripe

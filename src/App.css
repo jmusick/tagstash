@@ -1968,6 +1968,48 @@ a.btn-field-action,
   display: none;
 }
 
+/* The outcome of an action with an optional Undo button beside it. */
+.bulk-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* "Moved to the trash" notice with Undo (single delete from the library). */
+.trash-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+  padding: 0.65rem 1rem;
+  margin-bottom: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.trash-notice > span {
+  flex: 1 1 12rem;
+}
+
+.trash-notice-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
 .bulk-panel {
   margin-top: 0.75rem;
   padding: 0.85rem 1rem;

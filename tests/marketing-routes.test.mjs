@@ -24,6 +24,16 @@ test('an unknown SPA address stays a real nonindexable 404', async () => {
   assert.equal(response.headers.get('X-Robots-Tag'), 'noindex')
 })
 
+test('the signed-in Trash page is a real 200 (not the SPA 404), like Tags and Settings', async () => {
+  for (const path of ['/trash', '/tags', '/settings']) {
+    const response = await onRequest({
+      request: new Request(`https://tagsta.sh${path}`),
+      next: async () => new Response('<div id="root"></div>', { headers: { 'Content-Type': 'text/html' } }),
+    })
+    assert.equal(response.status, 200, path)
+  }
+})
+
 test('marketing route handling preserves asset redirects and API responses', async () => {
   for (const [path, status, headers, body] of [
     ['/features/', 308, { Location: '/features' }, null],

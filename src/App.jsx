@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useMemo, lazy, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useMemo, useRef, lazy, Suspense } from 'react'
 import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
 import { version } from '../package.json'
 import './App.css'
@@ -22,6 +22,7 @@ const ConsentBanner = lazy(() =>
 const NotFound = lazy(() => import('./components/NotFound'))
 const Settings = lazy(() => import('./components/Settings'))
 const TagsPage = lazy(() => import('./components/TagsPage'))
+const TrashPage = lazy(() => import('./components/TrashPage'))
 const PolicyPage = lazy(() => import('./components/PolicyPage'))
 const SupportPage = lazy(() => import('./components/SupportPage'))
 const FeaturesPage = lazy(() => import('./components/FeaturesPage'))
@@ -97,6 +98,9 @@ function App() {
   const [showAddForm, setShowAddForm] = useState(false)
   const [browserResetKey, setBrowserResetKey] = useState(0)
   const [focusBookmarkId, setFocusBookmarkId] = useState(null)
+  // "Moved to the trash" notice with Undo after a single delete: { message, ids, busy, error }.
+  const [trashNotice, setTrashNotice] = useState(null)
+  const trashNoticeRef = useRef(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   // The profile snapshot belongs to the first page loaded; drop it on any other route.
@@ -531,18 +535,42 @@ function App() {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to delete this bookmark?')) {
-      return
-    }
-
+  // Deleting moves the bookmark to the trash (restorable for 30 days), so there is no confirm
+  // dialog: a notice with Undo replaces it, and focus moves to that notice because the card
+  // that had focus is gone.
+  const handleDelete = async (bookmark) => {
     try {
-      await bookmarksAPI.delete(id)
+      const response = await bookmarksAPI.delete(bookmark.id)
+      const title = decodeHtmlEntities(bookmark.title || '') || bookmark.url
+      const trashed = response.data?.trashed !== false
+      setTrashNotice({
+        message: trashed ? `Moved “${title}” to the trash.` : `Deleted “${title}”.`,
+        ids: trashed ? [bookmark.id] : null,
+        busy: false,
+        error: '',
+      })
+      setTimeout(() => trashNoticeRef.current?.focus(), 0)
       fetchBookmarks()
       // Refresh tag cloud to update counts
       setTagsRefreshKey(prev => prev + 1)
     } catch {
       setError('Failed to delete bookmark')
+    }
+  }
+
+  const handleUndoDelete = async () => {
+    if (!trashNotice?.ids) return
+    setTrashNotice((prev) => ({ ...prev, busy: true, error: '' }))
+    try {
+      await bookmarksAPI.bulkRestore(trashNotice.ids)
+      setTrashNotice(null)
+      await refreshAfterBulkChange()
+    } catch (err) {
+      setTrashNotice((prev) => ({
+        ...prev,
+        busy: false,
+        error: err.response?.data?.error || 'Could not restore the bookmark. It is still in the trash.',
+      }))
     }
   }
 
@@ -558,6 +586,12 @@ function App() {
     maxSelection: INPUT_LIMITS.bulkBookmarkIds,
     onDelete: async (ids) => {
       const response = await bookmarksAPI.bulkDelete(ids)
+      await refreshAfterBulkChange()
+      return response.data
+    },
+    // Undo for a bulk delete: puts the same bookmarks back from the trash.
+    onUndo: async (ids) => {
+      const response = await bookmarksAPI.bulkRestore(ids)
       await refreshAfterBulkChange()
       return response.data
     },
@@ -807,10 +841,10 @@ function App() {
             </button>
             <button
               type="button"
-              onClick={() => handleDelete(bookmark.id)}
+              onClick={() => handleDelete(bookmark)}
               className="icon-btn delete-btn"
-              title="Delete bookmark"
-              aria-label="Delete bookmark"
+              title="Move bookmark to the trash"
+              aria-label="Move bookmark to the trash"
             >
               <Trash2 size={15} />
             </button>
@@ -981,6 +1015,7 @@ function App() {
     const navItems = [
       { id: 'bookmarks', label: 'Bookmarks', Icon: BookmarkIcon, onClick: () => { navigate('/'); fetchBookmarks() } },
       { id: 'tags', label: 'Tags', Icon: Tags, onClick: () => navigate('/tags') },
+      { id: 'trash', label: 'Trash', Icon: Trash2, onClick: () => navigate('/trash') },
       { id: 'settings', label: 'Settings', Icon: SettingsIcon, onClick: () => navigate('/settings') },
     ]
 
@@ -1087,6 +1122,33 @@ function App() {
           }
         />
         <Route
+          path="/trash"
+          element={
+            user ? (
+              <div className="app">
+                <AppHeader
+                  logoSrc={logoSrc}
+                  onLogoClick={handleLogoClick}
+                  theme={theme}
+                  onSelectTheme={selectTheme}
+                >
+                  {renderHeaderNav('trash')}
+                </AppHeader>
+
+                <main id="main" tabIndex={-1} className="app-main settings-page-main">
+                  <div className="main-content settings-page-content">
+                    <TrashPage onLibraryChange={refreshAfterBulkChange} />
+                  </div>
+                </main>
+                <AppFooter version={version}>
+                  <Link className="footer-privacy-link" to="/privacy">Privacy Policy</Link>
+                  <Link className="footer-privacy-link" to="/support">Support</Link>
+                </AppFooter>
+              </div>
+            ) : homeElement
+          }
+        />
+        <Route
           path="/"
           element={
             user ? (
@@ -1171,6 +1233,24 @@ function App() {
               </div>
             )}
           </div>
+
+          <div role="status" className="live-region">
+            {trashNotice && (
+              <div className="trash-notice" tabIndex={-1} ref={trashNoticeRef}>
+                <span>{trashNotice.message}</span>
+                {trashNotice.ids && (
+                  <button type="button" className="btn-secondary bulk-btn" onClick={handleUndoDelete} disabled={trashNotice.busy}>
+                    {trashNotice.busy ? 'Restoring...' : 'Undo'}
+                  </button>
+                )}
+                {trashNotice.ids && <Link className="footer-privacy-link" to="/trash">Open trash</Link>}
+                <button type="button" className="trash-notice-dismiss" onClick={() => setTrashNotice(null)} aria-label="Dismiss">
+                  <X size={14} />
+                </button>
+              </div>
+            )}
+          </div>
+          {trashNotice?.error && <p className="bulk-error" role="alert">{trashNotice.error}</p>}
 
           <div role="alert" className="live-region">
             {error && (
