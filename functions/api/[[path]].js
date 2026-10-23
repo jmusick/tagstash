@@ -3,6 +3,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable } from '../_lib/profileVisibility.js';
 import { newPasswordError } from '../../src/utils/passwordPolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
+import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -1797,6 +1798,30 @@ const detachUserTagStatements = (db, userId, tagId, { hasFavoriteTagsTable }) =>
     .bind(...(hasFavoriteTagsTable ? [tagId, tagId, tagId] : [tagId, tagId])),
 ];
 
+// Account reset (issue #154): everything in the user's library and nothing else, in the order
+// that keeps the orphan rule of a tag delete. The first statement drops the global tag rows the
+// user alone references (their bookmark links or favorites, and no other account's link or
+// favorite), so it has to run before those links go; the rest remove the user's own rows.
+// `meta.changes` of the bookmarks statement (index 2) is the number of bookmarks removed. The
+// account, auth, sessions, API keys, preferences and billing are never touched here.
+const resetLibraryStatements = (db, userId, { hasFavoriteTagsTable }) => [
+  db
+    .prepare(
+      `DELETE FROM tags WHERE id IN (
+         SELECT bt.tag_id FROM bookmark_tags bt JOIN bookmarks b ON b.id = bt.bookmark_id WHERE b.user_id = ?
+         ${hasFavoriteTagsTable ? 'UNION SELECT tag_id FROM favorite_tags WHERE user_id = ?' : ''}
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM bookmark_tags bt JOIN bookmarks b ON b.id = bt.bookmark_id WHERE bt.tag_id = tags.id AND b.user_id != ?
+       )
+       ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags f WHERE f.tag_id = tags.id AND f.user_id != ?)' : ''}`
+    )
+    .bind(...(hasFavoriteTagsTable ? [userId, userId, userId, userId] : [userId, userId])),
+  db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)').bind(userId),
+  db.prepare('DELETE FROM bookmarks WHERE user_id = ?').bind(userId),
+  ...(hasFavoriteTagsTable ? [db.prepare('DELETE FROM favorite_tags WHERE user_id = ?').bind(userId)] : []),
+];
+
 // Re-points the user's bookmarks from one tag to another (a bookmark that already has the
 // target keeps a single link), then detaches the source as above. `target` is a trusted SQL
 // expression yielding the target tag id, with its binds, so a rename can name a tag upserted
@@ -2959,6 +2984,68 @@ async function handleAuth(request, env, segments, context = {}) {
 
     await clearLoginLockout(db, user);
     return finishSelfServiceDeletion(db, request, env, context, user);
+  }
+
+  // Account reset (issue #154): wipes the signed-in owner's library (bookmarks, their tag links,
+  // favorite tags, and any global tag names nobody else uses) and keeps the account: login,
+  // sessions, API keys, preferences, billing and membership are untouched, and deleteAccount is
+  // never called (no Stripe, no email). Same gates as account deletion: normal auth, cheap
+  // validation, the typed confirmation checked here too, then confirmCurrentPassword.
+  if (request.method === 'POST' && segments[1] === 'reset-library') {
+    const auth = await requireAuth(request, env);
+    if (auth.error) return auth.error;
+
+    const { password, confirmation } = await parseBody(request);
+    if (typeof password !== 'string' || !password) {
+      return jsonResponse({ error: 'Password is required' }, 400);
+    }
+    if (!isAccountResetConfirmation(confirmation)) {
+      return jsonResponse({
+        error: `Type ${ACCOUNT_RESET_CONFIRMATION} to confirm that this permanently deletes all of your bookmarks, tag links and favorite tags.`,
+      }, 400);
+    }
+
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').bind(auth.user.id).first();
+    if (!user) {
+      return jsonResponse({ error: 'User not found' }, 404);
+    }
+    // requireAuth already rejects a marked account; this closes the window where deletion
+    // starts between that read and this one.
+    if (user.deletion_started_at) {
+      return jsonResponse({ error: 'Account deletion is in progress. The library cannot be reset.' }, 409);
+    }
+
+    const passwordFailure = await confirmCurrentPassword(db, request, user.id, password, 'Incorrect password');
+    if (passwordFailure) return passwordFailure;
+
+    const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+    // Informational counts for the result message (the bookmark count comes from the batch).
+    const links = await db
+      .prepare('SELECT COUNT(*) AS n FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)')
+      .bind(user.id)
+      .first();
+    const favorites = hasFavoriteTagsTable
+      ? await db.prepare('SELECT COUNT(*) AS n FROM favorite_tags WHERE user_id = ?').bind(user.id).first()
+      : null;
+    // Collected before the batch (it removes the tags this looks up), purged after.
+    const profileCacheKeys = await collectProfileCacheKeys(db, request, user.id, user.username);
+
+    let results;
+    try {
+      results = await db.batch(resetLibraryStatements(db, user.id, { hasFavoriteTagsTable }));
+    } catch (error) {
+      // One transaction: nothing was removed. Log the error type only.
+      console.error('[account-reset] library reset failed:', error?.name || 'error');
+      throw new HttpError(503, 'Your library could not be reset, and nothing was changed. Please try again.');
+    }
+    await purgeProfileCacheKeys(context, profileCacheKeys);
+
+    const removed = {
+      bookmarks: Number(results[2]?.meta?.changes || 0),
+      tagLinks: Number(links?.n || 0),
+      favoriteTags: Number(favorites?.n || 0),
+    };
+    return jsonResponse({ message: 'Your library has been reset. Your account is unchanged.', reset: true, removed });
   }
 
   if (request.method === 'GET' && segments[1] === 'verify-email') {

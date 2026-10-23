@@ -59,6 +59,11 @@ export const authAPI = {
   updatePassword: (currentPassword, newPassword, confirmPassword) =>
     api.put('/auth/password', { currentPassword, newPassword, confirmPassword }),
 
+  // Wipes the signed-in owner's library (bookmarks, tag links, favorite tags) and keeps the
+  // account. The server re-checks the password and the typed confirmation.
+  resetLibrary: (password, confirmation) =>
+    api.post('/auth/reset-library', { password, confirmation }),
+
   // Permanently deletes the signed-in account. The server re-checks the password and the typed
   // confirmation. resumeDeletion finishes a deletion that was interrupted, from the login screen.
   deleteAccount: (password, confirmation) =>

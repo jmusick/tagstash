@@ -15,7 +15,8 @@
 //               plus an error, a success banner and the import preview), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations), and the
-//               Settings -> Delete Account form with its confirmation error, a refused
+//               Settings -> Reset Library form (confirmation error, refused password, pending,
+//               success) and Settings -> Delete Account form with its confirmation error, a refused
 //               password, the pending state and the hand-off to "finish deleting"
 //   admin     : /settings -> Admin and Delete Account (the super admin refusal note)
 // The cookie consent banner is visible in every scan by default (each theme/role
@@ -508,6 +509,36 @@ async function owner(browser, theme) {
   await editSection.locator('.tag-edit-confirm').waitFor()
   await scan('/tags (delete confirmation)')
   await editSection.getByRole('button', { name: 'Cancel' }).click()
+
+  // Reset Library (its idle form is scanned with the other tabs above). The reset request is
+  // intercepted, so the seeded owner's library is never wiped.
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings' }).click()
+  await settingsTab(page, 'Reset Library')
+  const resetButton = page.getByRole('button', { name: 'Reset my library' })
+  const resetConfirmation = page.getByLabel(/^Type RESET to confirm/)
+  await page.getByLabel('Password (for verification)').fill(TEST_PASSWORD)
+  await resetConfirmation.fill('reset')
+  await resetButton.click()
+  await page.locator('.settings-error', { hasText: 'Type RESET' }).waitFor()
+  await scan('/settings -> Reset Library (confirmation error)')
+
+  const setReset = await interceptJson(page, '**/api/auth/reset-library', {
+    status: 401, body: { error: 'Incorrect password' },
+  })
+  await resetConfirmation.fill('RESET')
+  await resetButton.click()
+  await page.locator('.settings-error', { hasText: 'Incorrect password' }).waitFor()
+  await scan('/settings -> Reset Library (password refused)')
+
+  let releaseReset
+  setReset({ status: 200, body: { reset: true, removed: { bookmarks: 7, tagLinks: 12, favoriteTags: 1 } }, hold: new Promise((resolve) => { releaseReset = resolve }) })
+  await resetButton.click()
+  await page.getByRole('button', { name: 'Resetting library...' }).waitFor()
+  await scan('/settings -> Reset Library (pending)')
+  releaseReset()
+  await page.locator('.settings-success', { hasText: 'Your library has been reset' }).waitFor()
+  await scan('/settings -> Reset Library (success)')
+  await page.unroute('**/api/auth/reset-library')
 
   // Delete Account (its idle form is scanned with the other tabs above). The delete request is
   // intercepted, so the seeded owner is never deleted. Order matters: the last step signs the

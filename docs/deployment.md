@@ -120,6 +120,17 @@ form. Delete or demote them through configuration and the database, as for the a
 The Privacy Policy (`PolicyPage.jsx`, effective date October 23, 2026) now describes the
 self-service flow instead of support-only deletion.
 
+## Account reset (issue #154)
+
+Settings → Reset Library (`POST /api/auth/reset-library`) needs no migration. It removes only
+the owner's bookmarks, bookmark-tag links, favorite tags and global tag names no one else
+uses, in one D1 batch, and keeps the account, sessions, API keys, preferences, billing and
+membership. It does not call `deleteAccount` and never contacts Stripe, so nothing needs
+recovering on the billing side if it fails: a failure rolls back and the owner can simply retry.
+A removed library cannot be restored from the app; there is no soft delete, so point owners who
+ask afterwards to their own exports. The Privacy Policy's data-control paragraph mentions it
+(no effective-date change was made with this addition).
+
 Release prerequisite for v1.33.2: applied migration `0018_account_deletion.sql`
 to production D1 `tagstash-db` on October 14, 2026, verified the new nullable
 `deletion_started_at` column, and confirmed there were no pending migrations.
