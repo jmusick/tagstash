@@ -45,6 +45,10 @@ function PolicyPage({ logoSrc, onBack }) {
               save to your account.
             </li>
             <li>
+              <strong>API keys:</strong> if you create personal API keys, we store a fingerprint
+              of each key and when it was last used, so you can see and revoke unused keys.
+            </li>
+            <li>
               <strong>Billing information:</strong> if you subscribe to Pro, our payment
               processor Stripe handles your payment details directly. We store a Stripe
               customer ID and subscription ID to manage your plan, but we never see or store
@@ -60,8 +64,8 @@ function PolicyPage({ logoSrc, onBack }) {
             </li>
             <li>
               <strong>Security log:</strong> sign-ups, sign-in attempts (including failed ones
-              and account lockouts), and password-reset and verification-email requests are
-              recorded with the email address involved and the IP address the request came
+              and account lockouts), password-reset and verification-email requests, and
+              requests to sign out of all devices are recorded with the email address involved and the IP address the request came
               from. This log is used only to detect and block abuse such as password guessing,
               is visible only to Tagstash administrators, and its entries are deleted
               automatically after 30 days.

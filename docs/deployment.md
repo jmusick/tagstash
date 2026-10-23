@@ -127,8 +127,8 @@ the owner's bookmarks, bookmark-tag links, favorite tags and global tag names no
 uses, in one D1 batch, and keeps the account, sessions, API keys, preferences, billing and
 membership. It does not call `deleteAccount` and never contacts Stripe, so nothing needs
 recovering on the billing side if it fails: a failure rolls back and the owner can simply retry.
-A removed library cannot be restored from the app; there is no soft delete, so point owners who
-ask afterwards to their own exports. The Privacy Policy's data-control paragraph mentions it
+A removed library cannot be restored from the app: reset also removes bookmarks in the Trash,
+so point owners who ask afterwards to their own exports. The Privacy Policy's data-control paragraph mentions it
 (no effective-date change was made with this addition).
 
 Release prerequisite for v1.33.2: applied migration `0018_account_deletion.sql`
@@ -138,6 +138,21 @@ The migration changes schema only; no live customer or subscription was deleted
 as part of verification. Self-service deletion and account reset are tracked
 separately in [#153](https://github.com/jmusick/tagstash/issues/153) and
 [#154](https://github.com/jmusick/tagstash/issues/154).
+
+## Trash (issue #61)
+
+Apply `0019_bookmark_trash.sql` before relying on the Trash. It adds a nullable
+`bookmarks.deleted_at` column and two indexes without changing existing rows. A Worker
+deployed before the migration keeps deletes permanent, lists an empty Trash and answers
+restore/purge/empty with `503`. There is no cron: expired items are purged during bookmark
+requests, and reads treat anything older than 30 days as gone.
+
+Release prerequisite for v1.40.0: applied migration `0019_bookmark_trash.sql` to
+production D1 `tagstash-db` on October 23, 2026, before pushing the release. A
+time-travel bookmark was recorded first. Verified the `deleted_at` column and the
+`idx_bookmarks_user_deleted` and `idx_bookmarks_trashed` indexes, that no bookmark was
+trashed yet, and that there were no pending migrations. After the deploy, `/trash`
+and `/api/health` returned 200.
 
 References: [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/)
 and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/functions/wrangler-configuration/).
