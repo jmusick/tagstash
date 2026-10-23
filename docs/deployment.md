@@ -77,8 +77,7 @@ existing 60-second staleness bound.
 Release verification: run build, lint, and the full test suite. The deletion
 regressions mock Stripe and use isolated in-memory D1; they cover billing errors,
 timeouts, repeated deletion, cleanup rollback, shared tags, session rejection,
-missing migrations, and checkout racing deletion. Self-service deletion and
-account reset are outside this change.
+missing migrations, and checkout racing deletion. Account reset is outside this change.
 
 Local verification on October 14, 2026: all 193 tests, lint, and production build
 passed. The Admin view passed three axe scans (slate, midnight, light) with no
@@ -87,6 +86,38 @@ accepted the updated confirmation, deleted the seeded free account through the
 real API against isolated local D1, verified the refreshed admin list, and
 confirmed that its public profile API returned 404. No live Stripe calls or
 production migrations were performed.
+
+## Self-service account deletion (issue #153)
+
+Owners delete their own account in Settings → Delete Account. It needs no new migration
+beyond `0018_account_deletion.sql`, and it reuses `deleteAccount`, so everything above applies
+(Stripe customer first, immediate cancellation, no refund, one cleanup transaction). A Worker
+deployed before that migration answers `503` and changes nothing.
+
+If a self-service deletion cannot finish, the account stays pending exactly as for an admin
+delete: the session is ended, the owner is locked out, and `deletion_started_at` is never
+cleared automatically. The owner finishes it from the login screen ("Finish deleting my
+account", which re-checks the password under the login lockout and per-IP caps). Support's
+options when that does not work:
+
+1. Find pending accounts:
+   `wrangler d1 execute tagstash-db --remote --command "SELECT id, email, deletion_started_at FROM users WHERE deletion_started_at IS NOT NULL"`.
+2. Check the cause. A 502 is Stripe (a bad or revoked `STRIPE_SECRET_KEY`, an outage); a 503
+   is missing Stripe configuration or a failing D1 transaction (the Worker logs
+   `[account-deletion]` lines with an error type only).
+3. Finish it: after the cause is fixed, delete the account from Settings → Admin (same cleanup,
+   repeatable) or ask the owner to retry from the login screen.
+4. Restoring an account (clearing `deletion_started_at`) is a manual, last-resort decision. Do it
+   only if the owner asks, and only after confirming in the Stripe dashboard what happened to
+   their customer and subscription: the failed request may already have canceled billing, and
+   clearing the marker does not bring that back. Never clear it just because a retry is failing.
+
+Protected super admin accounts (`SUPER_ADMIN_EMAIL`, or the `super_admin` role) cannot self-delete:
+the route answers `403` before checking the password, and Settings shows a note instead of the
+form. Delete or demote them through configuration and the database, as for the admin route.
+
+The Privacy Policy (`PolicyPage.jsx`, effective date October 23, 2026) now describes the
+self-service flow instead of support-only deletion.
 
 Release prerequisite for v1.33.2: applied migration `0018_account_deletion.sql`
 to production D1 `tagstash-db` on October 14, 2026, verified the new nullable

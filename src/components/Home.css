@@ -226,7 +226,8 @@
   color: var(--color-placeholder);
 }
 
-.form-field input:focus {  border-color: var(--color-primary-strong);
+.form-field input:focus {
+  border-color: var(--color-primary-strong);
   box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.18);
 }
 
@@ -270,6 +271,14 @@
 
 .auth-button--secondary:hover:not(:disabled) {
   background: var(--color-surface-soft-hover);
+}
+
+.auth-button--danger {
+  background-color: var(--color-danger-solid);
+}
+
+.auth-button--danger:hover:not(:disabled) {
+  background-color: var(--color-danger-solid-hover);
 }
 
 .auth-toggle {

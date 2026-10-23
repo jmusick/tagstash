@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable } from '../_lib/profileVisibility.js';
 import { newPasswordError } from '../../src/utils/passwordPolicy.js';
+import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -1411,6 +1412,74 @@ const lockedOutMessage = (lockedUntil) => {
   return `Too many failed login attempts. Please try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.`;
 };
 
+// The credential half of login, shared with POST /auth/resume-deletion so both spend the same
+// budgets: the per-IP cap, the per-account (or per-unknown-address) counter and the 15-minute
+// lock. Returns `{ response }` (the 401/429 to send) or `{ user }` (the SELECT * row,
+// password proved, not locked). It runs before any account-specific answer, and an unregistered
+// address walks the same sequence as a registered one (8 misses, then a 429 lockout for 15
+// minutes, no hashing while locked) so neither the 429 nor the order of checks can be used to
+// probe for accounts. Login never applies the new-password policy: a grandfathered password of
+// any length that matches its hash keeps working (bcrypt compares its first 72 bytes, exactly as
+// when it was set); only the request body cap bounds what is compared. Keep every branch in step.
+const verifyLoginCredentials = async (db, request, normalizedEmail, password) => {
+  if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.loginFailuresPerIp, 'ip', getClientIp(request))) {
+    await recordAuthEvent(db, request, 'login_rate_limited', { email: normalizedEmail });
+    return { response: rateLimitedResponse('Too many failed login attempts from your network. Please try again later.') };
+  }
+
+  const user = await db
+    .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
+    .bind(normalizedEmail)
+    .first();
+
+  if (!user) {
+    const unknownLockedUntil = await getUnknownEmailLockedUntil(db, normalizedEmail);
+    if (unknownLockedUntil) {
+      await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail });
+      return { response: rateLimitedResponse(lockedOutMessage(unknownLockedUntil)) };
+    }
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
+    if (await recordUnknownEmailFailedLogin(db, request, normalizedEmail)) {
+      return {
+        response: rateLimitedResponse(
+          lockedOutMessage((await getUnknownEmailLockedUntil(db, normalizedEmail)) || Date.now() + LOGIN_LOCKOUT_MS)
+        ),
+      };
+    }
+    return { response: jsonResponse({ error: 'Invalid email or password' }, 401) };
+  }
+
+  // Checked before bcrypt so a locked account costs no hashing work.
+  const lockedUntil = getLockedUntil(user);
+  if (lockedUntil) {
+    await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail, userId: user.id });
+    return { response: rateLimitedResponse(lockedOutMessage(lockedUntil)) };
+  }
+
+  const validPassword = await bcrypt.compare(password, user.password_hash);
+  if (!validPassword) {
+    const nowLocked = await recordFailedLogin(db, user);
+    await recordAuthEvent(db, request, 'login_failed', { email: normalizedEmail, userId: user.id });
+    if (nowLocked) {
+      await recordAuthEvent(db, request, 'account_locked', { email: normalizedEmail, userId: user.id });
+      return {
+        response: rateLimitedResponse(lockedOutMessage((await getCurrentLockedUntil(db, user)) || Date.now() + LOGIN_LOCKOUT_MS)),
+      };
+    }
+    return { response: jsonResponse({ error: 'Invalid email or password' }, 401) };
+  }
+
+  // A correct guess that was already in flight when concurrent misses locked the account
+  // must not slip through the lock.
+  const lockedNow = await getCurrentLockedUntil(db, user);
+  if (lockedNow) {
+    await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail, userId: user.id });
+    return { response: rateLimitedResponse(lockedOutMessage(lockedNow)) };
+  }
+
+  return { user };
+};
+
 const ensureUserRoleMatchesConfig = async (db, user, env) => {
   const expectedRole = getRoleForEmail(user.email, env);
   if (user.role !== expectedRole) {
@@ -2466,6 +2535,50 @@ const deleteAccount = async (db, user, env) => {
   }
 };
 
+// Configured super admins are managed through SUPER_ADMIN_EMAIL, not the UI, so they can't be
+// deleted by an admin or by themselves.
+const isProtectedSuperAdmin = (user, env) =>
+  user.role === USER_ROLES.SUPER_ADMIN || isSuperAdminEmail(user.email, env);
+
+const PENDING_DELETION_LOGIN_MESSAGE =
+  'Account deletion was started for this account but has not finished. Log in on the Tagstash website to finish it, or contact support for help.';
+
+// Self-service deletion (issue #153): POST /auth/delete-account (signed in) and POST
+// /auth/resume-deletion (after an interruption, from the login screen) both end here, and both
+// do the actual work in deleteAccount; nothing about billing or cleanup is repeated. Once
+// deleteAccount has stamped deletion_started_at the old session is dead (requireAuth rejects
+// it), so a failure after that point also ends the session and tells the client the deletion is
+// pending, rather than inviting a retry that could only be refused. The marker is never cleared
+// here: Stripe may already have stopped billing. A failure before the marker (migration or
+// Stripe not configured) leaves the account and its session untouched and is rethrown.
+const finishSelfServiceDeletion = async (db, request, env, context, user) => {
+  const clearSession = (response) => {
+    response.headers.set('Set-Cookie', sessionCookie(request, '', 0));
+    return response;
+  };
+  // Collected before the delete (it removes the tags this looks up), purged after.
+  const profileCacheKeys = await collectProfileCacheKeys(db, request, user.id, user.username);
+  try {
+    await deleteAccount(db, user, env);
+  } catch (error) {
+    const isDeletionFailure = error instanceof HttpError || error instanceof UpstreamError;
+    const marker = isDeletionFailure
+      ? await db.prepare('SELECT deletion_started_at FROM users WHERE id = ?').bind(user.id).first().catch(() => null)
+      : null;
+    if (!marker?.deletion_started_at) throw error;
+    console.error('[account-deletion] self-service deletion is pending:', error?.name || 'error');
+    const message = error instanceof HttpError
+      ? error.message
+      : 'Your subscription could not be closed right now, so deletion has not finished.';
+    return clearSession(jsonResponse({
+      error: `${message} Your account is locked until deletion finishes. Log in again to finish it, or contact support.`,
+      deletionPending: true,
+    }, error instanceof HttpError ? error.status : 502));
+  }
+  await purgeProfileCacheKeys(context, profileCacheKeys);
+  return clearSession(jsonResponse({ message: 'Your account and its data have been permanently deleted.', deleted: true }));
+};
+
 const clearStripeBillingState = async (db, userId) => {
   const hasDeletionState = await usersTableHasColumn(db, 'deletion_started_at');
   await db
@@ -2738,69 +2851,19 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'Email and password are required' }, 400);
     }
 
-    if (await isAuthRateLimited(db, AUTH_RATE_LIMITS.loginFailuresPerIp, 'ip', getClientIp(request))) {
-      await recordAuthEvent(db, request, 'login_rate_limited', { email: normalizedEmail });
-      return rateLimitedResponse('Too many failed login attempts from your network. Please try again later.');
-    }
+    const credentials = await verifyLoginCredentials(db, request, normalizedEmail, password);
+    if (credentials.response) return credentials.response;
+    const { user } = credentials;
 
-    const user = await db
-      .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
-      .bind(normalizedEmail)
-      .first();
-
-    // Login never applies the new-password policy: a grandfathered password of any length that
-    // matches its hash keeps working (bcrypt compares its first 72 bytes, exactly as when it was
-    // set). Only the request body cap bounds what is compared.
-    // An unregistered address walks the same sequence as a registered one (8 misses, then a 429
-    // lockout for 15 minutes, no hashing while locked) so the lockout can't be used to probe
-    // for accounts. Keep every branch below in step with this one.
-    if (!user) {
-      const unknownLockedUntil = await getUnknownEmailLockedUntil(db, normalizedEmail);
-      if (unknownLockedUntil) {
-        await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail });
-        return rateLimitedResponse(lockedOutMessage(unknownLockedUntil));
-      }
-      await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
-      if (await recordUnknownEmailFailedLogin(db, request, normalizedEmail)) {
-        return rateLimitedResponse(
-          lockedOutMessage((await getUnknownEmailLockedUntil(db, normalizedEmail)) || Date.now() + LOGIN_LOCKOUT_MS)
-        );
-      }
-      return jsonResponse({ error: 'Invalid email or password' }, 401);
-    }
-
-    // Checked before bcrypt so a locked account costs no hashing work.
-    const lockedUntil = getLockedUntil(user);
-    if (lockedUntil) {
-      await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail, userId: user.id });
-      return rateLimitedResponse(lockedOutMessage(lockedUntil));
-    }
-
-    const validPassword = await bcrypt.compare(password, user.password_hash);
-    if (!validPassword) {
-      const nowLocked = await recordFailedLogin(db, user);
-      await recordAuthEvent(db, request, 'login_failed', { email: normalizedEmail, userId: user.id });
-      if (nowLocked) {
-        await recordAuthEvent(db, request, 'account_locked', { email: normalizedEmail, userId: user.id });
-        return rateLimitedResponse(lockedOutMessage((await getCurrentLockedUntil(db, user)) || Date.now() + LOGIN_LOCKOUT_MS));
-      }
-      return jsonResponse({ error: 'Invalid email or password' }, 401);
-    }
-
-    // A correct guess that was already in flight when concurrent misses locked the account
-    // must not slip through the lock.
-    const lockedNow = await getCurrentLockedUntil(db, user);
-    if (lockedNow) {
-      await recordAuthEvent(db, request, 'login_rejected_locked', { email: normalizedEmail, userId: user.id });
-      return rateLimitedResponse(lockedOutMessage(lockedNow));
+    // Only reachable after the password was proved, so it reveals nothing to anyone but the
+    // owner. The web app offers "Finish deleting my account" (POST /auth/resume-deletion) on
+    // `deletionPending`; the marker still blocks every session and is never cleared here.
+    if (user.deletion_started_at) {
+      return jsonResponse({ error: PENDING_DELETION_LOGIN_MESSAGE, deletionPending: true }, 403);
     }
 
     if (!user.email_verified) {
       return jsonResponse({ error: 'Please verify your email address before logging in.' }, 403);
-    }
-
-    if (user.deletion_started_at) {
-      return jsonResponse({ error: 'Account deletion is in progress. Contact support for help.' }, 403);
     }
 
     await ensureUserRoleMatchesConfig(db, user, env);
@@ -2836,6 +2899,66 @@ async function handleAuth(request, env, segments, context = {}) {
         link_target: user.link_target || null,
       },
     });
+  }
+
+  // Self-service account deletion (issue #153). Normal auth (cookie session behind the CSRF/origin
+  // gate in onRequest, or bearer), the current password through confirmCurrentPassword (shared
+  // lockout counter and per-IP cap) and a typed confirmation the server checks too. Cheap
+  // validation comes first so malformed requests don't spend password-guess budget.
+  if (request.method === 'POST' && segments[1] === 'delete-account') {
+    const auth = await requireAuth(request, env);
+    if (auth.error) return auth.error;
+
+    const { password, confirmation } = await parseBody(request);
+    if (typeof password !== 'string' || !password) {
+      return jsonResponse({ error: 'Password is required' }, 400);
+    }
+    if (!isAccountDeletionConfirmation(confirmation)) {
+      return jsonResponse({
+        error: `Type ${ACCOUNT_DELETION_CONFIRMATION} to confirm that this permanently deletes your account and data and cancels your subscription immediately.`,
+      }, 400);
+    }
+
+    const user = await db.prepare('SELECT * FROM users WHERE id = ?').bind(auth.user.id).first();
+    if (!user) {
+      return jsonResponse({ error: 'User not found' }, 404);
+    }
+    if (isProtectedSuperAdmin(user, env)) {
+      return jsonResponse({ error: 'Configured super admin accounts cannot be deleted.' }, 403);
+    }
+
+    const passwordFailure = await confirmCurrentPassword(db, request, user.id, password, 'Incorrect password');
+    if (passwordFailure) return passwordFailure;
+
+    return finishSelfServiceDeletion(db, request, env, context, user);
+  }
+
+  // Finishes a deletion that started but did not complete, once the durable marker blocks every
+  // session. There is no session to check, so the caller proves the password exactly as login
+  // does (verifyLoginCredentials: same counter, lock and per-IP cap, same answers for unknown
+  // addresses). Only after that does it say anything account-specific. It can only complete a
+  // deletion that was already started; it never clears the marker or restores access.
+  if (request.method === 'POST' && segments[1] === 'resume-deletion') {
+    const { email, password } = await parseBody(request);
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail || !password || typeof password !== 'string') {
+      return jsonResponse({ error: 'Email and password are required' }, 400);
+    }
+
+    const credentials = await verifyLoginCredentials(db, request, normalizedEmail, password);
+    if (credentials.response) return credentials.response;
+    const { user } = credentials;
+
+    if (!user.deletion_started_at) {
+      return jsonResponse({ error: 'No account deletion is waiting to be finished. Log in normally.' }, 409);
+    }
+    if (isProtectedSuperAdmin(user, env)) {
+      return jsonResponse({ error: 'Configured super admin accounts cannot be deleted.' }, 403);
+    }
+
+    await clearLoginLockout(db, user);
+    return finishSelfServiceDeletion(db, request, env, context, user);
   }
 
   if (request.method === 'GET' && segments[1] === 'verify-email') {
@@ -3644,7 +3767,7 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'User not found' }, 404);
     }
 
-    if (targetUser.role === USER_ROLES.SUPER_ADMIN || isSuperAdminEmail(targetUser.email, env)) {
+    if (isProtectedSuperAdmin(targetUser, env)) {
       return jsonResponse({ error: 'Configured super admin account cannot be deleted' }, 400);
     }
 

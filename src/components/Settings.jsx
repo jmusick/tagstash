@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
 import { X, KeyRound, Copy, Ban, EyeOff, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
@@ -8,6 +9,7 @@ import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../u
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
 import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
+import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../utils/accountDeletion';
 import './Settings.css';
 
 function Settings({
@@ -146,6 +148,66 @@ function Settings({
       [e.target.name]: e.target.value,
     });
     setError('');
+  };
+
+  // Delete-account form. Nothing is sent until the password is entered and the confirmation word
+  // typed; the server checks both again.
+  const navigate = useNavigate();
+  const [deleteForm, setDeleteForm] = useState({ password: '', confirmation: '' });
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteFormChange = (e) => {
+    setDeleteForm({
+      ...deleteForm,
+      [e.target.name]: e.target.value,
+    });
+    setError('');
+  };
+
+  const handleDeleteAccountSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!deleteForm.password) {
+      setError('Enter your password to confirm.');
+      return;
+    }
+    if (!isAccountDeletionConfirmation(deleteForm.confirmation)) {
+      setError(`Type ${ACCOUNT_DELETION_CONFIRMATION} in capital letters to confirm that you want to delete your account.`);
+      return;
+    }
+
+    setDeleting(true);
+    try {
+      await authAPI.deleteAccount(deleteForm.password, deleteForm.confirmation.trim());
+      // The server already cleared the session cookie; drop the signed-in state and land on the
+      // signed-out home page, which explains what happened.
+      localStorage.removeItem('token');
+      updateUser(null);
+      navigate('/', { replace: true, state: { accountNotice: 'deleted' } });
+    } catch (err) {
+      if (err.response?.data?.deletionPending) {
+        // Deletion started but did not finish (billing or database trouble). The server ended
+        // the session and keeps the account locked; the home page offers to finish it.
+        const email = user?.email || '';
+        localStorage.removeItem('token');
+        updateUser(null);
+        navigate('/', { replace: true, state: { accountNotice: 'pending', email } });
+        return;
+      }
+      setDeleting(false);
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.request) {
+        setError(
+          'We could not confirm whether the deletion went through. Try again. If you can no longer ' +
+          'sign in, log in with your password to finish deleting the account.'
+        );
+      } else {
+        setError('Failed to delete account');
+      }
+    }
   };
 
   const handlePasswordChange = (e) => {
@@ -544,6 +606,7 @@ function Settings({
     },
     { id: 'extensions', label: 'Extensions' },
     { id: 'import', label: 'Import / Export' },
+    { id: 'deleteAccount', label: 'Delete Account', onSelect: () => setDeleteForm({ password: '', confirmation: '' }) },
     ...(isSuperAdmin
       ? [{
           id: 'admin',
@@ -1082,6 +1145,72 @@ function Settings({
             </p>
             <Import onImportComplete={onImportComplete} />
             <Export />
+          </div>
+        )}
+
+        {activeTab === 'deleteAccount' && (
+          <div className="settings-delete-account">
+            <h3 className="settings-delete-heading">Delete your account permanently</h3>
+            <ul className="settings-delete-list">
+              <li>Your bookmarks, tags, favorites, API keys and account details are permanently deleted. This cannot be undone.</li>
+              <li>Any Pro subscription is canceled immediately, not at the end of the billing period. This does not issue a refund.</li>
+              <li>Your public profile stops working, and you are signed out everywhere.</li>
+              <li>Want a copy first? Export your bookmarks from the Import / Export tab.</li>
+              <li>If something goes wrong part-way, the account stays locked. Log in with your password to finish deleting it, or contact support.</li>
+            </ul>
+
+            {isSuperAdmin ? (
+              <p className="settings-suspended-notice" role="note">
+                This is a configured super admin account, so it cannot be deleted from Settings.
+              </p>
+            ) : (
+              <form onSubmit={handleDeleteAccountSubmit} className="settings-form" aria-busy={deleting}>
+                <div className="form-field">
+                  <label htmlFor="delete-account-password">Password (for verification)</label>
+                  <input
+                    type="password"
+                    id="delete-account-password"
+                    name="password"
+                    value={deleteForm.password}
+                    onChange={handleDeleteFormChange}
+                    required
+                    autoComplete="current-password"
+                    placeholder="Enter your password"
+                    readOnly={deleting}
+                  />
+                </div>
+
+                <div className="form-field">
+                  <label htmlFor="delete-account-confirmation">
+                    Type {ACCOUNT_DELETION_CONFIRMATION} to confirm
+                  </label>
+                  <input
+                    type="text"
+                    id="delete-account-confirmation"
+                    name="confirmation"
+                    value={deleteForm.confirmation}
+                    onChange={handleDeleteFormChange}
+                    required
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                    readOnly={deleting}
+                  />
+                </div>
+
+                <div role="status" className="live-region">
+                  {deleting && (
+                    <p className="settings-delete-pending">
+                      Deleting your account. Closing your subscription can take a few seconds, so please keep this page open.
+                    </p>
+                  )}
+                </div>
+
+                <button type="submit" className="btn-danger" disabled={deleting}>
+                  {deleting ? 'Deleting account...' : 'Permanently delete my account'}
+                </button>
+              </form>
+            )}
           </div>
         )}
 

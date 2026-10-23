@@ -2,8 +2,8 @@ import { HOME_FAQS as faqs, HOME_FEATURES as features } from '../content/homeMar
 import { getHomeStructuredData } from '../content/marketingSchema'
 import { usePageStructuredData } from '../utils/usePageStructuredData'
 import Logo from './Logo'
-import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/api';
 import ThemeSelector from './ThemeSelector';
@@ -37,6 +37,38 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotStatus, setForgotStatus] = useState('idle'); // idle | loading | sent | error
   const [forgotError, setForgotError] = useState('');
+
+  // After self-service account deletion (issue #153) this page is where the owner lands:
+  // 'deleted' confirms it, and 'finishDeletion' lets them finish one that was interrupted (reached
+  // from Settings, or from a login that answered `deletionPending`). Nothing here is set during
+  // the first render, so the server-rendered markup this hydrates over still matches.
+  const [view, setView] = useState('auth'); // auth | finishDeletion | deleted
+  const [finishInterrupted, setFinishInterrupted] = useState(false);
+  const [finishLoading, setFinishLoading] = useState(false);
+  const [finishError, setFinishError] = useState('');
+  const viewHeadingRef = useRef(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const accountNotice = location.state?.accountNotice;
+  const noticeEmail = location.state?.email;
+
+  useEffect(() => {
+    if (!accountNotice) return;
+    if (accountNotice === 'deleted') {
+      setView('deleted');
+    } else if (accountNotice === 'pending') {
+      setFinishInterrupted(true);
+      setFinishError('');
+      if (typeof noticeEmail === 'string') setFormData((current) => ({ ...current, email: noticeEmail }));
+      setView('finishDeletion');
+    }
+    // The notice is one-shot: a reload must not show it again.
+    navigate(location.pathname, { replace: true, state: null });
+  }, [accountNotice, noticeEmail, location.pathname, navigate]);
+
+  useEffect(() => {
+    if (view !== 'auth') viewHeadingRef.current?.focus();
+  }, [view]);
 
   const { login, register } = useAuth();
 
@@ -74,7 +106,12 @@ function Home({ logoSrc, theme, onSelectTheme }) {
 
     setLoading(false);
 
-    if (!result.success) {
+    if (!result.success && result.deletionPending) {
+      // Right password, but a deletion of this account never finished. Offer to finish it.
+      setFinishInterrupted(false);
+      setFinishError('');
+      setView('finishDeletion');
+    } else if (!result.success) {
       setError(result.error);
     } else if (result.pendingVerification) {
       setPendingEmail(formData.email);
@@ -105,6 +142,34 @@ function Home({ logoSrc, theme, onSelectTheme }) {
     }
   };
 
+  const handleFinishDeletion = async (e) => {
+    e.preventDefault();
+    setFinishLoading(true);
+    setFinishError('');
+    try {
+      await authAPI.resumeDeletion(formData.email, formData.password);
+      setFormData({ username: '', email: '', password: '' });
+      setView('deleted');
+    } catch (err) {
+      if (err.response?.data?.deletionPending) {
+        setFinishError(
+          'Deletion still has not finished. Your account stays locked and nothing was restored. ' +
+          'Try again in a few minutes, or contact support.'
+        );
+      } else if (err.response?.data?.error) {
+        setFinishError(err.response.data.error);
+      } else if (err.response?.status === 429) {
+        setFinishError('Too many attempts. Please wait a moment and try again.');
+      } else if (err.request) {
+        setFinishError('Unable to reach the server. Please check your connection and try again.');
+      } else {
+        setFinishError('Could not finish deleting the account. Please try again.');
+      }
+    } finally {
+      setFinishLoading(false);
+    }
+  };
+
   const handleResend = async () => {
     setResendStatus('');
     try {
@@ -114,6 +179,110 @@ function Home({ logoSrc, theme, onSelectTheme }) {
       setResendStatus(err.response?.data?.error || 'Could not resend. Please try again.');
     }
   };
+
+  if (view === 'deleted') {
+    return (
+      <div className="home-container home-container--centered">
+        <header className="home-topbar">
+          <Logo src={logoSrc} className="home-logo" />
+          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
+        </header>
+        <main id="main" tabIndex={-1} className="home-centered-content">
+          <div className="auth-card">
+            <h1 className="auth-card-title" tabIndex={-1} ref={viewHeadingRef}>Your account has been deleted</h1>
+            <p className="auth-description">
+              Your bookmarks, tags and account data were permanently removed, any Pro subscription
+              was canceled, and you are signed out. This cannot be undone.
+            </p>
+            <p className="auth-description">
+              Thank you for trying Tagstash. You are welcome to create a new account at any time.
+            </p>
+            <button type="button" className="auth-button auth-button--secondary" onClick={() => setView('auth')}>
+              Back to the home page
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (view === 'finishDeletion') {
+    return (
+      <div className="home-container home-container--centered">
+        <header className="home-topbar">
+          <Logo src={logoSrc} className="home-logo" />
+          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
+        </header>
+        <main id="main" tabIndex={-1} className="home-centered-content">
+          <div className="auth-card">
+            <h1 className="auth-card-title" tabIndex={-1} ref={viewHeadingRef}>Finish deleting your account</h1>
+            {finishInterrupted && (
+              <p className="auth-description">
+                We could not finish deleting your account, so your session was ended.
+              </p>
+            )}
+            <p className="auth-description">
+              Deleting this account was started but has not finished, so the account is locked until it
+              does. Finishing permanently deletes your bookmarks and account data and cancels any
+              Pro subscription immediately. This cannot be undone.
+            </p>
+            <form onSubmit={handleFinishDeletion} className="auth-form" aria-busy={finishLoading}>
+              <div className="form-field">
+                <label htmlFor="finish-email">Email</label>
+                <input
+                  type="email"
+                  id="finish-email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  autoComplete="email"
+                  maxLength={INPUT_LIMITS.email}
+                  readOnly={finishLoading}
+                />
+              </div>
+              <div className="form-field">
+                <label htmlFor="finish-password">Password</label>
+                <input
+                  type="password"
+                  id="finish-password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  required
+                  autoComplete="current-password"
+                  readOnly={finishLoading}
+                />
+              </div>
+              <div role="alert" className="live-region">
+                {finishError && <div className="auth-error">{finishError}</div>}
+              </div>
+              <div role="status" className="live-region">
+                {finishLoading && (
+                  <p className="auth-description">Finishing deletion. This can take a few seconds.</p>
+                )}
+              </div>
+              <button type="submit" className="auth-button auth-button--danger" disabled={finishLoading}>
+                {finishLoading ? 'Finishing deletion…' : finishError ? 'Try again' : 'Finish deleting my account'}
+              </button>
+            </form>
+            <div className="auth-toggle">
+              Not what you want? The account stays locked until deletion finishes, so{' '}
+              <Link to="/support" className="auth-toggle-button">contact support</Link> to discuss it.{' '}
+              <button
+                type="button"
+                className="auth-toggle-button"
+                onClick={() => { setView('auth'); setFinishError(''); setFormData({ username: '', email: '', password: '' }); }}
+                disabled={finishLoading}
+              >
+                Back to log in
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (forgotMode) {
     return (

@@ -59,6 +59,14 @@ export const authAPI = {
   updatePassword: (currentPassword, newPassword, confirmPassword) =>
     api.put('/auth/password', { currentPassword, newPassword, confirmPassword }),
 
+  // Permanently deletes the signed-in account. The server re-checks the password and the typed
+  // confirmation. resumeDeletion finishes a deletion that was interrupted, from the login screen.
+  deleteAccount: (password, confirmation) =>
+    api.post('/auth/delete-account', { password, confirmation }),
+
+  resumeDeletion: (email, password) =>
+    api.post('/auth/resume-deletion', { email, password }),
+
   updateProfilePublic: (profilePublic) =>
     api.put('/auth/profile-public', { profilePublic }),
 
