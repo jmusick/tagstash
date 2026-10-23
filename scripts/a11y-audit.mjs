@@ -622,9 +622,8 @@ async function owner(browser, theme) {
   await scan('/settings -> Sessions (confirm sign out everywhere)')
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await signOutButton.waitFor()
-  if (!await signOutButton.evaluate((el) => el === document.activeElement)) {
-    throw new Error('Cancelling sign out should restore focus to its button')
-  }
+  // Cancellation restores focus after React has committed the trigger button.
+  await page.waitForFunction(() => document.activeElement?.textContent === 'Sign out of all devices')
   await signOutButton.click()
   const setSignOut = await interceptJson(page, '**/api/auth/logout-everywhere', {
     status: 503, body: { error: 'Signing out of all devices is temporarily unavailable. Please try again later.' },
