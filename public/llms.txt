@@ -11,7 +11,8 @@
 - Import browser HTML or Raindrop CSV bookmarks. Export the complete library, including private bookmarks, as HTML, CSV, or JSON from Settings → Import / Export.
 - Optional public profiles expose a documented, tag-filterable JSON API at `/api/profiles/:username` for embedding bookmarks on other websites. Private bookmarks are excluded from that public API.
 - The public profile API is anonymous. Personal API keys are not currently accepted for authenticated bookmark operations.
-- Favorites, tag merging, Slate/Midnight/Light themes, and an account preference for opening bookmark links in the same or a new tab help users manage a growing collection.
+- Owners can reset their library (keeping the account) or permanently delete their account themselves from Settings.
+- Favorites, tag merging, renaming and deleting, domain and month-saved filters, Slate/Midnight/Light themes, and an account preference for opening bookmark links in the same or a new tab help users manage a growing collection.
 - Built on React, Cloudflare Pages Functions, D1 (SQLite), JWT auth, and Stripe billing.
 
 ## Pages

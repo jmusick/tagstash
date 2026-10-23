@@ -45,11 +45,12 @@ Current status at a glance:
 - Random button for jumping straight to a random bookmark in edit mode
 - Tag Management page (`/tags`) for merging two tags into one, renaming a tag on every bookmark that uses it (renaming onto an existing tag merges them), and deleting a tag from all of your bookmarks, with a confirmation step for anything that can't be undone
 - Self-service username, email, and password changes, plus a forgot-password email flow
+- Settings → Reset Library wipes your bookmarks, tag links and favorite tags but keeps the account and subscription; Settings → Delete Account permanently deletes the account and cancels any subscription immediately (both require your password and a typed confirmation)
 - Personal API keys (Settings) can be generated and revoked; they are not yet accepted as an authentication method by the API. Keys are stored only as a SHA-256 hash plus a short display hint (`tsk_ab12...wxyz`), so the full key is shown once at creation and can never be retrieved again
 - Password policy for new passwords (sign-up, change, reset): at least 8 characters and at most 72 UTF-8 bytes (bcrypt's limit), and passwords found in known breaches are refused via a Have I Been Pwned k-anonymity lookup (only a 5-character hash prefix is sent; the check fails open if the service is unreachable). Existing passwords keep working.
 - Account-enumeration resistance: sign-up, password reset and verification resend give the same answer (and timing, with the email sent after the response) whether or not an address has an account; signing up with a registered address emails its owner instead. Usernames are public, so "username taken" is reported.
 - Brute-force protection: 8 failed logins lock an account for 15 minutes, with per-IP/per-email throttling of login, sign-up, verification resends and password-reset requests; auth events are logged for super admins in Settings → Admin
-- Security response headers (CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`) and immutable caching for hashed assets, served via `public/_headers`
+- Security response headers (CSP with no inline scripts or styles, HSTS, `nosniff`, `X-Frame-Options`, `Cross-Origin-Opener-Policy`, `Referrer-Policy`, `Permissions-Policy`) and immutable caching for hashed assets, served via `public/_headers`
 - Reset and verification links are stored as SHA-256 digests, and unverified-account guidance is shown only after a correct password. Keyboard focus outlines, skip links, and reduced-motion support cover the main app and public pages.
 - Dynamic XML sitemap (`/sitemap.xml`) listing static pages and public profiles that meet a quality bar (verified email, account at least 14 days old, 5+ public bookmarks; profiles below it are served with `noindex`), plus `robots.txt` and `llms.txt`, for search engine and AI crawler discovery
 
@@ -419,19 +420,25 @@ Example response:
 tagstash/
 ├── d1/
 │   └── migrations/
+├── docs/                  # deployment and supply-chain notes
 ├── functions/
+│   ├── _lib/              # shared profile visibility rules
 │   ├── api/
 │   ├── u/                 # per-profile meta injection for /u/:username
+│   ├── _middleware.js     # indexable page paths; 404 + noindex for the rest
 │   ├── index.js           # server-rendered homepage content + structured data
 │   └── sitemap.xml.js
 ├── public/                # static assets, robots.txt, llms.txt, _headers
 ├── src/
 │   ├── api/
 │   ├── components/
+│   ├── content/           # marketing copy shared with the Pages Functions
 │   ├── context/
 │   ├── utils/
 │   ├── App.jsx
 │   └── main.jsx
+├── scripts/               # prerender, a11y audit, feature-demo tooling
+├── tests/
 ├── .dev.vars
 ├── package.json
 ├── vite.config.js
@@ -447,11 +454,14 @@ tagstash/
 - `npm run build` - Create a production build
 - `npm run preview` - Preview the production build locally
 - `npm run lint` - Run ESLint
+- `npm test` - Run the regression suite (`tests/*.test.mjs`, in-memory SQLite, no network)
+- `npm run test:auth` - Run only the auth session tests
+- `npm run test:a11y` - Run the axe accessibility audit against a locally served build (see AGENTS.md)
 
 ## Backlog and documentation
 
 [GitHub Issues](https://github.com/jmusick/tagstash/issues) owns actionable work,
-with `category:*` and `priority:P1|P2|P3` labels. The
+with category labels (`feature`, `bug`, `security`, `seo`, `accessibility`) and priority labels (`p1`, `p2`, `p3`). The
 [October 10 migration record](https://github.com/jmusick/tagstash/issues/1)
 preserves the earlier audit scope, dates, and original requirements. Extension
 work belongs in [its issue tracker](https://github.com/jmusick/tagstash-extension/issues).
