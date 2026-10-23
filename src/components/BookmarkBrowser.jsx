@@ -2,11 +2,10 @@ import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { Star, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import TagCloud from './TagCloud'
 import { decodeHtmlEntities } from '../utils/decodeHtmlEntities'
-import { getRegistrableDomain } from '../utils/domain'
 import { DEFAULT_LINK_TARGET, linkTargetProps } from '../utils/linkTarget'
 import { BookmarkTagList } from './BookmarkParts'
 import { displayUrl, formatSavedDate } from '../utils/bookmarkDisplay'
-import { hasNoTags, countUntagged } from '../utils/bookmarkFilters'
+import { hasNoTags, countUntagged, getBookmarkDomain, countDomains, getCreatedMonth, countCreatedMonths, formatCreatedMonth } from '../utils/bookmarkFilters'
 
 // Honor the OS "reduce motion" setting for script-driven scrolling; CSS
 // scroll-behavior is already neutralised in index.css, but an explicit
@@ -52,6 +51,8 @@ function BookmarkBrowser({
   onTagFavoriteToggle,
   showFavoritesFilter = true,
   showUntaggedFilter = false,
+  showDomainFilter = false,
+  showDateFilter = false,
   toolbarExtra,
   renderCard,
   emptyStateMessage = 'No bookmarks yet. Add your first one to get started!',
@@ -70,6 +71,7 @@ function BookmarkBrowser({
   const [itemsPerPage, setItemsPerPage] = useState(20)
   const [currentPage, setCurrentPage] = useState(1)
   const [domainFilter, setDomainFilter] = useState(null)
+  const [monthFilter, setMonthFilter] = useState('')
   const [pageAnnouncement, setPageAnnouncement] = useState('')
   const resultsHeadingRef = useRef(null)
 
@@ -112,14 +114,14 @@ function BookmarkBrowser({
   // Ignore the toggle's state if the filter isn't offered, so it can never filter invisibly.
   const untaggedActive = showUntaggedFilter && showUntaggedOnly
   const untaggedCount = useMemo(() => countUntagged(bookmarks), [bookmarks])
+  const domainActive = showDomainFilter ? domainFilter : null
+  const monthActive = showDateFilter ? monthFilter : ''
+  const domains = useMemo(() => [...countDomains(bookmarks)].sort(([a], [b]) => a.localeCompare(b)), [bookmarks])
+  const months = useMemo(() => countCreatedMonths(bookmarks), [bookmarks])
 
   const filteredBookmarks = useMemo(() => {
     if (focusBookmarkId) {
       return sortedBookmarks.filter((bookmark) => bookmark.id === focusBookmarkId)
-    }
-
-    if (domainFilter) {
-      return sortedBookmarks.filter((bookmark) => getRegistrableDomain(bookmark.url) === domainFilter)
     }
 
     const query = searchTerm.trim().toLowerCase()
@@ -149,15 +151,17 @@ function BookmarkBrowser({
       const matchesFavorite = !showFavoritesOnly || Boolean(bookmark.is_favorite)
 
       const matchesUntagged = !untaggedActive || hasNoTags(bookmark)
+      const matchesDomain = !domainActive || getBookmarkDomain(bookmark.url) === domainActive
+      const matchesMonth = !monthActive || getCreatedMonth(bookmark.created_at) === monthActive
 
-      return matchesSearch && matchesTag && matchesFavorite && matchesUntagged
+      return matchesSearch && matchesTag && matchesFavorite && matchesUntagged && matchesDomain && matchesMonth
     })
-  }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, untaggedActive, focusBookmarkId, domainFilter])
+  }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, untaggedActive, focusBookmarkId, domainActive, monthActive])
 
   useEffect(() => {
     setCurrentPage(1)
     setPageAnnouncement('')
-  }, [searchTerm, selectedTags, untaggedActive, sortBy, sortDirection, itemsPerPage, domainFilter])
+  }, [searchTerm, selectedTags, showFavoritesOnly, untaggedActive, sortBy, sortDirection, itemsPerPage, domainActive, monthActive])
 
   const totalPages = Math.max(1, Math.ceil(filteredBookmarks.length / itemsPerPage))
 
@@ -190,17 +194,15 @@ function BookmarkBrowser({
     setShowFavoritesOnly(false)
     setShowUntaggedOnly(false)
     setDomainFilter(null)
+    setMonthFilter('')
     setCurrentPage(1)
   }, [focusBookmarkId])
 
   // Clicking "Related" replaces whatever filter was active with a same-domain view.
   const handleShowRelated = (url) => {
-    const domain = getRegistrableDomain(url)
-    if (!domain) return
-    setSearchTerm('')
-    setSelectedTags([])
-    setShowFavoritesOnly(false)
-    setShowUntaggedOnly(false)
+    const domain = getBookmarkDomain(url)
+    if (!showDomainFilter || !domain) return
+    handleClearAllFilters()
     setDomainFilter(domain)
   }
 
@@ -218,7 +220,6 @@ function BookmarkBrowser({
     const normalized = tagName?.trim().toLowerCase()
     if (!normalized) return
 
-    setDomainFilter(null)
     // "Without tags" and a tag filter can never both match, so picking a tag replaces it.
     setShowUntaggedOnly(false)
     if (focusBookmarkId) onClearFocus?.()
@@ -229,7 +230,6 @@ function BookmarkBrowser({
     const normalized = tagName?.trim().toLowerCase()
     if (!normalized) return
 
-    setDomainFilter(null)
     setShowUntaggedOnly(false)
     if (focusBookmarkId) onClearFocus?.()
     setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]))
@@ -242,7 +242,6 @@ function BookmarkBrowser({
   }
 
   const handleToggleUntagged = () => {
-    setDomainFilter(null)
     if (focusBookmarkId) onClearFocus?.()
     // Mutually exclusive with tag selection; search and favorites still combine with it.
     if (!showUntaggedOnly) setSelectedTags([])
@@ -250,14 +249,12 @@ function BookmarkBrowser({
   }
 
   const hasActiveFilters = Boolean(
-    searchTerm.trim() || selectedTags.length > 0 || showFavoritesOnly || untaggedActive || domainFilter || focusBookmarkId
+    searchTerm.trim() || selectedTags.length > 0 || showFavoritesOnly || untaggedActive || domainActive || monthActive || focusBookmarkId
   )
 
   const activeFilterChipLabel = focusBookmarkId
     ? 'Random'
-    : domainFilter
-      ? `Same site: ${domainFilter}`
-      : null
+    : null
 
   const handleClearAllFilters = () => {
     setSearchTerm('')
@@ -265,6 +262,7 @@ function BookmarkBrowser({
     setShowFavoritesOnly(false)
     setShowUntaggedOnly(false)
     setDomainFilter(null)
+    setMonthFilter('')
     if (focusBookmarkId) onClearFocus?.()
   }
 
@@ -282,7 +280,6 @@ function BookmarkBrowser({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => {
-                  setDomainFilter(null)
                   if (focusBookmarkId) onClearFocus?.()
                   setSearchTerm(e.target.value)
                 }}
@@ -294,7 +291,6 @@ function BookmarkBrowser({
                   type="button"
                   className={`favorites-filter-btn ${showFavoritesOnly ? 'active' : ''}`}
                   onClick={() => {
-                    setDomainFilter(null)
                     if (focusBookmarkId) onClearFocus?.()
                     setShowFavoritesOnly((prev) => !prev)
                   }}
@@ -311,7 +307,7 @@ function BookmarkBrowser({
                   className="clear-filters-btn"
                   onClick={handleClearAllFilters}
                   aria-label="Clear all filters"
-                  title="Clear search, tags, favorites, untagged, and related filters"
+                  title="Clear search, tags, favorites, untagged, domain, and month filters"
                 >
                   <X size={16} />
                 </button>
@@ -426,7 +422,7 @@ function BookmarkBrowser({
       </div>
 
       <aside className="sidebar">
-        {(domainFilter || selectedTags.length > 0) && (
+        {(domainActive || monthActive || selectedTags.length > 0) && (
           <div className="active-tag-filter">
             <div className="active-tag-filter-head">
               <span>Filtering by</span>
@@ -436,16 +432,25 @@ function BookmarkBrowser({
                 onClick={() => {
                   setSelectedTags([])
                   handleClearDomainFilter()
+                  setMonthFilter('')
                 }}
               >
                 Clear
               </button>
             </div>
             <div className="active-tag-filter-list">
-              {domainFilter && (
+              {domainActive && (
                 <span className="active-domain-filter">
-                  <span>Same site: {domainFilter}</span>
-                  <button type="button" onClick={handleClearDomainFilter} aria-label="Clear related bookmarks filter">
+                  <span>Domain: {domainActive}</span>
+                  <button type="button" onClick={handleClearDomainFilter} aria-label="Clear domain filter">
+                    <X size={13} />
+                  </button>
+                </span>
+              )}
+              {monthActive && (
+                <span className="active-domain-filter">
+                  <span>Saved: {formatCreatedMonth(monthActive)}</span>
+                  <button type="button" onClick={() => setMonthFilter('')} aria-label="Clear month filter">
                     <X size={13} />
                   </button>
                 </span>
@@ -461,6 +466,41 @@ function BookmarkBrowser({
             </div>
             {selectedTags.length > 1 && (
               <p className="active-tag-filter-hint">Showing bookmarks that have all of these tags.</p>
+            )}
+          </div>
+        )}
+        {(showDomainFilter || showDateFilter) && (
+          <div className="library-filters">
+            {showDomainFilter && (
+              <div className="library-filter-control">
+                <label htmlFor="bookmark-domain">Domain</label>
+                <select id="bookmark-domain" value={domainActive || ''} onChange={(e) => {
+                  if (focusBookmarkId) onClearFocus?.()
+                  setDomainFilter(e.target.value || null)
+                }}>
+                  <option value="">All domains</option>
+                  {domainActive && !domains.some(([domain]) => domain === domainActive) && (
+                    <option value={domainActive}>{domainActive} (0)</option>
+                  )}
+                  {domains.map(([domain, count]) => <option key={domain} value={domain}>{domain} ({count})</option>)}
+                </select>
+              </div>
+            )}
+            {showDateFilter && (
+              <div className="library-filter-control">
+                <label htmlFor="bookmark-month">Month saved</label>
+                <select id="bookmark-month" value={monthActive} aria-describedby="bookmark-month-hint" onChange={(e) => {
+                  if (focusBookmarkId) onClearFocus?.()
+                  setMonthFilter(e.target.value)
+                }}>
+                  <option value="">All months</option>
+                  {monthActive && !months.some(({ value }) => value === monthActive) && (
+                    <option value={monthActive}>{formatCreatedMonth(monthActive)} (0)</option>
+                  )}
+                  {months.map(({ value, label, count }) => <option key={value} value={value}>{label} ({count})</option>)}
+                </select>
+                <p id="bookmark-month-hint">Months use your local time zone. Counts reflect your whole library.</p>
+              </div>
             )}
           </div>
         )}

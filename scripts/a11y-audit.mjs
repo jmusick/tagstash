@@ -10,7 +10,7 @@
 // database, logs in through the real login form, and scans:
 //   anonymous : /, login error + sign-up + forgot-password states, /features,
 //               /privacy, /support, a public profile (/u/<owner>)
-//   owner     : / (bookmark list, "Without tags" filter, edit mode, add form), /settings (every tab,
+//   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form), /settings (every tab,
 //               plus an error, a success banner and the import preview), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations)
@@ -129,10 +129,10 @@ function seedUsers() {
   const bookmarks = [
     ['Tag-first bookmarking guide', 'https://example.com/guide', 'A short guide to organising links with tags.', ['reading', 'guides']],
     ['Design systems handbook', 'https://example.com/design', 'Colour, type and spacing in practice.', ['design', 'reading']],
-    ['Command line tools', 'https://example.com/cli', 'Handy terminal utilities.', ['tools', 'dev']],
+    ['Command line tools', 'https://example.org/cli', 'Handy terminal utilities.', ['tools', 'dev']],
     ['Accessibility checklist', 'https://example.com/a11y', 'WCAG in plain language.', ['design', 'guides']],
-    ['Static site generators', 'https://example.com/ssg', 'Comparing build tools.', ['tools', 'dev']],
-    ['Reading list for the weekend', 'https://example.com/weekend', 'Long reads.', ['reading']],
+    ['Static site generators', 'https://example.org/ssg', 'Comparing build tools.', ['tools', 'dev']],
+    ['Reading list for the weekend', 'https://reading.example.com/weekend', 'Long reads.', ['reading']],
     // Deliberately untagged, so the owner list's "Without tags" filter has something to show.
     ['Unsorted link to triage', 'https://example.com/triage', 'Saved without any tags yet.', []],
   ]
@@ -147,10 +147,11 @@ function seedUsers() {
     user(ADMIN, 'super_admin', 0),
     ...tagNames.map((t) => `INSERT OR IGNORE INTO tags (name) VALUES (${sqlString(t)});`),
   ]
-  for (const [title, url, description, tags] of bookmarks) {
+  for (const [index, [title, url, description, tags]] of bookmarks.entries()) {
+    const saved = sqlString(index < 4 ? '2026-09-15T12:00:00Z' : '2026-08-15T12:00:00Z')
     statements.push(
-      `INSERT INTO bookmarks (user_id, title, url, description, created_at, updated_at)
-       VALUES ((SELECT id FROM users WHERE email = ${sqlString(OWNER.email)}), ${sqlString(title)}, ${sqlString(url)}, ${sqlString(description)}, ${old}, ${old});`,
+      `INSERT INTO bookmarks (user_id, title, url, description, created_at, updated_at, is_favorite)
+       VALUES ((SELECT id FROM users WHERE email = ${sqlString(OWNER.email)}), ${sqlString(title)}, ${sqlString(url)}, ${sqlString(description)}, ${saved}, ${saved}, ${index === 0 ? 1 : 0});`,
       ...tags.map(
         (t) => `INSERT INTO bookmark_tags (bookmark_id, tag_id) VALUES ((SELECT MAX(id) FROM bookmarks), (SELECT id FROM tags WHERE name = ${sqlString(t)}));`
       )
@@ -290,6 +291,9 @@ async function anonymous(browser, theme) {
     await go(page, path)
     await page.locator('main').first().waitFor()
     if (path.startsWith('/u/')) await page.locator('.bookmark-card').first().waitFor()
+    if (path.startsWith('/u/') && await page.locator('#bookmark-domain, #bookmark-month').count()) {
+      throw new Error('Owner domain/month controls must not appear on a public profile')
+    }
     await scan(path.startsWith('/u/') ? '/u/<name> (public profile)' : path)
   }
   await context.close()
@@ -324,6 +328,60 @@ async function owner(browser, theme) {
   await page.getByRole('button', { name: 'Clear all filters' }).click()
   await page.locator('.bookmark-card').nth(1).waitFor()
   if ((await untaggedToggle.getAttribute('aria-pressed')) !== 'false') throw new Error('Clear all filters should release Without tags')
+
+  const domain = page.getByLabel('Domain', { exact: true })
+  const month = page.getByLabel('Month saved', { exact: true })
+  const search = page.getByRole('textbox', { name: 'Search bookmarks' })
+  const expectCards = async (count) => {
+    await page.waitForFunction((n) => document.querySelectorAll('.bookmark-card').length === n, count)
+  }
+  await domain.selectOption('example.com')
+  await expectCards(4)
+  await scan('/ (domain filter active)')
+  await page.getByRole('button', { name: 'Clear domain filter', exact: true }).click()
+  await expectCards(7)
+  const monthValues = await month.locator('option').evaluateAll((options) => options.map((o) => o.value))
+  if (monthValues.join(',') !== ',2026-09,2026-08') throw new Error('Month options should be newest first')
+  await month.selectOption('2026-09')
+  await expectCards(4)
+  await scan('/ (month filter active)')
+  await domain.selectOption('example.com')
+  await expectCards(3)
+  await page.locator('.sidebar').getByRole('button', { name: /^reading, / }).click()
+  await expectCards(2)
+  if (await domain.inputValue() !== 'example.com' || await month.inputValue() !== '2026-09') throw new Error('Picking a tag must preserve domain and month')
+  await page.getByRole('button', { name: 'Show favorite bookmarks only', exact: true }).click()
+  await expectCards(1)
+  await search.fill('tag-first')
+  await expectCards(1)
+  await scan('/ (domain and month combined with tag, favorites and search)')
+  await month.selectOption('2026-08')
+  await page.locator('.empty-state').waitFor()
+  await scan('/ (domain and month filters, no matches)')
+  // Each filter can be cleared independently; Related replaces the full query.
+  await page.getByRole('button', { name: 'Clear month filter', exact: true }).click()
+  await expectCards(1)
+  await month.selectOption('2026-09')
+  await page.getByRole('button', { name: 'Show other bookmarks from example.com', exact: true }).first().click()
+  await expectCards(4)
+  if (await month.inputValue() || await search.inputValue()) throw new Error('Related must reset month and search')
+  if (await page.locator('.active-tag-filter .tag-stock').count()) throw new Error('Related must reset tags')
+  await untaggedToggle.click()
+  await month.selectOption('2026-08')
+  await expectCards(1)
+  await scan('/ (domain and month combined with Without tags)')
+  await page.getByRole('button', { name: 'Clear all filters' }).click()
+  await expectCards(7)
+  if (await domain.inputValue() || await month.inputValue()) throw new Error('Clear all filters must reset domain and month')
+
+  await domain.selectOption('example.org')
+  await month.selectOption('2026-09')
+  await page.getByRole('button', { name: /Random bookmark/i }).click()
+  await expectCards(1)
+  await page.getByLabel('Tags', { exact: true }).first().waitFor()
+  if (await domain.inputValue() || await month.inputValue()) throw new Error('Random must reset domain and month')
+  await page.locator('.bookmark-edit-actions').getByRole('button', { name: 'Cancel' }).first().click()
+  await expectCards(7)
 
   await page.getByRole('button', { name: 'Add bookmark' }).click()
   await page.locator('form').filter({ has: page.getByLabel('Title') }).first().waitFor()

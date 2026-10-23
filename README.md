@@ -28,6 +28,7 @@ Current status at a glance:
 - Bookmark title, URL, description, and tag management
 - Base URL keeps the site root with a trailing slash (for example, `https://www.google.com/`); Trim URL removes queries and fragments
 - Search, sorting, and tag query filtering (click any tag on a bookmark or in the tag panel to filter by it; combine tags to narrow results), plus a "Without tags" filter in your own library for finding and tidying up untagged bookmarks
+- In your own library, filter by domain (hostname without `www.`) or month saved, with counts for the whole library. Months include the year and use your local time zone. Combine these with search, tags, favorites and "Without tags"; Related resets the filters to the selected bookmark's domain.
 - Free tier with a 50-bookmark limit
 - Pro tier with unlimited bookmarks
 - Stripe Checkout for upgrades ($3/month or $36/year — same rate either way)
