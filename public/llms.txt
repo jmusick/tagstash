@@ -12,7 +12,7 @@
 - Optional public profiles expose a documented, tag-filterable JSON API at `/api/profiles/:username` for embedding bookmarks on other websites. Private bookmarks are excluded from that public API.
 - The public profile API is anonymous. Personal API keys are not currently accepted for authenticated bookmark operations.
 - Owners can reset their library (keeping the account) or permanently delete their account themselves from Settings.
-- Favorites, tag merging, renaming and deleting, domain and month-saved filters, Slate/Midnight/Light themes, and an account preference for opening bookmark links in the same or a new tab help users manage a growing collection.
+- Favorites, tag merging, renaming and deleting, domain and month-saved filters, a multi-select mode in the owner's library (bulk add/remove tags, open in new tabs, export the selection, bulk delete), Slate/Midnight/Light themes, and an account preference for opening bookmark links in the same or a new tab help users manage a growing collection.
 - Built on React, Cloudflare Pages Functions, D1 (SQLite), JWT auth, and Stripe billing.
 
 ## Pages

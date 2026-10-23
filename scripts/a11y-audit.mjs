@@ -11,7 +11,11 @@
 //   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
 //               account" screen (form, error, pending) and the "account deleted" page,
 //               /features, /privacy, /support, a public profile (/u/<owner>)
-//   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form), /settings (every tab,
+//   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form,
+//               select mode: none selected, some selected, the tag form with a validation error and a
+//               refused request, export formats, tabs blocked by the browser, the delete confirmation
+//               and a refused delete, and a selection cleared by a filter; every bulk request is
+//               answered by an interception so the seeded library is never changed), /settings (every tab,
 //               plus an error, a success banner and the import preview), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations), and the
@@ -509,6 +513,75 @@ async function owner(browser, theme) {
   await page.getByLabel('Tags').first().waitFor()
   await scan('/ (edit mode)')
   await page.locator('.bookmark-edit-actions').getByRole('button', { name: 'Cancel' }).first().click()
+  await expectCards(7)
+
+  // Select mode. Every bulk request is answered by an interception (a refusal), so nothing
+  // here can change the seeded library even if a click lands on a real action.
+  await interceptJson(page, '**/api/bookmarks/bulk/**', { status: 500, body: { error: 'Blocked by the accessibility audit' } })
+  const selectToggle = page.getByRole('button', { name: 'Select bookmarks', exact: true })
+  await selectToggle.click()
+  const toolbar = page.getByRole('toolbar', { name: 'Bulk actions for selected bookmarks' })
+  await toolbar.waitFor()
+  if ((await selectToggle.getAttribute('aria-pressed')) !== 'true') throw new Error('Select toggle should be pressed in select mode')
+  if ((await page.getByRole('checkbox', { name: /^Select / }).count()) !== 7) throw new Error('Every bookmark should get a named checkbox in select mode')
+  if (!/^0 selected/.test((await page.locator('.bulk-count').textContent()) || '')) throw new Error('Select mode should start with 0 selected')
+  if (await toolbar.getByRole('button', { name: /^Delete/ }).isEnabled()) throw new Error('Actions should be disabled with nothing selected')
+  await scan('/ (select mode, none selected)')
+
+  await page.getByRole('checkbox', { name: 'Select Tag-first bookmarking guide' }).check()
+  await page.getByRole('checkbox', { name: 'Select Design systems handbook' }).check()
+  await page.waitForFunction(() => /^2 selected/.test(document.querySelector('.bulk-count')?.textContent || ''))
+  await scan('/ (select mode, some selected)')
+
+  // Keyboard: arrow keys move through the toolbar's enabled buttons.
+  await toolbar.getByRole('button', { name: 'Select this page (7)' }).focus()
+  await page.keyboard.press('End')
+  if ((await page.evaluate(() => document.activeElement?.textContent || '')).trim() !== 'Done') throw new Error('End should focus the last toolbar button')
+
+  await toolbar.getByRole('button', { name: 'Tags', exact: true }).click()
+  await page.getByRole('group', { name: 'Change tags on 2 bookmarks' }).waitFor()
+  if (!(await page.evaluate(() => document.activeElement?.id === 'bulk-add-tags'))) throw new Error('Opening the tag form should focus its first field')
+  await scan('/ (select mode, tag form)')
+  await page.getByLabel('Add tags', { exact: true }).fill('two words')
+  await page.getByRole('button', { name: 'Apply to 2 bookmarks' }).click()
+  await page.getByRole('alert').filter({ hasText: 'single word' }).waitFor()
+  await scan('/ (select mode, tag form error)')
+  await page.getByLabel('Add tags', { exact: true }).fill('audit-tag')
+  await page.getByRole('button', { name: 'Apply to 2 bookmarks' }).click()
+  await page.getByRole('alert').filter({ hasText: 'Blocked by the accessibility audit' }).waitFor()
+  await scan('/ (select mode, tag form, server refused)')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).first().click()
+
+  await toolbar.getByRole('button', { name: 'Export', exact: true }).click()
+  await page.getByRole('group', { name: 'Export 2 selected bookmarks' }).waitFor()
+  await scan('/ (select mode, export formats)')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).first().click()
+
+  // Pop-up blocking: window.open is stubbed to refuse, so no tabs actually open.
+  await page.evaluate(() => { window.open = () => null })
+  await toolbar.getByRole('button', { name: 'Open in tabs', exact: true }).click()
+  await page.getByRole('group', { name: '2 tabs blocked by your browser' }).waitFor()
+  await scan('/ (select mode, tabs blocked by the browser)')
+  await page.getByRole('button', { name: 'Close', exact: true }).click()
+
+  await toolbar.getByRole('button', { name: 'Delete', exact: true }).click()
+  const deleteGroup = page.getByRole('group', { name: /Permanently delete 2 bookmarks\?/ })
+  await deleteGroup.waitFor()
+  await scan('/ (select mode, delete confirmation)')
+  await deleteGroup.getByRole('button', { name: 'Delete 2 bookmarks', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Blocked by the accessibility audit' }).waitFor()
+  await scan('/ (select mode, delete refused by the server)')
+  await deleteGroup.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expectCards(7)
+
+  // Changing a filter clears the selection and says so.
+  await search.fill('guide')
+  await page.waitForFunction(() => /^0 selected.*cleared/.test(document.querySelector('.bulk-count')?.textContent || ''))
+  await scan('/ (select mode, selection cleared by a filter)')
+  await search.fill('')
+  await expectCards(7)
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  if ((await page.getByRole('checkbox').count()) !== 0) throw new Error('Leaving select mode should remove the checkboxes')
 
   await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings' }).click()
   await page.getByRole('tab').first().waitFor()

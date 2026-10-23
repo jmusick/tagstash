@@ -144,6 +144,13 @@ export const bookmarksAPI = {
 
   importBookmarks: (bookmarks) =>
     api.post('/bookmarks/import', { bookmarks }),
+
+  // Bulk actions on the library selection (at most INPUT_LIMITS.bulkBookmarkIds ids each).
+  bulkDelete: (ids) =>
+    api.post('/bookmarks/bulk/delete', { ids }),
+
+  bulkTags: (ids, { add = [], remove = [] }) =>
+    api.post('/bookmarks/bulk/tags', { ids, add, remove }),
 };
 
 export const billingAPI = {
