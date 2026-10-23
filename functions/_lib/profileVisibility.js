@@ -24,13 +24,15 @@ const tableColumns = async (db, table) => {
 
 // Column guards (see AGENTS.md "D1 migrations"): code can reach prod before its migration.
 // Without profile_public nothing is visible; without suspended_at nobody counts as
-// suspended; without is_private every bookmark counts as public.
+// suspended; without is_private every bookmark counts as public; without deleted_at (trash,
+// migration 0019) no bookmark is trashed.
 export async function getProfileSchema(db) {
   const [users, bookmarks] = await Promise.all([tableColumns(db, 'users'), tableColumns(db, 'bookmarks')]);
   return {
     hasProfilePublic: users.has('profile_public'),
     hasSuspendedAt: users.has('suspended_at'),
     hasIsPrivate: bookmarks.has('is_private'),
+    hasDeletedAt: bookmarks.has('deleted_at'),
   };
 }
 
@@ -38,9 +40,13 @@ export async function getProfileSchema(db) {
 export const visibleProfileCondition = (schema, alias = 'u') =>
   `${alias}.profile_public = 1${schema.hasSuspendedAt ? ` AND ${alias}.suspended_at IS NULL` : ''}`;
 
-// Bookmark filter for public (non-private) bookmarks of `bookmarks ${alias}`, prefixed with AND.
+// Bookmark filter for public bookmarks of `bookmarks ${alias}`, prefixed with AND: not private
+// and not in the trash. A trashed bookmark is never public, whatever its age, so this is a plain
+// `deleted_at IS NULL` (the 30-day purge window only matters to the owner's trash view). Every
+// public surface (API, SSR, sitemap, the indexing bar's count, admin counts) goes through here.
 export const publicBookmarkCondition = (schema, alias = 'b') =>
-  schema.hasIsPrivate ? ` AND ${alias}.is_private = 0` : '';
+  (schema.hasIsPrivate ? ` AND ${alias}.is_private = 0` : '') +
+  (schema.hasDeletedAt ? ` AND ${alias}.deleted_at IS NULL` : '');
 
 // D1 stores CURRENT_TIMESTAMP as UTC 'YYYY-MM-DD HH:MM:SS' with no zone marker; read it as UTC.
 export const parseDbTimestamp = (value) => {

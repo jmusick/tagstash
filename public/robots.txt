@@ -2,6 +2,7 @@ User-agent: *
 Allow: /
 Disallow: /settings
 Disallow: /tags
+Disallow: /trash
 Disallow: /verify-email
 Disallow: /reset-password
 

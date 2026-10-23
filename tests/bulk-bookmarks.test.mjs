@@ -7,6 +7,9 @@ import { serializeBookmarks } from '../src/utils/bookmarkExport.js';
 import { getOpenableUrls, openUrlsInTabs } from '../src/utils/bulkOpen.js';
 
 // Bulk actions on the owner's library: POST /bookmarks/bulk/delete and /bookmarks/bulk/tags.
+// Since the trash (#61) a bulk delete moves bookmarks to the trash; deleteForever below follows it
+// with POST /bookmarks/bulk/purge to exercise the permanent-removal rules (orphan tag cleanup).
+// tests/trash.test.mjs covers the trash itself.
 // The tags table is global, so user 1 (the requester) and user 2 share rows; every action may only
 // change user 1's bookmarks and links, and a tags row goes only once nothing references it.
 async function setup(options) {
@@ -35,7 +38,8 @@ async function setup(options) {
 }
 
 const rows = (env, sql, ...args) => env.sqlite.prepare(sql).all(...args);
-const bookmarkIds = (env, userId) => rows(env, 'SELECT id FROM bookmarks WHERE user_id = ? ORDER BY id', userId).map((r) => r.id);
+// Live (not trashed) bookmark ids.
+const bookmarkIds = (env, userId) => rows(env, 'SELECT id FROM bookmarks WHERE user_id = ? AND deleted_at IS NULL ORDER BY id', userId).map((r) => r.id);
 const linksOf = (env, userId) =>
   rows(env, `SELECT bt.bookmark_id AS b, t.name FROM bookmark_tags bt JOIN bookmarks bm ON bm.id = bt.bookmark_id
              JOIN tags t ON t.id = bt.tag_id WHERE bm.user_id = ? ORDER BY bt.bookmark_id, t.name`, userId)
@@ -49,6 +53,14 @@ const snapshot = (env) => ({
 });
 
 const bulkDelete = (env, headers, body) => call(env, 'bookmarks/bulk/delete', { method: 'POST', headers, body });
+const bulkPurge = (env, headers, body) => call(env, 'bookmarks/bulk/purge', { method: 'POST', headers, body });
+const deleteForever = async (env, headers, ids) => {
+  const trashed = await bulkDelete(env, headers, { ids });
+  assert.equal(trashed.status, 200);
+  const purged = await bulkPurge(env, headers, { ids });
+  assert.equal(purged.status, 200);
+  return purged.json();
+};
 const bulkTags = (env, headers, body) => call(env, 'bookmarks/bulk/tags', { method: 'POST', headers, body });
 
 test('bulk routes require authentication', async () => {
@@ -61,14 +73,23 @@ test('bulk routes require authentication', async () => {
   } finally { env.sqlite.close(); }
 });
 
-test('bulk delete removes the requested bookmarks and their links, and keeps everything else', async () => {
+test('bulk delete moves bookmarks to the trash and keeps their links; deleting forever removes them and orphaned tags', async () => {
   const { env, headers } = await setup();
   try {
     const response = await bulkDelete(env, headers, { ids: [1, 3] });
     assert.equal(response.status, 200);
-    assert.deepEqual(await response.json(), { message: 'Deleted 2 bookmarks', requested: 2, deleted: 2, skipped: 0 });
-
+    assert.deepEqual(await response.json(), {
+      message: 'Moved 2 bookmarks to the trash', requested: 2, deleted: 2, skipped: 0, trashed: true, retentionDays: 30,
+    });
     assert.deepEqual(bookmarkIds(env, 1), [2, 4]);
+    // Trashed, not removed: the rows and their tag links stay so a restore brings the tags back.
+    assert.equal(rows(env, 'SELECT id FROM bookmarks WHERE id IN (1, 3) AND deleted_at IS NOT NULL').length, 2);
+    assert.deepEqual(tagNames(env), ['foreign', 'shared', 'solo', 'starred']);
+
+    const purged = await bulkPurge(env, headers, { ids: [1, 3] });
+    assert.equal((await purged.json()).deleted, 2);
+    assert.deepEqual(bookmarkIds(env, 1), [2, 4]);
+    assert.deepEqual(rows(env, 'SELECT id FROM bookmarks WHERE id IN (1, 3)'), []);
     // No link rows point at the deleted bookmarks.
     assert.deepEqual(rows(env, 'SELECT bookmark_id FROM bookmark_tags WHERE bookmark_id IN (1, 3)'), []);
     assert.deepEqual(linksOf(env, 1), ['2:shared', '4:starred']);
@@ -82,9 +103,8 @@ test('bulk delete removes the requested bookmarks and their links, and keeps eve
 test('bulk delete keeps a global tag row that another user links or anyone favorites', async () => {
   const { env, headers } = await setup();
   try {
-    const response = await bulkDelete(env, headers, { ids: [1, 2, 4] });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).deleted, 3);
+    const result = await deleteForever(env, headers, [1, 2, 4]);
+    assert.equal(result.deleted, 3);
     // "shared" is still linked by user 2; "starred" lost its only link but user 1 favorites it.
     assert.deepEqual(tagNames(env), ['foreign', 'shared', 'solo', 'starred']);
     assert.deepEqual(rows(env, 'SELECT tag_id FROM favorite_tags WHERE user_id = 1').map((r) => r.tag_id), [13]);
@@ -106,7 +126,9 @@ test('bulk delete skips ids that are not the requester’s and never touches oth
 
     const mixed = await bulkDelete(env, headers, { ids: [2, 5, 6, 999, 2] });
     assert.equal(mixed.status, 200);
-    assert.deepEqual(await mixed.json(), { message: 'Deleted 1 bookmark', requested: 4, deleted: 1, skipped: 3 });
+    assert.deepEqual(await mixed.json(), {
+      message: 'Moved 1 bookmark to the trash', requested: 4, deleted: 1, skipped: 3, trashed: true, retentionDays: 30,
+    });
     assert.deepEqual(bookmarkIds(env, 1), [1, 3, 4]);
     assert.deepEqual(bookmarkIds(env, 2), [5, 6]);
     assert.deepEqual(linksOf(env, 2), ['5:shared', '6:foreign']);
@@ -269,11 +291,12 @@ test('bulk tags rejects bad input with 400 and changes nothing', async () => {
 test('a failing batch leaves the library untouched (each action is atomic)', async () => {
   const { env, headers } = await setup();
   try {
+    assert.equal((await bulkDelete(env, headers, { ids: [1, 2, 3] })).status, 200); // trashing is one statement
     const before = snapshot(env);
     const realBatch = env.DB.batch.bind(env.DB);
     // Let the first statements run, then fail the batch: the harness rolls the transaction back.
     env.DB.batch = async (statements) => realBatch([...statements, { execute: () => { throw new Error('boom'); } }]);
-    const deleted = await bulkDelete(env, headers, { ids: [1, 2, 3] });
+    const deleted = await bulkPurge(env, headers, { ids: [1, 2, 3] });
     assert.equal(deleted.status, 500);
     const retagged = await bulkTags(env, headers, { ids: [1, 2], add: ['atomic'], remove: ['shared'] });
     assert.equal(retagged.status, 500);

@@ -1275,7 +1275,7 @@ function Settings({
             <h3 className="settings-delete-heading">Reset your library and keep your account</h3>
             <p className="settings-reset-lead">This permanently removes:</p>
             <ul className="settings-delete-list">
-              <li>All of your bookmarks, including private ones.</li>
+              <li>All of your bookmarks, including private ones and the ones in your Trash.</li>
               <li>The tags on those bookmarks, and your favorite tags.</li>
             </ul>
             <p className="settings-reset-lead">This keeps:</p>

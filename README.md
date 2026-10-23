@@ -28,8 +28,9 @@ Current status at a glance:
 - Bookmark title, URL, description, and tag management
 - Base URL keeps the site root with a trailing slash (for example, `https://www.google.com/`); Trim URL removes queries and fragments
 - Search, sorting, and tag query filtering (click any tag on a bookmark or in the tag panel to filter by it; combine tags to narrow results), plus a "Without tags" filter in your own library for finding and tidying up untagged bookmarks
-- Select mode in your own library (the Select button next to the search box) lets you tick bookmarks, with a live selected count and "Select this page" / "Select all N results" / "Clear selection", then add or remove tags on all of them, open them in new tabs (links beyond 10 ask for confirmation, at most 50 at a time, only http(s) links, and tabs your browser blocks are listed as links), export just that selection as HTML, CSV or JSON, or permanently delete them behind a confirmation that states the exact count. Selecting up to 500 bookmarks at once is supported, and changing a filter clears the selection. Public profiles have no select mode.
+- Select mode in your own library (the Select button next to the search box) lets you tick bookmarks, with a live selected count and "Select this page" / "Select all N results" / "Clear selection", then add or remove tags on all of them, open them in new tabs (links beyond 10 ask for confirmation, at most 50 at a time, only http(s) links, and tabs your browser blocks are listed as links), export just that selection as HTML, CSV or JSON, or move them to the Trash behind a confirmation that states the exact count (with an Undo afterwards). Selecting up to 500 bookmarks at once is supported, and changing a filter clears the selection. Public profiles have no select mode.
 - In your own library, filter by site domain or month saved, with counts for the whole library. Related and the Domain filter group subdomains together (for example, `www.reddit.com` and `old.reddit.com` under `reddit.com`, or `old.reddit.co.uk` under `reddit.co.uk`). Months include the year and use your local time zone. Combine these with search, tags, favorites and "Without tags"; Related resets the filters to the selected bookmark's site.
+- Trash with restore (`/trash`): deleting a bookmark, one or many, moves it to the Trash for 30 days instead of removing it, with an Undo right after. The Trash lists each bookmark with its deletion date and days left; you can restore (single or selected, with its tags), delete forever (single or selected) or empty the trash, the last two behind a confirmation that states the count. After 30 days a trashed bookmark is gone for good (reads treat it as gone from the 30th day exactly; the row is purged opportunistically during requests, as there is no cron). Trashed bookmarks never appear in your library, tag counts, exports, the browser extension, personal API-key reads or your public profile, and do not count toward the free plan's limit; restoring is blocked when a free account would pass 50 (a bulk restore that doesn't fit restores nothing). Saving a URL that is in your Trash replaces the trashed copy. Reset Library and Delete Account remove trashed bookmarks too
 - Free tier with a 50-bookmark limit
 - Pro tier with unlimited bookmarks
 - Stripe Checkout for upgrades ($3/month or $36/year — same rate either way)
@@ -350,7 +351,7 @@ the details.
 bearer token. It validates the body first, then checks the password through
 `confirmCurrentPassword` (shared login lockout counter and per-IP cap). Scope:
 
-- **Removed:** every bookmark of the account (private ones too), the links between those
+- **Removed:** every bookmark of the account (private ones too, and those in the trash), the links between those
   bookmarks and tags, the account's favorite tags, and any global tag names nothing else
   references (no other account's bookmark link or favorite), the same orphan rule as deleting a tag.
 - **Kept:** the account, username, email, password, sessions and extension sign-ins, API keys,
@@ -382,7 +383,7 @@ profile changes). An account whose deletion has started is refused (`403` from t
 - `GET /api/bookmarks/:id`
 - `POST /api/bookmarks`
 - `PUT /api/bookmarks/:id`
-- `DELETE /api/bookmarks/:id`
+- `DELETE /api/bookmarks/:id` — moves the bookmark to the trash (reports `trashed: true`); permanent only on a database without migration `0019`
 - `GET /api/bookmarks/by-url` — lookup by exact URL, used to detect duplicates (e.g. from the browser extension)
 - `POST /api/bookmarks/meta` — fetch a page's title metadata (public http(s) pages only; rate limited per account)
 - `POST /api/bookmarks/meta-description` — fetch a page's description metadata (same rules)
@@ -391,13 +392,16 @@ profile changes). An account whose deletion has started is refused (`403` from t
 - `POST /api/bookmarks/tags/merge`
 - `PUT /api/bookmarks/tags/:id` — rename a tag on all of your bookmarks (`{ "name": "..." }`); renaming onto a tag you already use merges them (`merged: true`)
 - `DELETE /api/bookmarks/tags/:id` — remove a tag from all of your bookmarks (bookmarks are kept); reports `removedFrom`
-- `POST /api/bookmarks/bulk/delete` — `{ "ids": [1, 2] }`: permanently delete several of your bookmarks at once; reports `requested`, `deleted` and `skipped`
+- `POST /api/bookmarks/bulk/delete` — `{ "ids": [1, 2] }`: move several of your bookmarks to the trash at once; reports `requested`, `deleted`, `skipped` and `trashed`
+- `GET /api/bookmarks/trash` — your trashed bookmarks (deleted less than 30 days ago), newest deletion first, each with `deleted_at`, `expires_at` and tags; also `retentionDays` and `available` (false before migration `0019`)
+- `POST /api/bookmarks/:id/restore`, `POST /api/bookmarks/bulk/restore` (`{ "ids": [...] }`) — restore from the trash. A free account that would pass 50 live bookmarks gets `403` with `limitReached`, `remainingSlots` and the usual upgrade message; a bulk restore is all or nothing (nothing is restored unless every restorable id fits)
+- `DELETE /api/bookmarks/:id/permanent`, `POST /api/bookmarks/bulk/purge` (`{ "ids": [...] }`), `POST /api/bookmarks/trash/empty` — delete forever (only items in the trash; others are skipped or `404`)
 - `POST /api/bookmarks/bulk/tags` — `{ "ids": [...], "add": ["a"], "remove": ["b"] }`: add and/or remove tags on several of your bookmarks at once; reports `matched`, `skipped`, `overLimit`, `tagsAdded` and `tagsRemoved`
 - `POST /api/bookmarks/tags/:id/favorite`
 - `POST /api/bookmarks/:id/favorite`
 - `POST /api/bookmarks/:id/private`
 
-The bulk routes take 1 to 500 positive integer ids per request (a longer list, a non-integer or an empty list is a `400`; duplicates are merged). Ids that aren't yours, or no longer exist, are skipped and counted in `skipped` (the response never says which exist); each request is one transaction, so it applies completely or not at all. Bulk delete is permanent. A bookmark that would pass 50 tags is left unchanged and counted in `overLimit`.
+The bulk routes take 1 to 500 positive integer ids per request (a longer list, a non-integer or an empty list is a `400`; duplicates are merged). Ids that aren't yours, or no longer exist, are skipped and counted in `skipped` (the response never says which exist); each request is one transaction, so it applies completely or not at all. Bulk delete moves to the trash (see above); bulk purge is permanent. A bookmark that would pass 50 tags is left unchanged and counted in `overLimit`.
 
 Request bodies must be JSON objects sent as `application/json` (415 otherwise) and are capped in size (413). Fields are type-checked and length-limited — bookmark title 1000 characters, URL 8192, description 10000, tags 100 characters each and 50 per bookmark — and an invalid create or update returns 400 without changing anything.
 

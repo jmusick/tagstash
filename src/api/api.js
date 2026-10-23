@@ -152,6 +152,26 @@ export const bookmarksAPI = {
 
   bulkTags: (ids, { add = [], remove = [] }) =>
     api.post('/bookmarks/bulk/tags', { ids, add, remove }),
+
+  // Trash: deleting moves bookmarks here for 30 days (src/utils/trash.js). Restoring a free
+  // account's bookmarks fails with 403 { limitReached, remainingSlots } when it would pass 50.
+  getTrash: () =>
+    api.get('/bookmarks/trash'),
+
+  restore: (id) =>
+    api.post(`/bookmarks/${id}/restore`),
+
+  bulkRestore: (ids) =>
+    api.post('/bookmarks/bulk/restore', { ids }),
+
+  deleteForever: (id) =>
+    api.delete(`/bookmarks/${id}/permanent`),
+
+  bulkPurge: (ids) =>
+    api.post('/bookmarks/bulk/purge', { ids }),
+
+  emptyTrash: () =>
+    api.post('/bookmarks/trash/empty'),
 };
 
 export const billingAPI = {

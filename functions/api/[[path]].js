@@ -1,9 +1,10 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
-import { findVisibleProfile, getProfileSchema, isProfileIndexable } from '../_lib/profileVisibility.js';
+import { findVisibleProfile, getProfileSchema, isProfileIndexable, publicBookmarkCondition } from '../_lib/profileVisibility.js';
 import { newPasswordError } from '../../src/utils/passwordPolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
+import { TRASH_RETENTION_DAYS } from '../../src/utils/trash.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -1664,6 +1665,40 @@ const recordModerationEvent = async (db, request, eventType, targetUser, adminUs
   }
 };
 
+// --- Trash (migration 0019, issue #61) ---
+// Deleting a bookmark stamps bookmarks.deleted_at instead of removing the row. `deleted_at IS NULL`
+// is a LIVE bookmark and the only kind any ordinary read, count, tag operation or public surface may
+// see; a trashed one stays visible to its owner (restore / delete forever) for TRASH_RETENTION_DAYS
+// and is gone after that, even before the opportunistic purge removes the row (see TRASH_CUTOFF_SQL).
+// Every query that reads `bookmarks` carries the live condition, built by liveBookmarkClause so a
+// deployment ahead of the migration (no column) just omits it: nothing is trashed and deletes stay
+// permanent. The cutoff uses SQLite's own clock, the same one that stamped deleted_at.
+const TRASH_CUTOFF_SQL = `datetime('now', '-${TRASH_RETENTION_DAYS} days')`;
+
+// Databases where deleted_at is known to exist. Only a positive answer is remembered (the column
+// is never dropped), so a migration applied later is noticed without waiting for a new isolate.
+const trashColumnKnown = new WeakSet();
+const bookmarksHaveTrash = async (db) => {
+  if (trashColumnKnown.has(db)) return true;
+  const hasColumn = await bookmarksTableHasColumn(db, 'deleted_at');
+  if (hasColumn) trashColumnKnown.add(db);
+  return hasColumn;
+};
+
+const columnRef = (alias, column) => (alias ? `${alias}.${column}` : column);
+
+// ` AND <alias>.deleted_at IS NULL` (or nothing before the migration). `alias` '' = unqualified.
+const liveBookmarkClause = (hasTrash, alias = 'b') =>
+  hasTrash ? ` AND ${columnRef(alias, 'deleted_at')} IS NULL` : '';
+
+// SQL (no leading AND): trashed and not yet past the retention window. Only meaningful with the column.
+const inTrashCondition = (alias = 'b') =>
+  `${columnRef(alias, 'deleted_at')} IS NOT NULL AND ${columnRef(alias, 'deleted_at')} > ${TRASH_CUTOFF_SQL}`;
+
+// SQL (no leading AND): trashed and past the retention window, i.e. due to be purged.
+const expiredTrashCondition = (alias = 'b') =>
+  `${columnRef(alias, 'deleted_at')} IS NOT NULL AND ${columnRef(alias, 'deleted_at')} <= ${TRASH_CUTOFF_SQL}`;
+
 const tableExists = async (db, tableName) => {
   const result = await db
     .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
@@ -1683,8 +1718,10 @@ const getUserPlanStatus = async (db, userId) => {
     return null;
   }
 
+  // Trashed bookmarks do not count toward the free-plan limit.
+  const hasTrash = await bookmarksHaveTrash(db);
   const countResult = await db
-    .prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE user_id = ?')
+    .prepare(`SELECT COUNT(*) AS count FROM bookmarks WHERE user_id = ?${liveBookmarkClause(hasTrash, '')}`)
     .bind(userId)
     .first();
 
@@ -1704,15 +1741,37 @@ const getUserPlanStatus = async (db, userId) => {
 // the same stale count (count-then-insert let parallel requests overshoot the limit). Built as
 // a statement for the caller's db.batch: meta.changes is 0 when the free limit refused it.
 // The bulk-import equivalent is importChunkStatements.
-const insertBookmarkWithinPlanStatement = (db, userId, { title, url, description, faviconUrl }) =>
+// Trashed bookmarks do not count toward the limit (hasTrash adds the live condition).
+const insertBookmarkWithinPlanStatement = (db, userId, { title, url, description, faviconUrl }, { hasTrash = false } = {}) =>
   db
     .prepare(
       `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
        SELECT ?1, ?2, ?3, ?4, ?5
        WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?6
-          OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1) < ?7`
+          OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1${liveBookmarkClause(hasTrash, '')}) < ?7`
     )
     .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT);
+
+// Saving a URL that is already in the trash REPLACES the trashed copy: it is removed permanently
+// (with the same orphan-tag cleanup as any permanent delete) and the new save is created fresh
+// with the title, description and tags just submitted. That keeps one live bookmark per saved URL
+// and spares the user restoring the old one by hand and then fixing it. It is part of the same
+// batch as the insert and only fires when the plan test the insert uses passes, so a save
+// refused at the free limit leaves the trashed copy alone. Must run BEFORE the tag upsert (its
+// orphan cleanup could otherwise delete a tag name the upsert just reused). Matches the
+// normalized URL and its legacy root form. Three statements.
+const replaceTrashedBookmarkStatements = (db, userId, url, { hasFavoriteTagsTable }) =>
+  permanentDeleteStatements(
+    db,
+    {
+      sql: `SELECT b.id FROM bookmarks b
+            WHERE b.user_id = ? AND b.deleted_at IS NOT NULL AND b.url IN (?, ?)
+              AND ((SELECT membership_tier FROM users WHERE id = ?) = ?
+                   OR (SELECT COUNT(*) FROM bookmarks l WHERE l.user_id = ? AND l.deleted_at IS NULL) < ?)`,
+      binds: [userId, url, legacyBookmarkUrl(url), userId, MEMBERSHIP_TIERS.PAID, userId, FREE_BOOKMARK_LIMIT],
+    },
+    { hasFavoriteTagsTable }
+  );
 
 const freeLimitResponse = () =>
   jsonResponse(
@@ -1720,13 +1779,25 @@ const freeLimitResponse = () =>
     403
   );
 
-const getTagsByBookmarkId = async (db, userId, { publicOnly = false, hasIsPrivateColumn } = {}) => {
+// Tags of the user's LIVE bookmarks by default; `trashed: true` is the owner's trash view (the
+// bookmarks still inside the retention window) and is only called with the column present.
+const getTagsByBookmarkId = async (
+  db,
+  userId,
+  { publicOnly = false, hasIsPrivateColumn, hasDeletedAtColumn, trashed = false } = {}
+) => {
   let whereClause = 'WHERE b.user_id = ?';
   if (publicOnly) {
     const isPrivateColumnExists = hasIsPrivateColumn ?? (await bookmarksTableHasColumn(db, 'is_private'));
     if (isPrivateColumnExists) {
       whereClause += ' AND b.is_private = 0';
     }
+  }
+  const hasTrash = hasDeletedAtColumn ?? (await bookmarksHaveTrash(db));
+  if (trashed) {
+    whereClause += hasTrash ? ` AND ${inTrashCondition('b')}` : ' AND 0';
+  } else {
+    whereClause += liveBookmarkClause(hasTrash, 'b');
   }
 
   const rows = await db
@@ -1768,8 +1839,10 @@ const toggleBookmarkFlag = async (db, userId, bookmarkId, columnName, { onMessag
     return { error: jsonResponse({ error: notConfiguredMessage }, 503) };
   }
 
+  // A trashed bookmark is gone as far as edits and toggles go (restore it first).
+  const hasTrash = await bookmarksHaveTrash(db);
   const bookmark = await db
-    .prepare(`SELECT id, ${columnName} FROM bookmarks WHERE id = ? AND user_id = ?`)
+    .prepare(`SELECT id, ${columnName} FROM bookmarks WHERE id = ? AND user_id = ?${liveBookmarkClause(hasTrash, '')}`)
     .bind(bookmarkId, userId)
     .first();
 
@@ -1780,7 +1853,7 @@ const toggleBookmarkFlag = async (db, userId, bookmarkId, columnName, { onMessag
   const nextValue = Number(bookmark[columnName] || 0) ? 0 : 1;
 
   await db
-    .prepare(`UPDATE bookmarks SET ${columnName} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`)
+    .prepare(`UPDATE bookmarks SET ${columnName} = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?${liveBookmarkClause(hasTrash, '')}`)
     .bind(nextValue, bookmarkId, userId)
     .run();
 
@@ -1817,13 +1890,16 @@ const linkTagNamesStatement = (db, bookmarkIdSql, bookmarkIdBinds, names, { afte
 // as a reference too, since deleting the row would cascade into their favorite_tags.
 
 // Number of the user's bookmarks carrying the tag (0 for a tag they don't use or that doesn't exist).
+// Counts LIVE bookmarks only: a tag carried only by trashed bookmarks is not one the user can see
+// (tag cloud, Tags page), so merge/rename/delete treat it as not theirs (404).
 const userTagUsageCount = async (db, userId, tagId) => {
+  const hasTrash = await bookmarksHaveTrash(db);
   const row = await db
     .prepare(
       `SELECT COUNT(*) AS count
        FROM bookmark_tags bt
        JOIN bookmarks b ON bt.bookmark_id = b.id
-       WHERE bt.tag_id = ? AND b.user_id = ?`
+       WHERE bt.tag_id = ? AND b.user_id = ?${liveBookmarkClause(hasTrash, 'b')}`
     )
     .bind(tagId, userId)
     .first();
@@ -1836,14 +1912,27 @@ const parseTagIdSegment = (value) => {
 };
 
 // Removes the tag from the user's bookmarks and favorites, then drops the global row if orphaned.
-// The first statement's meta.changes is the number of the user's bookmarks that lost the tag.
-const detachUserTagStatements = (db, userId, tagId, { hasFavoriteTagsTable }) => [
+// The first statement's meta.changes is the number of the user's LIVE bookmarks that lost the tag.
+// With the trash column, a second statement removes the tag from the user's trashed bookmarks too,
+// so a deleted (or merged-away) tag does not come back when one is restored; that count stays out
+// of the report, and a trashed link also keeps the global row alive until it is removed here.
+const detachUserTagStatements = (db, userId, tagId, { hasFavoriteTagsTable, hasTrash = false }) => [
   db
     .prepare(
       `DELETE FROM bookmark_tags
-       WHERE tag_id = ? AND bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?)`
+       WHERE tag_id = ? AND bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ?${liveBookmarkClause(hasTrash, '')})`
     )
     .bind(tagId, userId),
+  ...(hasTrash
+    ? [
+        db
+          .prepare(
+            `DELETE FROM bookmark_tags
+             WHERE tag_id = ? AND bookmark_id IN (SELECT id FROM bookmarks WHERE user_id = ? AND deleted_at IS NOT NULL)`
+          )
+          .bind(tagId, userId),
+      ]
+    : []),
   ...(hasFavoriteTagsTable
     ? [db.prepare('DELETE FROM favorite_tags WHERE user_id = ? AND tag_id = ?').bind(userId, tagId)]
     : []),
@@ -1902,39 +1991,220 @@ const parseBulkBookmarkIds = (ids) => {
   return { ids: [...new Set(ids)] };
 };
 
-// SQL fragment: the caller's bookmarks among the selected ids. Bind order: userId, ids JSON.
-const OWNED_SELECTED_BOOKMARKS_SQL =
-  'SELECT b.id FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))';
+// SQL fragment: the caller's LIVE bookmarks among the selected ids. Bind order: userId, ids JSON.
+const ownedSelectedBookmarksSql = (hasTrash) =>
+  `SELECT b.id FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))${liveBookmarkClause(hasTrash, 'b')}`;
 
-// Permanently deletes the caller's bookmarks among `ids` (and their tag links), then drops the
-// global tag rows nothing references any more. This is the ONE place bulk delete happens: a trash
-// feature (#61) should replace this function (soft-delete instead of DELETE) without touching the
-// route. Returns how many bookmarks were removed; ids that aren't the caller's are skipped.
-// Same orphan rule as tag delete and account reset: a tags row also stays while any account
-// favorites it, because deleting it would cascade into that favorite_tags row.
+// Permanent removal (trash purge, delete forever, empty trash, and bulk delete before migration
+// 0019). `selector` is { sql, binds }: a `SELECT <bookmark ids>` using only anonymous `?` binds,
+// because it is repeated verbatim in each statement. Three statements, in this order: the orphan
+// cleanup of global `tags` rows (it has to read the links before they go: tags referenced only by
+// the selected bookmarks, no other bookmark link of any account, no favorite by any account, the
+// same orphan rule as tag delete and account reset), the explicit `bookmark_tags` delete, then the
+// bookmarks delete (its `meta.changes`, index 2, is how many were removed). A selector must pick
+// the same rows each time it runs: callers only use ids/owner/state conditions, or an
+// ORDER BY id LIMIT n over a table these statements do not change before the last one.
+const permanentDeleteStatements = (db, selector, { hasFavoriteTagsTable }) => [
+  db
+    .prepare(
+      `DELETE FROM tags WHERE id IN (
+         SELECT bt.tag_id FROM bookmark_tags bt WHERE bt.bookmark_id IN (${selector.sql})
+       )
+       AND NOT EXISTS (
+         SELECT 1 FROM bookmark_tags x WHERE x.tag_id = tags.id
+           AND x.bookmark_id NOT IN (${selector.sql})
+       )
+       ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags f WHERE f.tag_id = tags.id)' : ''}`
+    )
+    .bind(...selector.binds, ...selector.binds),
+  db.prepare(`DELETE FROM bookmark_tags WHERE bookmark_id IN (${selector.sql})`).bind(...selector.binds),
+  db.prepare(`DELETE FROM bookmarks WHERE id IN (${selector.sql})`).bind(...selector.binds),
+];
+
+// The caller's trashed bookmarks (still inside the retention window) among `ids`.
+const trashedSelectionSelector = (userId, ids) => ({
+  sql: `SELECT b.id FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?)) AND ${inTrashCondition('b')}`,
+  binds: [userId, JSON.stringify(ids)],
+});
+
+// Moves the caller's bookmarks among `ids` to the trash (the ONE place the library's bulk delete,
+// and via it the single delete, happens). Ids that aren't the caller's, are already trashed, or no
+// longer exist are skipped. `deleted` is the number moved. Before migration 0019 there is no
+// trash column, so it falls back to the old permanent delete (`trashed: false`) rather than
+// erroring or hiding data. Tag links stay with a trashed bookmark (restore brings them back);
+// orphaned `tags` rows are cleaned up only when a bookmark is permanently removed.
 const bulkDeleteBookmarks = async (db, userId, ids) => {
-  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const hasTrash = await bookmarksHaveTrash(db);
   const idsJson = JSON.stringify(ids);
-  const results = await db.batch([
-    // Runs first: it has to read the links that the next statements remove.
-    db
+  if (hasTrash) {
+    const result = await db
       .prepare(
-        `DELETE FROM tags WHERE id IN (
-           SELECT bt.tag_id FROM bookmark_tags bt WHERE bt.bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM bookmark_tags x WHERE x.tag_id = tags.id
-             AND x.bookmark_id NOT IN (${OWNED_SELECTED_BOOKMARKS_SQL})
-         )
-         ${hasFavoriteTagsTable ? 'AND NOT EXISTS (SELECT 1 FROM favorite_tags f WHERE f.tag_id = tags.id)' : ''}`
+        `UPDATE bookmarks SET deleted_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND id IN (SELECT value FROM json_each(?)) AND deleted_at IS NULL`
       )
-      .bind(userId, idsJson, userId, idsJson),
-    db
-      .prepare(`DELETE FROM bookmark_tags WHERE bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})`)
-      .bind(userId, idsJson),
-    db.prepare('DELETE FROM bookmarks WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))').bind(userId, idsJson),
-  ]);
-  return { deleted: Number(results[2]?.meta?.changes || 0) };
+      .bind(userId, idsJson)
+      .run();
+    return { deleted: Number(result?.meta?.changes || 0), trashed: true };
+  }
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const results = await db.batch(
+    permanentDeleteStatements(
+      db,
+      { sql: ownedSelectedBookmarksSql(false), binds: [userId, idsJson] },
+      { hasFavoriteTagsTable }
+    )
+  );
+  return { deleted: Number(results[2]?.meta?.changes || 0), trashed: false };
+};
+
+// Restores the caller's trashed bookmarks among `ids`. ALL OR NOTHING against the free-plan limit:
+// the one UPDATE restores them only if the owner is paid or their live bookmarks plus the ones
+// being restored stay within FREE_BOOKMARK_LIMIT, decided inside the statement (like the INSERT
+// guard) so parallel restores and saves can't share the same free slots. A partial fit restores
+// none, because "which ones" would be arbitrary; the response says how much room is left. Ids that
+// aren't the caller's, aren't in the trash, or are past the retention window are skipped.
+const restoreBookmarks = async (db, userId, ids) => {
+  const idsJson = JSON.stringify(ids);
+  const result = await db
+    .prepare(
+      `UPDATE bookmarks SET deleted_at = NULL
+       WHERE user_id = ?1 AND id IN (SELECT value FROM json_each(?2)) AND ${inTrashCondition('')}
+         AND ((SELECT membership_tier FROM users WHERE id = ?1) = ?3
+              OR (SELECT COUNT(*) FROM bookmarks l WHERE l.user_id = ?1 AND l.deleted_at IS NULL)
+               + (SELECT COUNT(*) FROM bookmarks r WHERE r.user_id = ?1 AND r.id IN (SELECT value FROM json_each(?2))
+                    AND ${inTrashCondition('r')}) <= ?4)`
+    )
+    .bind(userId, idsJson, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT)
+    .run();
+  const restored = Number(result?.meta?.changes || 0);
+  if (restored > 0) return { restored, blocked: false };
+
+  // Nothing restored: either none of them could be restored at all, or the limit refused them.
+  // This read only decides the message; the UPDATE above was the control.
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS restorable FROM bookmarks b
+       WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?)) AND ${inTrashCondition('b')}`
+    )
+    .bind(userId, idsJson)
+    .first();
+  const restorable = Number(row?.restorable || 0);
+  if (restorable === 0) return { restored: 0, blocked: false };
+  const live = await db
+    .prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE user_id = ? AND deleted_at IS NULL')
+    .bind(userId)
+    .first();
+  return {
+    restored: 0,
+    blocked: true,
+    restorable,
+    remainingSlots: Math.max(FREE_BOOKMARK_LIMIT - Number(live?.count || 0), 0),
+  };
+};
+
+// Delete forever: permanently removes the caller's trashed bookmarks among `ids`. Returns how many.
+const purgeTrashedBookmarks = async (db, userId, ids) => {
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const results = await db.batch(
+    permanentDeleteStatements(db, trashedSelectionSelector(userId, ids), { hasFavoriteTagsTable })
+  );
+  return Number(results[2]?.meta?.changes || 0);
+};
+
+// Empty trash: permanently removes everything the caller has in the trash, including items already
+// past the retention window that the opportunistic purge hasn't reached yet.
+const emptyTrash = async (db, userId) => {
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const results = await db.batch(
+    permanentDeleteStatements(
+      db,
+      { sql: 'SELECT b.id FROM bookmarks b WHERE b.user_id = ? AND b.deleted_at IS NOT NULL', binds: [userId] },
+      { hasFavoriteTagsTable }
+    )
+  );
+  return Number(results[2]?.meta?.changes || 0);
+};
+
+// The caller's trash: bookmarks deleted less than TRASH_RETENTION_DAYS ago, newest deletion first,
+// each with `deleted_at`, `expires_at` (when it will be purged) and its tags.
+const listTrashedBookmarks = async (db, userId) => {
+  const rows = await db
+    .prepare(
+      `SELECT b.*, datetime(b.deleted_at, '+${TRASH_RETENTION_DAYS} days') AS expires_at
+       FROM bookmarks b WHERE b.user_id = ? AND ${inTrashCondition('b')}
+       ORDER BY b.deleted_at DESC, b.id DESC`
+    )
+    .bind(userId)
+    .all();
+  const tagsByBookmark = await getTagsByBookmarkId(db, userId, { trashed: true, hasDeletedAtColumn: true });
+  return (rows.results || []).map((bookmark) => ({
+    ...bookmark,
+    is_favorite: Number(bookmark.is_favorite || 0),
+    is_private: Number(bookmark.is_private || 0),
+    tags: tagsByBookmark.get(bookmark.id) || [],
+  }));
+};
+
+// --- Purging expired trash ---
+// There is no cron, so expired items are removed opportunistically while requests run, the way
+// auth_events retention rides on recordAuthEvent. This is only housekeeping: every read already
+// treats an item older than TRASH_RETENTION_DAYS as gone (inTrashCondition / the live clause), so
+// behaviour is exact at the boundary whenever the purge happens to run. Two bounded, throttled
+// passes, both after the response (runAfterResponse): the signed-in owner's own expired items
+// whenever they use a bookmark route, and a small global sweep for owners who never come back.
+const TRASH_OWN_PURGE_LIMIT = 500;
+const TRASH_SWEEP_LIMIT = 100;
+const TRASH_OWN_PURGE_INTERVAL_MS = 60 * 1000;
+const TRASH_SWEEP_INTERVAL_MS = 10 * 60 * 1000;
+const TRASH_THROTTLE_MAX_USERS = 1000;
+// Per database binding: when this isolate last ran each pass. Isolates are short-lived, so this
+// is a rate limiter, not a schedule; a recycled isolate just runs a pass sooner.
+const trashPurgeThrottle = new WeakMap();
+
+// Purges up to `limit` expired items (the owner's, or anyone's with userId null) and returns how
+// many. A cheap indexed probe first, so a request with nothing due costs one small read.
+const purgeExpiredTrash = async (db, { userId = null, limit }) => {
+  if (!(await bookmarksHaveTrash(db))) return 0;
+  const owner = userId === null ? '' : 'b.user_id = ? AND ';
+  const binds = userId === null ? [] : [userId];
+  const due = await db
+    .prepare(`SELECT 1 AS due FROM bookmarks b WHERE ${owner}${expiredTrashCondition('b')} LIMIT 1`)
+    .bind(...binds)
+    .first();
+  if (!due) return 0;
+  const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const results = await db.batch(
+    permanentDeleteStatements(
+      db,
+      {
+        sql: `SELECT b.id FROM bookmarks b WHERE ${owner}${expiredTrashCondition('b')} ORDER BY b.id LIMIT ${limit}`,
+        binds,
+      },
+      { hasFavoriteTagsTable }
+    )
+  );
+  return Number(results[2]?.meta?.changes || 0);
+};
+
+const maybePurgeExpiredTrash = async (context, db, userId) => {
+  const now = Date.now();
+  let state = trashPurgeThrottle.get(db);
+  if (!state) {
+    state = { sweepAt: 0, ownAt: new Map() };
+    trashPurgeThrottle.set(db, state);
+  }
+  const runOwn = now - (state.ownAt.get(userId) || 0) >= TRASH_OWN_PURGE_INTERVAL_MS;
+  const runSweep = now - state.sweepAt >= TRASH_SWEEP_INTERVAL_MS;
+  if (runOwn) {
+    if (state.ownAt.size >= TRASH_THROTTLE_MAX_USERS) state.ownAt.clear();
+    state.ownAt.set(userId, now);
+  }
+  if (runSweep) state.sweepAt = now;
+  if (!runOwn && !runSweep) return;
+  await runAfterResponse(context, 'trash purge', async () => {
+    if (runOwn) await purgeExpiredTrash(db, { userId, limit: TRASH_OWN_PURGE_LIMIT });
+    if (runSweep) await purgeExpiredTrash(db, { limit: TRASH_SWEEP_LIMIT });
+  });
 };
 
 // Adds and/or removes tags (already normalized names) on the caller's bookmarks among `ids`, in
@@ -1942,8 +2212,13 @@ const bulkDeleteBookmarks = async (db, userId, ids) => {
 // it are left alone (counted as `overLimit`) and the rest still change, checked inside the link
 // statement so a concurrent edit can't slip past a read. Touched bookmarks get a fresh
 // updated_at, like a single edit. Removed tag names are dropped from `tags` when orphaned.
+// Only LIVE bookmarks are touched: a trashed bookmark in the list is skipped like any id that
+// isn't the caller's (restore it first).
 const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
   const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
+  const hasTrash = await bookmarksHaveTrash(db);
+  const liveB = liveBookmarkClause(hasTrash, 'b');
+  const liveU = liveBookmarkClause(hasTrash, 'bookmarks');
   const idsJson = JSON.stringify(ids);
   const addJson = JSON.stringify(add);
   const removeJson = JSON.stringify(remove);
@@ -1965,7 +2240,7 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
     .prepare(
       `SELECT COUNT(*) AS owned,
               COALESCE(SUM(CASE WHEN ${add.length ? `NOT (${roomFor('b.id')})` : '0'} THEN 1 ELSE 0 END), 0) AS over_limit
-       FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))`
+       FROM bookmarks b WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))${liveB}`
     )
     .bind(...(add.length ? [addJson] : []), userId, idsJson)
     .first();
@@ -1980,7 +2255,7 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
       db
         .prepare(
           `UPDATE bookmarks SET updated_at = CURRENT_TIMESTAMP
-           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))
+           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))${liveU}
              AND ${newTagCount('bookmarks.id')} > 0 AND ${roomFor('bookmarks.id')}`
         )
         .bind(userId, idsJson, addJson, addJson),
@@ -1989,7 +2264,7 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
           `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
            SELECT b.id, t.id FROM bookmarks b
            JOIN tags t ON t.name IN (SELECT value FROM json_each(?))
-           WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?)) AND ${roomFor('b.id')}`
+           WHERE b.user_id = ? AND b.id IN (SELECT value FROM json_each(?))${liveB} AND ${roomFor('b.id')}`
         )
         .bind(addJson, userId, idsJson, addJson)
     );
@@ -2001,7 +2276,7 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
       db
         .prepare(
           `UPDATE bookmarks SET updated_at = CURRENT_TIMESTAMP
-           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))
+           WHERE user_id = ? AND id IN (SELECT value FROM json_each(?))${liveU}
              AND EXISTS (SELECT 1 FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
                          WHERE bt.bookmark_id = bookmarks.id AND t.name IN (SELECT value FROM json_each(?)))`
         )
@@ -2009,7 +2284,7 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
       db
         .prepare(
           `DELETE FROM bookmark_tags
-           WHERE bookmark_id IN (${OWNED_SELECTED_BOOKMARKS_SQL})
+           WHERE bookmark_id IN (${ownedSelectedBookmarksSql(hasTrash)})
              AND tag_id IN (SELECT id FROM tags WHERE name IN (SELECT value FROM json_each(?)))`
         )
         .bind(userId, idsJson, removeJson),
@@ -2037,7 +2312,8 @@ const bulkChangeBookmarkTags = async (db, userId, ids, { add, remove }) => {
 // target keeps a single link), then detaches the source as above. `target` is a trusted SQL
 // expression yielding the target tag id, with its binds, so a rename can name a tag upserted
 // earlier in the same batch. With `keepFavorite`, a favorited source leaves the target favorited.
-const moveUserTagStatements = (db, userId, sourceId, target, { hasFavoriteTagsTable, keepFavorite = false }) => [
+// The re-pointing covers the user's trashed bookmarks as well as live ones (see detachUserTagStatements).
+const moveUserTagStatements = (db, userId, sourceId, target, { hasFavoriteTagsTable, hasTrash = false, keepFavorite = false }) => [
   db
     .prepare(
       `INSERT OR IGNORE INTO bookmark_tags (bookmark_id, tag_id)
@@ -2058,7 +2334,7 @@ const moveUserTagStatements = (db, userId, sourceId, target, { hasFavoriteTagsTa
           .bind(...target.binds, userId, sourceId),
       ]
     : []),
-  ...detachUserTagStatements(db, userId, sourceId, { hasFavoriteTagsTable }),
+  ...detachUserTagStatements(db, userId, sourceId, { hasFavoriteTagsTable, hasTrash }),
 ];
 
 // [{ id, name }] for the given tag names, in the same order.
@@ -2346,7 +2622,9 @@ const listBookmarks = async (db, userId) => {
   const hasIsPrivateColumn = bookmarksColumnNames.has('is_private');
   const favoriteSelect = hasIsFavoriteColumn ? '*' : '*, 0 AS is_favorite';
   const privateSelect = hasIsPrivateColumn ? favoriteSelect : `${favoriteSelect}, 0 AS is_private`;
-  const bookmarksQuery = `SELECT ${privateSelect} FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`;
+  // Live bookmarks only: the trash is listed by listTrashedBookmarks.
+  const liveClause = liveBookmarkClause(bookmarksColumnNames.has('deleted_at'), '');
+  const bookmarksQuery = `SELECT ${privateSelect} FROM bookmarks WHERE user_id = ?${liveClause} ORDER BY created_at DESC`;
 
   const bookmarksResult = await db
     .prepare(bookmarksQuery)
@@ -2466,11 +2744,27 @@ const chunkByJsonSize = (items, maxItems, maxBytes) => {
   return chunks;
 };
 
-const findExistingBookmarkUrls = async (db, userId, urls) => {
-  const existing = new Set();
+// URLs (exact strings) among `urls` that the account has in the trash, in any state of expiry.
+const findTrashedBookmarkUrls = async (db, userId, urls) => {
+  const trashed = new Set();
   for (const chunk of chunkByJsonSize(urls, Infinity, IMPORT_CHUNK_BYTES)) {
     const rows = await db
-      .prepare('SELECT url FROM bookmarks WHERE user_id = ? AND url IN (SELECT value FROM json_each(?))')
+      .prepare('SELECT url FROM bookmarks WHERE user_id = ? AND deleted_at IS NOT NULL AND url IN (SELECT value FROM json_each(?))')
+      .bind(userId, JSON.stringify(chunk))
+      .all();
+    for (const row of rows.results || []) trashed.add(row.url);
+  }
+  return trashed;
+};
+
+// URLs the account already has as LIVE bookmarks. A URL that is only in the trash is not a
+// duplicate: the import replaces the trashed copy (see importChunkStatements).
+const findExistingBookmarkUrls = async (db, userId, urls) => {
+  const existing = new Set();
+  const hasTrash = await bookmarksHaveTrash(db);
+  for (const chunk of chunkByJsonSize(urls, Infinity, IMPORT_CHUNK_BYTES)) {
+    const rows = await db
+      .prepare(`SELECT url FROM bookmarks WHERE user_id = ? AND url IN (SELECT value FROM json_each(?))${liveBookmarkClause(hasTrash, '')}`)
       .bind(userId, JSON.stringify(chunk))
       .all();
     for (const row of rows.results || []) existing.add(row.url);
@@ -2479,7 +2773,14 @@ const findExistingBookmarkUrls = async (db, userId, urls) => {
 };
 
 // Three statements per chunk regardless of size: upsert the chunk's tag names, insert its
-// bookmarks, then link tags.
+// bookmarks, then link tags. When some URL in the chunk is also in the account's trash
+// (`replaceTrashed`, found by a read just before), three more come FIRST: they permanently remove
+// those trashed copies (a saved URL replaces its trashed copy; see replaceTrashedBookmarkStatements).
+// They run before the tag upsert because their orphan-tag cleanup could otherwise drop a tag name
+// the upsert just reused, and they cover only rows the insert will actually admit (same plan test
+// as the insert), so a refused row never costs the user its trashed copy. A trashed copy that
+// appears after that read just stays in the trash next to the new bookmark. Callers locate the
+// three core statements by counting from the end.
 // - The insert enforces the plan atomically, like insertBookmarkWithinPlanStatement: a paid
 //   owner gets every row; a free one only rows with key < limit - (current count), so
 //   concurrent imports can't each spend the same remaining slots. Because the SELECT reads
@@ -2489,9 +2790,32 @@ const findExistingBookmarkUrls = async (db, userId, urls) => {
 //   key 0 the highest id and each row's id is MAX(id) - key, whatever k turned out to be.
 // - The link step runs straight after the insert, so changes() is k: only admitted rows are
 //   linked, and the join re-checks owner and URL so a link can never land elsewhere.
-const importChunkStatements = (db, userId, chunk) => {
+const importChunkStatements = (
+  db,
+  userId,
+  chunk,
+  { hasTrash = false, replaceTrashed = false, hasFavoriteTagsTable = false } = {}
+) => {
   const payload = JSON.stringify(chunk);
+  const replaceTrashedStatements = replaceTrashed
+    ? permanentDeleteStatements(
+        db,
+        {
+          // Each record is [title, url, description, favicon, tags, legacyUrl]; a row is admitted
+          // exactly when the INSERT below admits it.
+          sql: `SELECT b.id FROM bookmarks b
+                WHERE b.user_id = ? AND b.deleted_at IS NOT NULL AND EXISTS (
+                  SELECT 1 FROM json_each(?) rec
+                  WHERE (b.url = json_extract(rec.value, '$[1]') OR b.url = json_extract(rec.value, '$[5]'))
+                    AND ((SELECT membership_tier FROM users WHERE id = ?) = ?
+                         OR rec.key < ? - (SELECT COUNT(*) FROM bookmarks l WHERE l.user_id = ? AND l.deleted_at IS NULL)))`,
+          binds: [userId, payload, userId, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT, userId],
+        },
+        { hasFavoriteTagsTable }
+      )
+    : [];
   return [
+    ...replaceTrashedStatements,
     db
       .prepare(
         `INSERT OR IGNORE INTO tags (name)
@@ -2504,7 +2828,7 @@ const importChunkStatements = (db, userId, chunk) => {
          SELECT ?1, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
          FROM json_each(?2)
          WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?3
-            OR key < ?4 - (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1)
+            OR key < ?4 - (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1${liveBookmarkClause(hasTrash, '')})
          ORDER BY key DESC`
       )
       .bind(userId, payload, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT),
@@ -2579,12 +2903,22 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
     bookmark.description,
     getFaviconUrl(bookmark.url),
     bookmark.tags,
+    legacyBookmarkUrl(bookmark.url),
   ]);
+  const hasTrash = await bookmarksHaveTrash(db);
+  const trashedUrls = hasTrash && records.length
+    ? await findTrashedBookmarkUrls(db, userId, records.flatMap((record) => [record[1], record[5]]))
+    : new Set();
+  const hasFavoriteTagsTable = trashedUrls.size > 0 && (await tableExists(db, 'favorite_tags'));
   let pending = records.length;
   for (const chunk of chunkByJsonSize(records, IMPORT_CHUNK_ROWS, IMPORT_CHUNK_BYTES)) {
     let results;
     try {
-      results = await db.batch(importChunkStatements(db, userId, chunk));
+      const replaceTrashed = chunk.some((record) => trashedUrls.has(record[1]) || trashedUrls.has(record[5]));
+      const statements = importChunkStatements(db, userId, chunk, { hasTrash, replaceTrashed, hasFavoriteTagsTable });
+      // upsert, insert, link are always the last three (the trash replacement, if any, comes first).
+      const offset = statements.length - 3;
+      results = (await db.batch(statements)).slice(offset);
     } catch (error) {
       console.error('[import] chunk failed; earlier chunks were kept:', error?.message ?? error);
       summary.skipped += pending;
@@ -3839,7 +4173,7 @@ async function handleAuth(request, env, segments, context = {}) {
                 COUNT(b.id) AS bookmark_count,
                 ${publicCountSelect} AS public_bookmark_count
          FROM users u
-         LEFT JOIN bookmarks b ON b.user_id = u.id
+         LEFT JOIN bookmarks b ON b.user_id = u.id${liveBookmarkClause(schema.hasDeletedAt, 'b')}
          GROUP BY u.id
          ORDER BY u.created_at DESC`
       )
@@ -4273,10 +4607,36 @@ async function handleAuth(request, env, segments, context = {}) {
   return jsonResponse({ error: 'Route not found' }, 404);
 }
 
-async function handleBookmarks(request, env, segments) {
+const trashUnavailableResponse = () =>
+  jsonResponse({ error: 'Trash is not available yet. Please try again later.' }, 503);
+
+const restoreBlockedResponse = (result, { single }) =>
+  jsonResponse(
+    {
+      error: single
+        ? `Restoring this bookmark would go over the free plan's limit of ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks, or delete one first.`
+        : `Restoring ${result.restorable} bookmarks would go over the free plan's limit of ${FREE_BOOKMARK_LIMIT} bookmarks, and you have room for ${result.remainingSlots} more. Nothing was restored. Restore fewer, or upgrade to paid for unlimited bookmarks.`,
+      limitReached: true,
+      restored: 0,
+      remainingSlots: result.remainingSlots,
+    },
+    403
+  );
+
+const parseBookmarkIdSegment = (value) => {
+  const id = Number(value);
+  return /^\d+$/.test(value || '') && Number.isSafeInteger(id) && id > 0 ? id : null;
+};
+
+async function handleBookmarks(request, env, segments, context = {}) {
   const db = env.DB;
   const auth = await requireAuth(request, env, { allowApiKey: true });
   if (auth.error) return auth.error;
+
+  // False before migration 0019: nothing is trashed, deletes stay permanent, and no query below
+  // may name deleted_at (every one builds its live condition from this).
+  const hasTrash = await bookmarksHaveTrash(db);
+  if (hasTrash) await maybePurgeExpiredTrash(context, db, auth.user.id);
 
   if (request.method === 'GET' && segments.length === 1) {
     const bookmarks = await listBookmarks(db, auth.user.id);
@@ -4337,8 +4697,10 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: 'url query parameter is required' }, 400);
     }
 
+    // Live bookmarks only, so a URL that is just in the trash reads as "not saved" (the extension
+    // then saves it fresh, which replaces the trashed copy).
     const bookmark = await db
-      .prepare('SELECT * FROM bookmarks WHERE user_id = ? AND url IN (?, ?) ORDER BY id LIMIT 1')
+      .prepare(`SELECT * FROM bookmarks WHERE user_id = ? AND url IN (?, ?)${liveBookmarkClause(hasTrash, '')} ORDER BY id LIMIT 1`)
       .bind(auth.user.id, normalizeBookmarkUrl(url), legacyBookmarkUrl(url))
       .first();
 
@@ -4420,7 +4782,7 @@ async function handleBookmarks(request, env, segments) {
          INNER JOIN bookmark_tags bt ON t.id = bt.tag_id
          INNER JOIN bookmarks b ON bt.bookmark_id = b.id
          ${favoriteJoin}
-         WHERE b.user_id = ?
+         WHERE b.user_id = ?${liveBookmarkClause(hasTrash, 'b')}
          GROUP BY t.id, t.name, ft.tag_id
          ORDER BY is_favorite DESC, count DESC, t.name ASC`
       )
@@ -4469,7 +4831,7 @@ async function handleBookmarks(request, env, segments) {
     const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
 
     await db.batch(
-      moveUserTagStatements(db, auth.user.id, sourceId, { sql: '?', binds: [targetId] }, { hasFavoriteTagsTable })
+      moveUserTagStatements(db, auth.user.id, sourceId, { sql: '?', binds: [targetId] }, { hasFavoriteTagsTable, hasTrash })
     );
 
     return jsonResponse({
@@ -4523,7 +4885,7 @@ async function handleBookmarks(request, env, segments) {
         auth.user.id,
         tagId,
         { sql: '(SELECT id FROM tags WHERE name = ?)', binds: [newName] },
-        { hasFavoriteTagsTable, keepFavorite: true }
+        { hasFavoriteTagsTable, hasTrash, keepFavorite: true }
       ),
     ]);
 
@@ -4552,7 +4914,7 @@ async function handleBookmarks(request, env, segments) {
     }
 
     const hasFavoriteTagsTable = await tableExists(db, 'favorite_tags');
-    const [unlinked] = await db.batch(detachUserTagStatements(db, auth.user.id, tagId, { hasFavoriteTagsTable }));
+    const [unlinked] = await db.batch(detachUserTagStatements(db, auth.user.id, tagId, { hasFavoriteTagsTable, hasTrash }));
     const removedFrom = Number(unlinked?.meta?.changes || 0);
 
     return jsonResponse({
@@ -4569,13 +4931,93 @@ async function handleBookmarks(request, env, segments) {
       return jsonResponse({ error: parsed.error }, 400);
     }
 
-    const { deleted } = await bulkDeleteBookmarks(db, auth.user.id, parsed.ids);
+    // Moves them to the trash (permanent only before migration 0019). `deleted` keeps meaning
+    // "bookmarks removed from the library"; `trashed` says whether they can still be restored.
+    const { deleted, trashed } = await bulkDeleteBookmarks(db, auth.user.id, parsed.ids);
     return jsonResponse({
-      message: `Deleted ${deleted} bookmark${deleted === 1 ? '' : 's'}`,
+      message: trashed
+        ? `Moved ${deleted} bookmark${deleted === 1 ? '' : 's'} to the trash`
+        : `Deleted ${deleted} bookmark${deleted === 1 ? '' : 's'}`,
+      requested: parsed.ids.length,
+      deleted,
+      skipped: parsed.ids.length - deleted,
+      trashed,
+      ...(trashed ? { retentionDays: TRASH_RETENTION_DAYS } : {}),
+    });
+  }
+
+  // Trash: list, restore, delete forever, empty. See bulkDeleteBookmarks / restoreBookmarks for the
+  // rules. All of them are about the caller's own trash only; before migration 0019 the list is
+  // empty and the rest answer 503.
+  if (request.method === 'GET' && segments[1] === 'trash' && segments.length === 2) {
+    if (!hasTrash) {
+      return jsonResponse({ bookmarks: [], retentionDays: TRASH_RETENTION_DAYS, available: false });
+    }
+    return jsonResponse({
+      bookmarks: await listTrashedBookmarks(db, auth.user.id),
+      retentionDays: TRASH_RETENTION_DAYS,
+      available: true,
+    });
+  }
+
+  if (request.method === 'POST' && segments[1] === 'trash' && segments[2] === 'empty' && segments.length === 3) {
+    if (!hasTrash) return trashUnavailableResponse();
+    const deleted = await emptyTrash(db, auth.user.id);
+    return jsonResponse({ message: `Deleted ${deleted} bookmark${deleted === 1 ? '' : 's'} forever`, deleted });
+  }
+
+  if (request.method === 'POST' && segments[1] === 'bulk' && segments[2] === 'restore' && segments.length === 3) {
+    const parsed = parseBulkBookmarkIds((await parseBody(request)).ids);
+    if (parsed.error) {
+      return jsonResponse({ error: parsed.error }, 400);
+    }
+    if (!hasTrash) return trashUnavailableResponse();
+
+    const result = await restoreBookmarks(db, auth.user.id, parsed.ids);
+    if (result.blocked) return restoreBlockedResponse(result, { single: false });
+    return jsonResponse({
+      message: `Restored ${result.restored} bookmark${result.restored === 1 ? '' : 's'}`,
+      requested: parsed.ids.length,
+      restored: result.restored,
+      skipped: parsed.ids.length - result.restored,
+    });
+  }
+
+  if (request.method === 'POST' && segments[1] === 'bulk' && segments[2] === 'purge' && segments.length === 3) {
+    const parsed = parseBulkBookmarkIds((await parseBody(request)).ids);
+    if (parsed.error) {
+      return jsonResponse({ error: parsed.error }, 400);
+    }
+    if (!hasTrash) return trashUnavailableResponse();
+
+    const deleted = await purgeTrashedBookmarks(db, auth.user.id, parsed.ids);
+    return jsonResponse({
+      message: `Deleted ${deleted} bookmark${deleted === 1 ? '' : 's'} forever`,
       requested: parsed.ids.length,
       deleted,
       skipped: parsed.ids.length - deleted,
     });
+  }
+
+  if (request.method === 'POST' && segments[1] && segments[2] === 'restore' && segments.length === 3) {
+    const bookmarkId = parseBookmarkIdSegment(segments[1]);
+    if (!bookmarkId) return jsonResponse({ error: 'Invalid bookmark id' }, 400);
+    if (!hasTrash) return trashUnavailableResponse();
+
+    const result = await restoreBookmarks(db, auth.user.id, [bookmarkId]);
+    if (result.blocked) return restoreBlockedResponse(result, { single: true });
+    if (!result.restored) return jsonResponse({ error: 'Bookmark not found in the trash' }, 404);
+    return jsonResponse({ message: 'Bookmark restored successfully', restored: 1 });
+  }
+
+  if (request.method === 'DELETE' && segments[1] && segments[2] === 'permanent' && segments.length === 3) {
+    const bookmarkId = parseBookmarkIdSegment(segments[1]);
+    if (!bookmarkId) return jsonResponse({ error: 'Invalid bookmark id' }, 400);
+    if (!hasTrash) return trashUnavailableResponse();
+
+    const deleted = await purgeTrashedBookmarks(db, auth.user.id, [bookmarkId]);
+    if (!deleted) return jsonResponse({ error: 'Bookmark not found in the trash' }, 404);
+    return jsonResponse({ message: 'Bookmark deleted forever' });
   }
 
   if (request.method === 'POST' && segments[1] === 'bulk' && segments[2] === 'tags' && segments.length === 3) {
@@ -4661,7 +5103,7 @@ async function handleBookmarks(request, env, segments) {
         `SELECT t.id, t.name FROM tags t
          WHERE t.id = ?
            AND (EXISTS (SELECT 1 FROM bookmark_tags bt JOIN bookmarks b ON bt.bookmark_id = b.id
-                        WHERE bt.tag_id = t.id AND b.user_id = ?)
+                        WHERE bt.tag_id = t.id AND b.user_id = ?${liveBookmarkClause(hasTrash, 'b')})
                 OR EXISTS (SELECT 1 FROM favorite_tags ft WHERE ft.tag_id = t.id AND ft.user_id = ?))`
       )
       .bind(tagId, auth.user.id, auth.user.id)
@@ -4721,22 +5163,31 @@ async function handleBookmarks(request, env, segments) {
     // One transaction: the plan-guarded insert and its tag links land together or not at all.
     // The new row is the user's highest id inside the batch, which is how the link step finds
     // it; the link is gated on that insert having happened.
-    const insertStatement = insertBookmarkWithinPlanStatement(db, auth.user.id, {
-      title,
-      url,
-      description,
-      faviconUrl: getFaviconUrl(url),
-    });
-    const statements = tagNames.length
-      ? [
-          upsertTagNamesStatement(db, tagNames),
-          insertStatement,
-          linkTagNamesStatement(db, '(SELECT MAX(id) FROM bookmarks WHERE user_id = ?)', [auth.user.id], tagNames, {
-            afterGuardedInsert: true,
-          }),
-        ]
-      : [insertStatement];
-    const insert = (await db.batch(statements))[tagNames.length ? 1 : 0];
+    const insertStatement = insertBookmarkWithinPlanStatement(
+      db,
+      auth.user.id,
+      { title, url, description, faviconUrl: getFaviconUrl(url) },
+      { hasTrash }
+    );
+    // A trashed copy of this URL is replaced by the new save (see replaceTrashedBookmarkStatements).
+    const replaceTrashed = hasTrash
+      ? replaceTrashedBookmarkStatements(db, auth.user.id, url, {
+          hasFavoriteTagsTable: await tableExists(db, 'favorite_tags'),
+        })
+      : [];
+    const statements = [
+      ...replaceTrashed,
+      ...(tagNames.length ? [upsertTagNamesStatement(db, tagNames)] : []),
+      insertStatement,
+      ...(tagNames.length
+        ? [
+            linkTagNamesStatement(db, '(SELECT MAX(id) FROM bookmarks WHERE user_id = ?)', [auth.user.id], tagNames, {
+              afterGuardedInsert: true,
+            }),
+          ]
+        : []),
+    ];
+    const insert = (await db.batch(statements))[replaceTrashed.length + (tagNames.length ? 1 : 0)];
     if (!insert?.meta?.changes) {
       return freeLimitResponse();
     }
@@ -4762,7 +5213,7 @@ async function handleBookmarks(request, env, segments) {
 
     if (request.method === 'GET') {
       const bookmark = await db
-        .prepare('SELECT * FROM bookmarks WHERE id = ? AND user_id = ?')
+        .prepare(`SELECT * FROM bookmarks WHERE id = ? AND user_id = ?${liveBookmarkClause(hasTrash, '')}`)
         .bind(bookmarkId, auth.user.id)
         .first();
 
@@ -4787,7 +5238,7 @@ async function handleBookmarks(request, env, segments) {
       const body = await parseBody(request);
 
       const existing = await db
-        .prepare('SELECT * FROM bookmarks WHERE id = ? AND user_id = ?')
+        .prepare(`SELECT * FROM bookmarks WHERE id = ? AND user_id = ?${liveBookmarkClause(hasTrash, '')}`)
         .bind(bookmarkId, auth.user.id)
         .first();
 
@@ -4836,16 +5287,20 @@ async function handleBookmarks(request, env, segments) {
     }
 
     if (request.method === 'DELETE') {
-      const result = await db
-        .prepare('DELETE FROM bookmarks WHERE id = ? AND user_id = ?')
-        .bind(bookmarkId, auth.user.id)
-        .run();
+      // Same path as the bulk delete: into the trash (permanent only before migration 0019).
+      const { deleted, trashed } = Number.isSafeInteger(bookmarkId) && bookmarkId > 0
+        ? await bulkDeleteBookmarks(db, auth.user.id, [bookmarkId])
+        : { deleted: 0, trashed: hasTrash };
 
-      if ((result.meta.changes || 0) === 0) {
+      if (deleted === 0) {
         return jsonResponse({ error: 'Bookmark not found' }, 404);
       }
 
-      return jsonResponse({ message: 'Bookmark deleted successfully' });
+      return jsonResponse(
+        trashed
+          ? { message: 'Bookmark moved to the trash', trashed: true, retentionDays: TRASH_RETENTION_DAYS }
+          : { message: 'Bookmark deleted successfully', trashed: false }
+      );
     }
   }
 
@@ -4904,15 +5359,14 @@ async function handleProfiles(request, env, segments, context = {}) {
     return jsonResponse({ error: 'Not found' }, 404);
   }
 
-  const bookmarksQuery = hasIsPrivateColumn
-    ? `SELECT id, title, url, description, favicon_url, created_at, updated_at
-       FROM bookmarks WHERE user_id = ? AND is_private = 0 ORDER BY created_at DESC`
-    : `SELECT id, title, url, description, favicon_url, created_at, updated_at
-       FROM bookmarks WHERE user_id = ? ORDER BY created_at DESC`;
+  // Public = not private and not in the trash (the same condition as the SSR, the sitemap and the
+  // indexing bar's count).
+  const bookmarksQuery = `SELECT b.id, b.title, b.url, b.description, b.favicon_url, b.created_at, b.updated_at
+       FROM bookmarks b WHERE b.user_id = ?${publicBookmarkCondition(schema)} ORDER BY b.created_at DESC`;
 
   const [bookmarksResult, tagsByBookmark] = await Promise.all([
     db.prepare(bookmarksQuery).bind(user.id).all(),
-    getTagsByBookmarkId(db, user.id, { publicOnly: true, hasIsPrivateColumn }),
+    getTagsByBookmarkId(db, user.id, { publicOnly: true, hasIsPrivateColumn, hasDeletedAtColumn: schema.hasDeletedAt }),
   ]);
 
   let bookmarks = (bookmarksResult.results || []).map((bookmark) => ({
@@ -5329,7 +5783,7 @@ async function routeRequest(context) {
     }
 
     if (segments[1] === 'bookmarks') {
-      return await handleBookmarks(request, env, segments.slice(1));
+      return await handleBookmarks(request, env, segments.slice(1), context);
     }
 
     if (segments[1] === 'profiles') {

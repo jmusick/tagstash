@@ -14,9 +14,16 @@
 //               /features, /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form,
 //               select mode: none selected, some selected, the tag form with a validation error and a
-//               refused request, export formats, tabs blocked by the browser, the delete confirmation
-//               and a refused delete, and a selection cleared by a filter; every bulk request is
-//               answered by an interception so the seeded library is never changed), /settings (every tab,
+//               refused request, export formats, tabs blocked by the browser, the move-to-trash
+//               confirmation, a refused delete, the "moved to the trash" result with Undo (and a
+//               refused/successful Undo), and a selection cleared by a filter; the single-delete
+//               "moved to the trash" notice with Undo and a refused Undo; every bulk and delete
+//               request is answered by an interception so the seeded library is never changed),
+//               /trash (empty, empty with the load failing, items, some selected, the delete-forever
+//               and empty-trash confirmations, a refused delete forever, the per-item delete-forever
+//               confirmation, a restore blocked at the free-plan limit with the upgrade prompt, a
+//               refused restore and a successful restore; every trash request is answered by an
+//               interception, so nothing is trashed or restored), /settings (every tab,
 //               plus an error, a success banner, the import preview and API Keys loading,
 //               empty, generating, show-once/active, revoked and creation-error states), /tags
 //               (empty merge slots, a selected merge pair, the rename form with a
@@ -497,6 +504,112 @@ async function apiKeyStates(page, scan) {
   await page.unroute('**/api/auth/api-keys/4242')
 }
 
+// The Trash view. Every trash request is answered by an interception (the list from fixtures,
+// every action from a chosen answer), so the seeded library is never trashed or restored.
+async function trashStates(page, scan, setBulk) {
+  const stamp = (daysAgo) => new Date(Date.now() - daysAgo * 86400000).toISOString().slice(0, 19).replace('T', ' ')
+  const item = (id, title, url, daysAgo, tagNames, description = null) => ({
+    id, title, url, description, favicon_url: null, is_favorite: 0, is_private: 0,
+    created_at: '2026-08-01 10:00:00', updated_at: '2026-08-01 10:00:00', deleted_at: stamp(daysAgo),
+    tags: tagNames.map((name, index) => ({ id: id * 10 + index, name })),
+  })
+  const fixtures = [
+    item(901, 'Old article on caching', 'https://www.example.com/caching', 0.01, ['reading', 'dev'], 'Deleted a moment ago, so 30 days left.'),
+    item(902, 'Recipe for flatbread', 'https://example.org/flatbread', 12, ['food']),
+    item(903, 'Conference talk video', 'https://example.net/talk', 29.5, []),
+  ]
+  const ok = (bookmarks) => ({ status: 200, body: { bookmarks, retentionDays: 30, available: true } })
+  const setList = await interceptJson(page, '**/api/bookmarks/trash', ok([]))
+  const setEmpty = await interceptJson(page, '**/api/bookmarks/trash/empty', { status: 500, body: { error: 'Blocked by the accessibility audit' } })
+  const setOne = await interceptJson(page, /\/api\/bookmarks\/\d+\/(restore|permanent)$/, { status: 500, body: { error: 'Blocked by the accessibility audit' } })
+  const refused = { status: 500, body: { error: 'Blocked by the accessibility audit' } }
+  await setBulk(refused)
+  const alertWith = (text) => page.getByRole('alert').filter({ hasText: text }).waitFor()
+  const toolbar = page.getByRole('toolbar', { name: 'Actions for selected bookmarks in the trash' })
+
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Trash' }).click()
+  await page.getByRole('heading', { name: 'Trash', level: 1 }).waitFor()
+  await page.locator('.empty-state').waitFor()
+  await scan('/trash (empty)')
+
+  setList(ok(fixtures))
+  await page.reload()
+  await page.locator('.trash-card').first().waitFor()
+  if ((await page.locator('.trash-card').count()) !== 3) throw new Error('The trash should list its three items')
+  if (!/30 days left/.test(await page.locator('.trash-card').nth(0).textContent())) throw new Error('A just-deleted item should have 30 days left')
+  if (!/1 day left/.test(await page.locator('.trash-card').nth(2).textContent())) throw new Error('An item deleted 29.5 days ago should have 1 day left')
+  await scan('/trash (items)')
+
+  await page.getByRole('checkbox', { name: 'Select Old article on caching' }).check()
+  await page.getByRole('checkbox', { name: 'Select Recipe for flatbread' }).check()
+  await page.waitForFunction(() => /^2 selected/.test(document.querySelector('.bulk-count')?.textContent || ''))
+  await scan('/trash (some selected)')
+  await toolbar.getByRole('button', { name: 'Select shown (3)' }).focus()
+  await page.keyboard.press('End')
+  if ((await page.evaluate(() => document.activeElement?.textContent || '')).trim() !== 'Empty trash') throw new Error('End should focus the last toolbar button')
+
+  // Delete forever (selection): confirmation with the count, then a refusal.
+  await toolbar.getByRole('button', { name: 'Delete forever', exact: true }).click()
+  const purgeGroup = page.getByRole('group', { name: /Permanently delete 2 bookmarks\?/ })
+  await purgeGroup.waitFor()
+  if (!(await page.evaluate(() => document.activeElement?.textContent === 'Cancel'))) throw new Error('The delete forever confirmation should focus Cancel')
+  await scan('/trash (delete forever confirmation)')
+  await purgeGroup.getByRole('button', { name: 'Delete 2 bookmarks forever', exact: true }).click()
+  await alertWith('Blocked by the accessibility audit')
+  await scan('/trash (delete forever refused)')
+
+  // Empty trash: the confirmation states how many are in the trash.
+  await toolbar.getByRole('button', { name: 'Empty trash', exact: true }).click()
+  const emptyGroup = page.getByRole('group', { name: /everything in the trash, 3 bookmarks\?/ })
+  await emptyGroup.waitFor()
+  await scan('/trash (empty trash confirmation)')
+  await emptyGroup.getByRole('button', { name: 'Empty trash (3 bookmarks)', exact: true }).click()
+  await alertWith('Blocked by the accessibility audit')
+  await scan('/trash (empty trash refused)')
+
+  // Per-item delete forever confirmation, cancelled (focus returns to its button).
+  await page.getByRole('button', { name: 'Delete Conference talk video forever', exact: true }).click()
+  const cardGroup = page.locator('.trash-card-confirm')
+  await cardGroup.waitFor()
+  await scan('/trash (delete one forever confirmation)')
+  await cardGroup.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.waitForFunction(() => document.activeElement?.id === 'trash-forever-903', null, { timeout: 3000 })
+    .catch(() => { throw new Error('Cancelling should return focus to the item\'s Delete forever button') })
+
+  // Restore refused by the free-plan limit: the message and the upgrade prompt.
+  await setBulk({ status: 403, body: { error: 'Restoring 2 bookmarks would go over the free plan\'s limit of 50 bookmarks, and you have room for 1 more. Nothing was restored. Restore fewer, or upgrade to paid for unlimited bookmarks.', limitReached: true, restored: 0, remainingSlots: 1 } })
+  await toolbar.getByRole('button', { name: 'Restore', exact: true }).click()
+  await alertWith('Nothing was restored')
+  await page.getByRole('button', { name: 'Upgrade (Monthly)', exact: true }).waitFor()
+  await scan('/trash (restore blocked at the free limit)')
+
+  // A restore refused for another reason, from the item's own button.
+  await page.getByRole('button', { name: 'Restore Recipe for flatbread', exact: true }).click()
+  await alertWith('Blocked by the accessibility audit')
+  await scan('/trash (restore refused)')
+
+  // A successful bulk restore: the status message, and the list shrinks.
+  await setBulk({ status: 200, body: { message: 'Restored 2 bookmarks', requested: 2, restored: 2, skipped: 0 } })
+  setList(ok(fixtures.slice(2)))
+  await toolbar.getByRole('button', { name: 'Restore', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Restored 2 bookmarks.' }).waitFor()
+  await page.waitForFunction(() => document.querySelectorAll('.trash-card').length === 1)
+  await scan('/trash (restored)')
+
+  // The trash itself failing to load.
+  setList({ status: 500, body: { error: 'Blocked by the accessibility audit' } })
+  await page.reload()
+  await page.getByText('Failed to load the trash.', { exact: true }).waitFor()
+  await scan('/trash (load error)')
+  setList(ok([]))
+  await page.getByRole('button', { name: 'Try again', exact: true }).click()
+  await page.locator('.empty-state').filter({ hasText: 'The trash is empty' }).waitFor()
+
+  setEmpty(refused)
+  setOne(refused)
+  await setBulk(refused)
+}
+
 async function owner(browser, theme) {
   const context = await newContext(browser, theme)
   const page = await context.newPage()
@@ -602,7 +715,7 @@ async function owner(browser, theme) {
 
   // Select mode. Every bulk request is answered by an interception (a refusal), so nothing
   // here can change the seeded library even if a click lands on a real action.
-  await interceptJson(page, '**/api/bookmarks/bulk/**', { status: 500, body: { error: 'Blocked by the accessibility audit' } })
+  const setBulk = await interceptJson(page, '**/api/bookmarks/bulk/**', { status: 500, body: { error: 'Blocked by the accessibility audit' } })
   const selectToggle = page.getByRole('button', { name: 'Select bookmarks', exact: true })
   await selectToggle.click()
   const toolbar = page.getByRole('toolbar', { name: 'Bulk actions for selected bookmarks' })
@@ -650,13 +763,28 @@ async function owner(browser, theme) {
   await page.getByRole('button', { name: 'Close', exact: true }).click()
 
   await toolbar.getByRole('button', { name: 'Delete', exact: true }).click()
-  const deleteGroup = page.getByRole('group', { name: /Permanently delete 2 bookmarks\?/ })
+  const deleteGroup = page.getByRole('group', { name: /Move 2 bookmarks to the trash\?/ })
   await deleteGroup.waitFor()
-  await scan('/ (select mode, delete confirmation)')
-  await deleteGroup.getByRole('button', { name: 'Delete 2 bookmarks', exact: true }).click()
+  if (!(await page.evaluate(() => document.activeElement?.textContent === 'Cancel'))) throw new Error('The delete confirmation should focus Cancel')
+  await scan('/ (select mode, move to trash confirmation)')
+  await deleteGroup.getByRole('button', { name: 'Move 2 bookmarks to trash', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: 'Blocked by the accessibility audit' }).waitFor()
   await scan('/ (select mode, delete refused by the server)')
-  await deleteGroup.getByRole('button', { name: 'Cancel', exact: true }).click()
+  // The server now "moves them to the trash": the result offers Undo (refused once, then it works).
+  await setBulk({ status: 200, body: { message: 'Moved 2 bookmarks to the trash', requested: 2, deleted: 2, skipped: 0, trashed: true, retentionDays: 30 } })
+  await deleteGroup.getByRole('button', { name: 'Move 2 bookmarks to trash', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Moved 2 bookmarks to the trash.' }).waitFor()
+  await page.getByRole('button', { name: 'Undo', exact: true }).waitFor()
+  await scan('/ (select mode, moved to the trash with Undo)')
+  await setBulk({ status: 403, body: { error: 'Restoring 2 bookmarks would go over the free plan\'s limit of 50 bookmarks, and you have room for 1 more. Nothing was restored.', limitReached: true } })
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Nothing was restored' }).waitFor()
+  await scan('/ (select mode, undo refused)')
+  await setBulk({ status: 200, body: { message: 'Restored 2 bookmarks', requested: 2, restored: 2, skipped: 0 } })
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: 'Restored 2 bookmarks.' }).waitFor()
+  await scan('/ (select mode, undo done)')
+  await setBulk({ status: 500, body: { error: 'Blocked by the accessibility audit' } })
   await expectCards(7)
 
   // Changing a filter clears the selection and says so.
@@ -667,6 +795,25 @@ async function owner(browser, theme) {
   await expectCards(7)
   await page.getByRole('button', { name: 'Done', exact: true }).click()
   if ((await page.getByRole('checkbox').count()) !== 0) throw new Error('Leaving select mode should remove the checkboxes')
+
+  // Single delete: no confirm dialog, a notice with Undo. The DELETE is answered by an
+  // interception (the seeded bookmark is never trashed); Undo goes to the bulk interception.
+  let singleDelete = { status: 200, body: { message: 'Bookmark moved to the trash', trashed: true, retentionDays: 30 } }
+  await page.route(/\/api\/bookmarks\/\d+$/, async (route) => {
+    if (route.request().method() !== 'DELETE') return route.fallback()
+    return route.fulfill({ status: singleDelete.status, contentType: 'application/json', body: JSON.stringify(singleDelete.body) })
+  })
+  await page.getByRole('button', { name: 'Move bookmark to the trash' }).first().click()
+  await page.locator('.trash-notice').waitFor()
+  if (!(await page.evaluate(() => document.activeElement?.classList.contains('trash-notice')))) throw new Error('Deleting should move focus to the notice')
+  await scan('/ (moved to the trash notice with Undo)')
+  await page.locator('.trash-notice').getByRole('button', { name: 'Undo', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'Blocked by the accessibility audit' }).waitFor()
+  await scan('/ (moved to the trash notice, undo refused)')
+  await setBulk({ status: 200, body: { message: 'Restored 1 bookmark', requested: 1, restored: 1, skipped: 0 } })
+  await page.locator('.trash-notice').getByRole('button', { name: 'Undo', exact: true }).click()
+  await page.locator('.trash-notice').waitFor({ state: 'detached' })
+  await setBulk({ status: 500, body: { error: 'Blocked by the accessibility audit' } })
 
   await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings' }).click()
   await page.getByRole('tab').first().waitFor()
@@ -741,6 +888,8 @@ async function owner(browser, theme) {
   await editSection.locator('.tag-edit-confirm').waitFor()
   await scan('/tags (delete confirmation)')
   await editSection.getByRole('button', { name: 'Cancel' }).click()
+
+  await trashStates(page, scan, setBulk)
 
   // Reset Library (its idle form is scanned with the other tabs above). The reset request is
   // intercepted, so the seeded owner's library is never wiped.
