@@ -2769,6 +2769,26 @@ async function handleAuth(request, env, segments, context = {}) {
   }
   const db = env.DB;
 
+  if (request.method === 'POST' && segments[1] === 'logout-everywhere' && segments.length === 2) {
+    const auth = await requireAuth(request, env);
+    if (auth.error) return auth.error;
+    // Settings-only action: require a web cookie even if requireAuth gains other credentials.
+    // The dispatcher enforces the web-client header and trusted origin before reaching here.
+    if (!isWebClient(request) || getBearerToken(request) || !getSessionCookie(request)) {
+      return jsonResponse({ error: 'Web session required' }, 403);
+    }
+    // bumpTokenVersion is deliberately a no-op before migration 0011. Never report that
+    // sessions were revoked when the database cannot yet enforce revocation.
+    if (!(await usersTableHasColumn(db, 'token_version'))) {
+      return jsonResponse({ error: 'Signing out of all devices is temporarily unavailable. Please try again later.' }, 503);
+    }
+    await bumpTokenVersion(db, auth.user.id);
+    await recordAuthEvent(db, request, 'logout_everywhere', { userId: auth.user.id });
+    const response = jsonResponse({ message: 'Signed out of all devices' });
+    response.headers.set('Set-Cookie', sessionCookie(request, '', 0));
+    return response;
+  }
+
   if (request.method === 'POST' && segments[1] === 'register') {
     if (!(await emailTokenStorageReady(db, 'email_verification_tokens'))) {
       return jsonResponse({ error: 'Email authentication is temporarily unavailable. Please try again later.' }, 503);

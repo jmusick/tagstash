@@ -16,14 +16,15 @@
 //               (empty merge slots, a selected merge pair, the rename form with a
 //               name error and a would-merge name, and both inline confirmations), and the
 //               Settings -> Reset Library form (confirmation error, refused password, pending,
-//               success) and Settings -> Delete Account form with its confirmation error, a refused
+//               success), Settings -> Sessions (idle, confirm, pending, success,
+//               error) and Settings -> Delete Account form with its confirmation error, a refused
 //               password, the pending state and the hand-off to "finish deleting"
 //   admin     : /settings -> Admin and Delete Account (the super admin refusal note)
 // The cookie consent banner is visible in every scan by default (each theme/role
 // runs in a fresh context). --check-third-parties adds two scans after consent.
 // Exit code is 1 on any accessibility or style CSP violation.
-// The account-deletion states answer from intercepted requests (page.route), so no real account
-// is ever deleted and the seeded users stay intact.
+// The reset, deletion and sign-out-everywhere states answer from intercepted requests
+// (page.route), so seeded users keep their data and sessions.
 //
 // Configuration (flags or env):
 //   --base-url <url>  | A11Y_BASE_URL         default http://127.0.0.1:5000 (localhost only)
@@ -611,6 +612,39 @@ async function owner(browser, theme) {
   await page.locator('.settings-success', { hasText: 'Your library has been reset' }).waitFor()
   await scan('/settings -> Reset Library (success)')
   await page.unroute('**/api/auth/reset-library')
+
+  // Sign out everywhere: intercept every request so the seed's sessions are never revoked.
+  // The idle panel was scanned in the tab loop. Verify the confirmation also supports Cancel.
+  await settingsTab(page, 'Sessions')
+  const signOutButton = page.getByRole('button', { name: 'Sign out of all devices', exact: true })
+  await signOutButton.click()
+  await page.getByRole('group', { name: 'Sign out everywhere now?' }).waitFor()
+  await scan('/settings -> Sessions (confirm sign out everywhere)')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await signOutButton.waitFor()
+  // Cancellation restores focus after React has committed the trigger button.
+  await page.waitForFunction(() => document.activeElement?.textContent === 'Sign out of all devices')
+  await signOutButton.click()
+  const setSignOut = await interceptJson(page, '**/api/auth/logout-everywhere', {
+    status: 503, body: { error: 'Signing out of all devices is temporarily unavailable. Please try again later.' },
+  })
+  const confirmSignOut = page.getByRole('button', { name: 'Confirm sign out', exact: true })
+  await confirmSignOut.click()
+  await page.locator('.settings-error', { hasText: 'temporarily unavailable' }).waitFor()
+  await scan('/settings -> Sessions (sign out everywhere error)')
+  let releaseSignOut
+  setSignOut({ status: 200, body: { message: 'Signed out of all devices' }, hold: new Promise((resolve) => { releaseSignOut = resolve }) })
+  await confirmSignOut.click()
+  await page.getByRole('button', { name: 'Signing out...', exact: true }).waitFor()
+  await scan('/settings -> Sessions (sign out everywhere pending)')
+  releaseSignOut()
+  await page.getByRole('status', { name: '' }).filter({ hasText: 'You are signed out of all devices' }).waitFor()
+  await page.getByRole('button', { name: 'Log in', exact: true }).waitFor()
+  await scan('/ (signed out of all devices success)')
+  await page.unroute('**/api/auth/logout-everywhere')
+  // Clear the browser's cookie only, then sign back in for the remaining deletion scenarios.
+  await context.clearCookies()
+  await logIn(page, OWNER)
 
   // Delete Account (its idle form is scanned with the other tabs above). The delete request is
   // intercepted, so the seeded owner is never deleted. Order matters: the last step signs the

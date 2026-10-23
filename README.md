@@ -234,7 +234,13 @@ as bearer credentials, and bearer tokens cannot be used as cookies. Password cha
 and resets revoke both types through `token_version`; password changes replace the
 current session. Existing web tokens are exchanged for cookies on the next app visit
 and removed from localStorage. Previously issued bearer tokens keep their original
-expiry unless revoked by a password change/reset.
+expiry unless revoked by a password change/reset or Sign out of all devices.
+
+Settings → Sessions → Sign out of all devices ends every existing web session and extension sign-in,
+including the current browser, through `token_version`. It asks for inline confirmation,
+without password re-entry, then returns to the signed-out login page with a status message.
+Personal API keys are separate credentials and stay active. Plain logout still only clears
+the current cookie; a copied token remains usable until expiry or account-wide revocation.
 
 Auth regression checks: `npm run test:auth` (Node 22.13+ with built-in SQLite).
 These use an isolated in-memory database and never access production.
@@ -243,6 +249,7 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/login`
 - `POST /api/auth/session` — exchange a legacy bearer token for a web cookie session
 - `POST /api/auth/logout` — clear the current web session cookie
+- `POST /api/auth/logout-everywhere` — revoke all web/extension sessions and clear the cookie; requires a web cookie session with the web-client header and trusted origin (bearer JWTs and API keys are refused); no request body or password required; `503` until the token-version migration is available
 - `GET /api/auth/me`
 - `GET /api/auth/verify-email`
 - `POST /api/auth/resend-verification`
