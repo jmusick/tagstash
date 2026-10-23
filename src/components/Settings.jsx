@@ -10,6 +10,7 @@ import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
 import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../utils/accountDeletion';
+import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../utils/accountReset';
 import './Settings.css';
 
 function Settings({
@@ -148,6 +149,59 @@ function Settings({
       [e.target.name]: e.target.value,
     });
     setError('');
+  };
+
+  // Reset-library form (issue #154): wipes bookmarks, tag links and favorite tags, keeps the
+  // account. Same two gates as account deletion, with a different confirmation word.
+  const [resetForm, setResetForm] = useState({ password: '', confirmation: '' });
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetFormChange = (e) => {
+    setResetForm({
+      ...resetForm,
+      [e.target.name]: e.target.value,
+    });
+    setError('');
+  };
+
+  const handleResetLibrarySubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+
+    if (!resetForm.password) {
+      setError('Enter your password to confirm.');
+      return;
+    }
+    if (!isAccountResetConfirmation(resetForm.confirmation)) {
+      setError(`Type ${ACCOUNT_RESET_CONFIRMATION} in capital letters to confirm that you want to reset your library.`);
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const response = await authAPI.resetLibrary(resetForm.password, resetForm.confirmation.trim());
+      const removed = response.data?.removed || {};
+      const count = (n, noun) => `${n || 0} ${noun}${n === 1 ? '' : 's'}`;
+      setResetForm({ password: '', confirmation: '' });
+      setSuccess(
+        `Your library has been reset. Removed ${count(removed.bookmarks, 'bookmark')}, ` +
+        `${count(removed.tagLinks, 'tag link')} and ${count(removed.favoriteTags, 'favorite tag')}. ` +
+        'Your account, subscription and settings are unchanged.'
+      );
+      // The bookmark list and tag rack live in App; reload them (the import form does the same).
+      try { await onImportComplete?.(); } catch { /* the list refreshes on its own poll */ }
+    } catch (err) {
+      if (err.response?.data?.error) {
+        setError(err.response.data.error);
+      } else if (err.request) {
+        setError('We could not confirm whether the reset went through. Check your bookmarks before trying again.');
+      } else {
+        setError('Failed to reset library');
+      }
+    } finally {
+      setResetting(false);
+    }
   };
 
   // Delete-account form. Nothing is sent until the password is entered and the confirmation word
@@ -606,6 +660,7 @@ function Settings({
     },
     { id: 'extensions', label: 'Extensions' },
     { id: 'import', label: 'Import / Export' },
+    { id: 'resetLibrary', label: 'Reset Library', onSelect: () => setResetForm({ password: '', confirmation: '' }) },
     { id: 'deleteAccount', label: 'Delete Account', onSelect: () => setDeleteForm({ password: '', confirmation: '' }) },
     ...(isSuperAdmin
       ? [{
@@ -1145,6 +1200,72 @@ function Settings({
             </p>
             <Import onImportComplete={onImportComplete} />
             <Export />
+          </div>
+        )}
+
+        {activeTab === 'resetLibrary' && (
+          <div className="settings-reset-library">
+            <h3 className="settings-delete-heading">Reset your library and keep your account</h3>
+            <p className="settings-reset-lead">This permanently removes:</p>
+            <ul className="settings-delete-list">
+              <li>All of your bookmarks, including private ones.</li>
+              <li>The tags on those bookmarks, and your favorite tags.</li>
+            </ul>
+            <p className="settings-reset-lead">This keeps:</p>
+            <ul className="settings-delete-list">
+              <li>Your account, username, email, password and sign-ins, including the browser extension.</li>
+              <li>Your subscription and billing. A Pro plan stays active.</li>
+              <li>Your API keys, theme, link-opening choice and public profile setting.</li>
+            </ul>
+            <p className="settings-reset-lead">
+              The removed bookmarks cannot be restored. Want a copy first? Export them from the Import / Export tab.
+              To remove your whole account instead, use the Delete Account tab.
+            </p>
+
+            <form onSubmit={handleResetLibrarySubmit} className="settings-form" aria-busy={resetting}>
+              <div className="form-field">
+                <label htmlFor="reset-library-password">Password (for verification)</label>
+                <input
+                  type="password"
+                  id="reset-library-password"
+                  name="password"
+                  value={resetForm.password}
+                  onChange={handleResetFormChange}
+                  required
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  readOnly={resetting}
+                />
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="reset-library-confirmation">
+                  Type {ACCOUNT_RESET_CONFIRMATION} to confirm
+                </label>
+                <input
+                  type="text"
+                  id="reset-library-confirmation"
+                  name="confirmation"
+                  value={resetForm.confirmation}
+                  onChange={handleResetFormChange}
+                  required
+                  autoComplete="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  readOnly={resetting}
+                />
+              </div>
+
+              <div role="status" className="live-region">
+                {resetting && (
+                  <p className="settings-delete-pending">Resetting your library. This usually takes a moment.</p>
+                )}
+              </div>
+
+              <button type="submit" className="btn-danger" disabled={resetting}>
+                {resetting ? 'Resetting library...' : 'Reset my library'}
+              </button>
+            </form>
           </div>
         )}
 

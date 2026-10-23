@@ -255,6 +255,7 @@ These use an isolated in-memory database and never access production.
 - `POST /api/auth/api-keys` — returns the plaintext key once; `GET` lists metadata only
 - `DELETE /api/auth/api-keys/:id`
 - `DELETE /api/auth/api-keys/:id/permanent`
+- `POST /api/auth/reset-library` — wipe the signed-in owner's library and keep the account (see below)
 - `POST /api/auth/delete-account` — self-service deletion of the signed-in account (see below)
 - `POST /api/auth/resume-deletion` — finish a deletion that was interrupted (see below)
 - `POST /api/auth/forgot-password` — the same `200` for registered and unknown addresses; the reset email is sent after the response
@@ -284,8 +285,8 @@ billing is stopped, one D1 transaction removes the account, bookmarks, private
 tokens, API keys, favorites, and associated security-log records. Tags shared with
 other accounts are preserved. If that transaction fails, the data is retained and
 deletion stays pending; retry does not resume billing. Stripe retains its own
-historical records according to its policies. Account reset (which keeps the account)
-is tracked in [issue #154](https://github.com/jmusick/tagstash/issues/154).
+historical records according to its policies. Account reset, which keeps the account,
+is separate (see Account reset below).
 
 **Self-service deletion.** `POST /api/auth/delete-account` takes
 `{ "password": "...", "confirmation": "DELETE" }` and needs normal authentication: a web
@@ -316,6 +317,26 @@ delete action in Settings → Admin, which retries the same cleanup. Do not clea
 Stripe dashboard that the customer and subscription are still in the state the owner wants:
 billing may already have stopped even though the request failed. `docs/deployment.md` has
 the details.
+
+**Account reset (library only).** `POST /api/auth/reset-library` takes
+`{ "password": "...", "confirmation": "RESET" }` (a different word from account deletion's
+`DELETE`) with the same authentication as deletion: a web cookie session behind the CSRF/origin gate, or a
+bearer token. It validates the body first, then checks the password through
+`confirmCurrentPassword` (shared login lockout counter and per-IP cap). Scope:
+
+- **Removed:** every bookmark of the account (private ones too), the links between those
+  bookmarks and tags, the account's favorite tags, and any global tag names nothing else
+  references (no other account's bookmark link or favorite), the same orphan rule as deleting a tag.
+- **Kept:** the account, username, email, password, sessions and extension sign-ins, API keys,
+  preferences (theme, link-opening, public profile setting), billing and membership. It never calls
+  `deleteAccount` and makes no Stripe or email calls. Other accounts' bookmarks, shared tags and
+  favorites are untouched.
+
+Everything commits in one `db.batch()`, so a failure answers `503` and changes nothing. The
+public-profile edge cache entries for the account are purged afterwards (best effort, as for other
+profile changes). An account whose deletion has started is refused (`403` from the session check,
+`409` if deletion starts mid-request). The success body is
+`{ reset: true, removed: { bookmarks, tagLinks, favoriteTags } }`. Settings → Reset Library is the UI.
 
 ### Billing
 
