@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
-import { Star, Search, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Star, Search, X, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react'
 import TagCloud from './TagCloud'
+import BulkBar from './BulkBar'
 import { decodeHtmlEntities } from '../utils/decodeHtmlEntities'
 import { DEFAULT_LINK_TARGET, linkTargetProps } from '../utils/linkTarget'
 import { BookmarkTagList } from './BookmarkParts'
@@ -60,6 +61,7 @@ function BookmarkBrowser({
   onSelectedTagsChange,
   focusBookmarkId,
   onClearFocus,
+  bulkActions,
   children,
 }) {
   const [searchTerm, setSearchTerm] = useState('')
@@ -74,6 +76,16 @@ function BookmarkBrowser({
   const [monthFilter, setMonthFilter] = useState('')
   const [pageAnnouncement, setPageAnnouncement] = useState('')
   const resultsHeadingRef = useRef(null)
+
+  // Multi-select (the owner's library only: it is on when the parent passes `bulkActions`).
+  // The selection is a set of ids that survives paging and sorting but is cleared whenever a
+  // filter changes, so "N selected" never includes bookmarks you can no longer see.
+  const selectionEnabled = Boolean(bulkActions)
+  const maxSelection = bulkActions?.maxSelection ?? 500
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [selectionNote, setSelectionNote] = useState('')
+  const selectToggleRef = useRef(null)
 
   useEffect(() => {
     onSelectedTagsChange?.(selectedTags)
@@ -157,6 +169,69 @@ function BookmarkBrowser({
       return matchesSearch && matchesTag && matchesFavorite && matchesUntagged && matchesDomain && matchesMonth
     })
   }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, untaggedActive, focusBookmarkId, domainActive, monthActive])
+
+  // Only what is still in the result set counts as selected (a refresh, an edit or a deletion can
+  // drop bookmarks from it), in the order they are listed.
+  const selectedBookmarks = useMemo(
+    () => (selectMode ? filteredBookmarks.filter((bookmark) => selectedIds.has(bookmark.id)) : []),
+    [selectMode, filteredBookmarks, selectedIds]
+  )
+  const selectedCountRef = useRef(0)
+  // Counts the stored ids (not the filtered ones) so the "cleared" note shows even when the new
+  // filter already hides everything that was selected.
+  selectedCountRef.current = selectMode ? selectedIds.size : 0
+
+  // Changing any filter clears the selection (see above) and says so.
+  const filterSignature = [searchTerm, selectedTags.join('\u0000'), showFavoritesOnly, untaggedActive, domainActive, monthActive, focusBookmarkId].join('|')
+  const previousFilterSignature = useRef(filterSignature)
+  useEffect(() => {
+    if (previousFilterSignature.current === filterSignature) return
+    previousFilterSignature.current = filterSignature
+    if (selectedCountRef.current > 0) {
+      setSelectionNote('The selection was cleared because the filters changed.')
+    }
+    setSelectedIds((prev) => (prev.size ? new Set() : prev))
+  }, [filterSignature])
+
+  const toggleSelected = (id) => {
+    setSelectionNote('')
+    if (!selectedIds.has(id) && selectedIds.size >= maxSelection) {
+      setSelectionNote(`You can select up to ${maxSelection} bookmarks at once.`)
+      return
+    }
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectBookmarks = (list) => {
+    const next = new Set(selectedIds)
+    let capped = false
+    for (const bookmark of list) {
+      if (next.has(bookmark.id)) continue
+      if (next.size >= maxSelection) {
+        capped = true
+        break
+      }
+      next.add(bookmark.id)
+    }
+    setSelectedIds(next)
+    setSelectionNote(capped ? `Selection limited to ${maxSelection} bookmarks, the most you can change at once.` : '')
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+    setSelectionNote('')
+  }
+
+  const exitSelectMode = () => {
+    clearSelection()
+    setSelectMode(false)
+    setTimeout(() => selectToggleRef.current?.focus(), 0)
+  }
 
   useEffect(() => {
     setCurrentPage(1)
@@ -313,6 +388,20 @@ function BookmarkBrowser({
                 </button>
               )}
             </div>
+            {selectionEnabled && (
+              <button
+                type="button"
+                ref={selectToggleRef}
+                className={`btn-ghost select-mode-btn ${selectMode ? 'active' : ''}`}
+                onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+                aria-pressed={selectMode}
+                aria-label="Select bookmarks"
+                title="Select several bookmarks to tag, open, export or delete them together"
+              >
+                <ListChecks size={16} className="btn-icon" />
+                <span className="btn-label">Select</span>
+              </button>
+            )}
             {toolbarExtra}
           </div>
         </div>
@@ -322,6 +411,19 @@ function BookmarkBrowser({
         <div className="bookmarks-section">
           <h2 ref={resultsHeadingRef} tabIndex={-1} className="sr-only">Bookmarks</h2>
           <p className="sr-only" role="status">{pageAnnouncement}</p>
+          {selectionEnabled && selectMode && (
+            <BulkBar
+              selected={selectedBookmarks}
+              pageCount={paginatedBookmarks.length}
+              matchingCount={filteredBookmarks.length}
+              note={selectionNote}
+              onSelectPage={() => selectBookmarks(paginatedBookmarks)}
+              onSelectAll={() => selectBookmarks(filteredBookmarks)}
+              onClear={clearSelection}
+              onDone={exitSelectMode}
+              actions={bulkActions}
+            />
+          )}
           {filteredBookmarks.length > 0 && (
             <div className="results-bar">
               <p className="results-count" aria-live="polite">
@@ -399,7 +501,14 @@ function BookmarkBrowser({
                 {paginatedBookmarks.map((bookmark) => (
                   <Fragment key={bookmark.id}>
                     {renderCard
-                      ? renderCard(bookmark, { onShowRelated: handleShowRelated, onTagSelect: handleTagSelect, selectedTags })
+                      ? renderCard(bookmark, {
+                        onShowRelated: handleShowRelated,
+                        onTagSelect: handleTagSelect,
+                        selectedTags,
+                        selection: selectionEnabled && selectMode
+                          ? { selected: selectedIds.has(bookmark.id), onToggle: () => toggleSelected(bookmark.id) }
+                          : null,
+                      })
                       : (
                         <DefaultCard
                           bookmark={bookmark}

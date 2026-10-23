@@ -33,6 +33,7 @@ import { THEME_STORAGE_KEY, isValidTheme } from './utils/theme'
 import { LINK_TARGET_STORAGE_KEY, getInitialLinkTarget, isValidLinkTarget, linkTargetProps } from './utils/linkTarget'
 import { getBookmarkDomain, countDomains } from './utils/bookmarkFilters'
 import { INPUT_LIMITS } from './utils/inputLimits'
+import { downloadBookmarks } from './utils/downloadBookmarks'
 import { BookmarkTagList } from './components/BookmarkParts'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
@@ -545,6 +546,29 @@ function App() {
     }
   }
 
+  // Multi-select actions (BookmarkBrowser's select mode). Each call throws on failure so the
+  // toolbar can show the server's message; on success the library and tag cloud are refreshed
+  // quietly (no loading state, so focus and scroll position stay where they are).
+  const refreshAfterBulkChange = async () => {
+    await fetchBookmarks({ silent: true })
+    setTagsRefreshKey((prev) => prev + 1)
+  }
+
+  const bulkActions = {
+    maxSelection: INPUT_LIMITS.bulkBookmarkIds,
+    onDelete: async (ids) => {
+      const response = await bookmarksAPI.bulkDelete(ids)
+      await refreshAfterBulkChange()
+      return response.data
+    },
+    onTags: async (ids, changes) => {
+      const response = await bookmarksAPI.bulkTags(ids, changes)
+      await refreshAfterBulkChange()
+      return response.data
+    },
+    onExport: (bookmarks, format) => downloadBookmarks(bookmarks, format, 'tagstash-selected'),
+  }
+
   const handleBookmarkToggle = async (apiCall, id, fallbackErrorMessage) => {
     try {
       await apiCall(id)
@@ -703,7 +727,7 @@ function App() {
     }
   }
 
-  const renderOwnerCard = (bookmark, { onShowRelated, onTagSelect, selectedTags } = {}) => {
+  const renderOwnerCard = (bookmark, { onShowRelated, onTagSelect, selectedTags, selection } = {}) => {
     const isEditing = editingBookmarkId === bookmark.id
     const isFavorite = Boolean(bookmark.is_favorite)
     const isPrivate = Boolean(bookmark.is_private)
@@ -716,8 +740,20 @@ function App() {
     const hasRelated = bookmarkDomain && (domainCounts.get(bookmarkDomain) || 0) > 1
 
     return (
-      <article className={`bookmark-card ${isEditing ? 'is-editing' : ''}`} id={`bookmark-${bookmark.id}`}>
+      <article
+        className={`bookmark-card ${isEditing ? 'is-editing' : ''} ${selection ? 'is-selectable' : ''} ${selection?.selected ? 'is-selected' : ''}`}
+        id={`bookmark-${bookmark.id}`}
+      >
         <div className="bookmark-header">
+          {selection && (
+            <input
+              type="checkbox"
+              className="bookmark-select"
+              checked={selection.selected}
+              onChange={selection.onToggle}
+              aria-label={`Select ${displayTitle || bookmark.url}`}
+            />
+          )}
           <span className="favicon-slot" aria-hidden="true">
             {faviconSrc && (
               <img src={faviconSrc} alt="" className="favicon" onError={(e) => { e.target.style.visibility = 'hidden' }} />
@@ -1078,6 +1114,7 @@ function App() {
                     showDateFilter
                     focusBookmarkId={focusBookmarkId}
                     onClearFocus={handleCancelEdit}
+                    bulkActions={bulkActions}
                     toolbarExtra={(
             <>
               <button

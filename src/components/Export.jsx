@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { bookmarksAPI } from '../api/api'
-import { serializeBookmarks } from '../utils/bookmarkExport'
+import { downloadBookmarks } from '../utils/downloadBookmarks'
 
 export default function Export() {
   const [busy, setBusy] = useState(false)
@@ -15,15 +15,7 @@ export default function Export() {
       const response = await bookmarksAPI.getAll()
       const bookmarks = response.data.bookmarks
       if (!Array.isArray(bookmarks)) throw new Error('Invalid bookmark response')
-      const file = serializeBookmarks(bookmarks, format)
-      const url = URL.createObjectURL(new Blob([file.content], { type: file.type }))
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = `tagstash-bookmarks-${new Date().toISOString().slice(0, 10)}.${file.extension}`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      downloadBookmarks(bookmarks, format)
       setMessage(`Downloaded ${bookmarks.length} bookmark${bookmarks.length === 1 ? '' : 's'}.`)
     } catch {
       setError('Could not export your bookmarks. Please try again.')
