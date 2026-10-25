@@ -24,8 +24,8 @@ test('an unknown SPA address stays a real nonindexable 404', async () => {
   assert.equal(response.headers.get('X-Robots-Tag'), 'noindex')
 })
 
-test('the signed-in Trash page is a real 200 (not the SPA 404), like Tags and Settings', async () => {
-  for (const path of ['/trash', '/tags', '/settings']) {
+test('owner pages are real 200 responses rather than the SPA 404', async () => {
+  for (const path of ['/trash', '/tags', '/settings', '/duplicates']) {
     const response = await onRequest({
       request: new Request(`https://tagsta.sh${path}`),
       next: async () => new Response('<div id="root"></div>', { headers: { 'Content-Type': 'text/html' } }),

@@ -23,6 +23,7 @@ const NotFound = lazy(() => import('./components/NotFound'))
 const Settings = lazy(() => import('./components/Settings'))
 const TagsPage = lazy(() => import('./components/TagsPage'))
 const TrashPage = lazy(() => import('./components/TrashPage'))
+const DuplicatesPage = lazy(() => import('./components/DuplicatesPage'))
 const PolicyPage = lazy(() => import('./components/PolicyPage'))
 const SupportPage = lazy(() => import('./components/SupportPage'))
 const FeaturesPage = lazy(() => import('./components/FeaturesPage'))
@@ -34,6 +35,7 @@ import { THEME_STORAGE_KEY, isValidTheme } from './utils/theme'
 import { LINK_TARGET_STORAGE_KEY, getInitialLinkTarget, isValidLinkTarget, linkTargetProps } from './utils/linkTarget'
 import { getBookmarkDomain, countDomains } from './utils/bookmarkFilters'
 import { INPUT_LIMITS } from './utils/inputLimits'
+import { canUseDuplicateFinder } from './utils/duplicates'
 import { downloadBookmarks } from './utils/downloadBookmarks'
 import { BookmarkTagList } from './components/BookmarkParts'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
@@ -1015,6 +1017,7 @@ function App() {
     const navItems = [
       { id: 'bookmarks', label: 'Bookmarks', Icon: BookmarkIcon, onClick: () => { navigate('/'); fetchBookmarks() } },
       { id: 'tags', label: 'Tags', Icon: Tags, onClick: () => navigate('/tags') },
+      ...(canUseDuplicateFinder(user) ? [{ id: 'duplicates', label: 'Duplicates', Icon: Link2, onClick: () => navigate('/duplicates') }] : []),
       { id: 'trash', label: 'Trash', Icon: Trash2, onClick: () => navigate('/trash') },
       { id: 'settings', label: 'Settings', Icon: SettingsIcon, onClick: () => navigate('/settings') },
     ]
@@ -1111,6 +1114,34 @@ function App() {
                 <main id="main" tabIndex={-1} className="app-main settings-page-main">
                   <div className="main-content settings-page-content">
                     <TagsPage />
+                  </div>
+                </main>
+                <AppFooter version={version}>
+                  <Link className="footer-privacy-link" to="/privacy">Privacy Policy</Link>
+                  <Link className="footer-privacy-link" to="/support">Support</Link>
+                </AppFooter>
+              </div>
+            ) : homeElement
+          }
+        />
+        <Route
+          path="/duplicates"
+          element={
+            canUseDuplicateFinder(user) ? (
+              <div className="app">
+                <AppHeader logoSrc={logoSrc} onLogoClick={handleLogoClick} theme={theme} onSelectTheme={selectTheme}>
+                  {renderHeaderNav('duplicates')}
+                </AppHeader>
+                <main id="main" tabIndex={-1} className="app-main settings-page-main">
+                  <div className="main-content settings-page-content">
+                    <DuplicatesPage
+                      bookmarks={bookmarks}
+                      loading={loading || refreshing}
+                      loadError={error === 'Failed to fetch bookmarks'}
+                      onRefresh={handleRefreshBookmarks}
+                      actions={bulkActions}
+                      linkTarget={linkTarget}
+                    />
                   </div>
                 </main>
                 <AppFooter version={version}>
