@@ -424,7 +424,7 @@ test('saving a URL that is in the trash replaces the trashed copy, and keeps one
     // The new bookmark got its tags even though "sole" was only on the purged copy.
     assert.deepEqual(sql(env, 'SELECT t.name FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id WHERE bt.bookmark_id = ? ORDER BY t.name', bookmark.id).map((r) => r.name), ['extra', 'sole']);
     assert.ok(exists(env, foreign), 'another account\'s trashed copy of the URL is untouched');
-    assert.deepEqual((await list(env, headers)).filter((b) => b.url.startsWith('https://dup.example')).length, 1);
+    assert.deepEqual((await list(env, headers)).filter((b) => new URL(b.url).hostname === 'dup.example').length, 1);
 
     // The legacy root form (no trailing slash) is the same URL.
     const legacy = add(env, 1, 'legacy', { url: 'https://legacy.example', deleted: '-1 days' });

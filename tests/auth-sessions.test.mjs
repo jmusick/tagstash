@@ -69,7 +69,7 @@ test('new emails store only digests; database digests are unusable as reset/veri
   const originalFetch = globalThis.fetch;
   const messages = [];
   globalThis.fetch = async (url, options) => {
-    assert.match(String(url), /^https:\/\/api.cloudflare.com\//);
+    assert.match(String(url), /^https:\/\/api\.cloudflare\.com\//);
     messages.push(JSON.stringify(JSON.parse(options.body)));
     return Response.json({ success: true });
   };
