@@ -214,6 +214,11 @@ Production setup includes:
 
 ## Key API Routes
 
+The public [REST API documentation](https://tagsta.sh/developers) covers personal API
+keys, every key-reachable library route, request and response fields, input limits,
+budgets, trash and restore behavior, errors, curl examples and the stable keyless
+public profile API. It is available without signing in.
+
 ### Health
 
 - `GET /api/health` — liveness check, works even without D1 configured

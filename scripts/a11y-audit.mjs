@@ -11,7 +11,7 @@
 //   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
 //               account" screen (form, error, pending) and the "account deleted" page,
 //               /reset-password (form, recovery unavailable, success with keys revoked),
-//               /features, /privacy, /support, a public profile (/u/<owner>)
+//               /features, /developers (also no-JS and mobile), /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form,
 //               select mode: none selected, some selected, the tag form with a validation error and a
 //               refused request, export formats, tabs blocked by the browser, the move-to-trash
@@ -59,6 +59,8 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
 import { chromium } from 'playwright-core'
+import { API_DOC_ROUTES } from '../src/content/developersApi.js'
+import { DEVELOPERS_META } from '../src/utils/pageMeta.js'
 
 const require = createRequire(import.meta.url)
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -400,10 +402,15 @@ async function anonymous(browser, theme) {
     const barePage = await bare.newPage()
     await go(barePage, '/')
     await makeScanner(barePage, theme, 'anon')('/ (server-rendered, JavaScript disabled)', { checkTheme: false })
+    await go(barePage, '/developers')
+    await barePage.getByRole('heading', { name: 'Tagstash REST API', exact: true }).waitFor()
+    if (await barePage.title() !== DEVELOPERS_META.title) throw new Error('Prerendered API documentation head was not applied')
+    if (await barePage.locator('.developers-endpoint').count() !== API_DOC_ROUTES.length) throw new Error('Prerendered API reference is incomplete')
+    await makeScanner(barePage, theme, 'anon')('/developers (prerendered, JavaScript disabled)', { checkTheme: false })
     await bare.close()
   }
 
-  for (const path of ['/features', '/privacy', '/support', `/u/${OWNER.username}`]) {
+  for (const path of ['/features', '/developers', '/privacy', '/support', `/u/${OWNER.username}`]) {
     await go(page, path)
     await page.locator('main').first().waitFor()
     if (path.startsWith('/u/')) await page.locator('.bookmark-card').first().waitFor()
@@ -411,6 +418,21 @@ async function anonymous(browser, theme) {
       throw new Error('Owner domain/month controls must not appear on a public profile')
     }
     await scan(path.startsWith('/u/') ? '/u/<name> (public profile)' : path)
+    if (path === '/developers') {
+      if (await page.title() !== DEVELOPERS_META.title) throw new Error('API documentation head was not applied')
+      await page.setViewportSize({ width: 390, height: 844 })
+      if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) throw new Error('API documentation overflows on mobile')
+      await page.locator('.developers-reference pre').first().focus()
+      await scan('/developers (mobile, code block keyboard focus)')
+      await page.getByRole('button', { name: 'Open menu', exact: true }).click()
+      await scan('/developers (mobile menu open)')
+      await page.keyboard.press('Escape')
+      if (await page.getByRole('button', { name: 'Open menu', exact: true }).getAttribute('aria-expanded') !== 'false') throw new Error('API documentation menu did not close')
+      await page.getByRole('link', { name: 'Public profile API', exact: true }).click()
+      await page.getByRole('heading', { name: 'Public profile API', exact: true }).waitFor()
+      await scan('/developers (mobile, public profile anchor)')
+      await page.setViewportSize(VIEWPORT)
+    }
   }
   if (CHECK_THIRD_PARTIES && theme === THEMES[0]) {
     await go(page, '/')

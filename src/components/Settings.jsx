@@ -1030,6 +1030,7 @@ function Settings({
               revokes all keys. Changing your password in Settings or signing out of all devices
               keeps keys active. You can revoke them here.
             </p>
+            <p><a href="/developers">Read the REST API documentation and curl examples</a>.</p>
             <form onSubmit={handleCreateApiKey} className="settings-form api-key-create-form">
               <div className="form-field">
                 <label htmlFor="api-key-name">Key Name (optional)</label>

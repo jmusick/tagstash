@@ -26,6 +26,7 @@ const TrashPage = lazy(() => import('./components/TrashPage'))
 const PolicyPage = lazy(() => import('./components/PolicyPage'))
 const SupportPage = lazy(() => import('./components/SupportPage'))
 const FeaturesPage = lazy(() => import('./components/FeaturesPage'))
+const DevelopersPage = lazy(() => import('./components/DevelopersPage'))
 const VerifyEmail = lazy(() => import('./components/VerifyEmail'))
 const ResetPassword = lazy(() => import('./components/ResetPassword'))
 const PublicProfile = lazy(() => import('./components/PublicProfile'))
@@ -1058,6 +1059,7 @@ function App() {
         <Route path="/u/:username" element={<PublicProfile logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} linkTarget={linkTarget} />} />
         <Route path="/privacy" element={<PolicyPage logoSrc={logoSrc} onBack={() => navigate('/')} />} />
         <Route path="/features" element={<FeaturesPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />} />
+        <Route path="/developers" element={<DevelopersPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
         <Route
           path="/support"
           element={<SupportPage logoSrc={logoSrc} prefillEmail={user?.email || ''} onBack={() => navigate('/')} />}

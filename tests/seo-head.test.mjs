@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { onRequestGet as profilePage } from '../functions/u/[username].js';
 import { onRequestGet as sitemap } from '../functions/sitemap.xml.js';
 import { applyPageHead } from '../scripts/page-head.mjs';
-import { PRIVACY_META, SUPPORT_META } from '../src/utils/pageMeta.js';
+import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META } from '../src/utils/pageMeta.js';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 
 // Minimal stand-in for the Workers HTMLRewriter: only the <head> append is needed here.
@@ -144,9 +144,9 @@ function insertUserWithoutPrivateColumn(env) {
   ).run().lastInsertRowid);
 }
 
-test('prerendered /privacy and /support carry their own head, not the homepage one', () => {
+test('prerendered public pages carry their own head, not the homepage one', () => {
   const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-  for (const meta of [PRIVACY_META, SUPPORT_META]) {
+  for (const meta of [PRIVACY_META, SUPPORT_META, DEVELOPERS_META]) {
     const html = applyPageHead(index, meta);
     const url = `https://tagsta.sh${meta.path}`;
     assert.ok(html.includes(`<title>${meta.title}</title>`));

@@ -101,7 +101,7 @@ export function renderProfileBookmarks(username, bookmarks, totalPublic, now = n
   return `<div id="ssr-profile"><div class="app"><header class="app-header"><div class="app-header-brand"><a href="/" class="app-header-logo-btn" title="Back to Tagstash">${logoPicture('dark')}${logoPicture('light')}</a><p class="app-header-tagline">Public bookmarks</p></div></header>`
     + `<main class="app-main"><div class="main-content"><div class="toolbar" aria-hidden="true"><div class="toolbar-row"><div class="search-control ssr-toolbar-spacer"></div></div></div><div class="public-profile-header"><h1>@${safeUsername}&#39;s bookmarks</h1></div>`
     + `<div class="bookmarks-section"><div class="results-bar"><p class="results-count">${count}</p></div><div class="bookmarks-grid">${items.join('')}</div></div></div></main>`
-    + `<footer class="app-footer"><span class="footer-copyright">&copy; ${now.getUTCFullYear()} Stone Dragon Media LLC</span><a class="footer-privacy-link" href="/">Create your own Tagstash</a><a class="footer-privacy-link" href="/support?report=${encodeURIComponent(username)}" rel="nofollow">Report this profile</a></footer></div></div>`;
+    + `<footer class="app-footer"><span class="footer-copyright">&copy; ${now.getUTCFullYear()} Stone Dragon Media LLC</span><a class="footer-privacy-link" href="/">Create your own Tagstash</a><a class="footer-privacy-link" href="/support?report=${encodeURIComponent(username)}" rel="nofollow">Report this profile</a><a class="footer-privacy-link" href="/developers">Developers</a></footer></div></div>`;
 }
 
 export async function onRequestGet({ request, env, params, next }) {
