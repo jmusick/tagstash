@@ -5,6 +5,7 @@ const STATIC_PATHS = [
   // Content-change dates; update these when editing a page's substantive content.
   { path: '/', lastmod: '2026-10-07' },
   { path: '/features', lastmod: '2026-10-07' },
+  { path: '/developers', lastmod: '2026-10-25' },
   { path: '/privacy', lastmod: '2026-10-12' },
   { path: '/support', lastmod: '2026-08-17' },
 ];

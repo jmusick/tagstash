@@ -8,6 +8,7 @@ function AppFooter({ children, version }) {
         </a>
       </span>
       {children}
+      <a className="footer-privacy-link" href="/developers">Developers</a>
       <button type="button" className="footer-privacy-link" data-cookie-preferences>
         Cookie Choices
       </button>

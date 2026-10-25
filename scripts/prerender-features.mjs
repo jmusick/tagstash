@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { FEATURES_META } from '../src/utils/featuresMeta.js'
 import { getFeaturesStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
-import { PRIVACY_META, SUPPORT_META } from '../src/utils/pageMeta.js'
+import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META } from '../src/utils/pageMeta.js'
 import { applyPageHead } from './page-head.mjs'
 
 // Render the same presentation used by the public React route. No copied copy,
@@ -40,6 +40,20 @@ try {
   // extensionless URL. A directory index would instead redirect to /features/.
   await writeFile('dist/features.html', html)
   console.log('Prerendered /features from FeaturesView')
+
+  const { DevelopersView } = await server.ssrLoadModule('/src/components/DevelopersPage.jsx')
+  // Keep route CSS separate: importing a page must not make its styles a
+  // prerequisite for a different prerendered page.
+  styles.clear()
+  visited.clear()
+  collectStyles('index.html')
+  collectStyles('src/components/DevelopersPage.jsx')
+  let developersHtml = applyPageHead(shell, DEVELOPERS_META)
+  developersHtml = developersHtml
+    .replace('<div id="root"></div>', () => `<div id="root">${renderToStaticMarkup(createElement(DevelopersView))}</div>`)
+    .replace('</head>', `${[...styles].filter(css => !developersHtml.includes(`href="/${css}"`)).map(css => `<link rel="stylesheet" href="/${css}" />`).join('\n')}\n</head>`)
+  await writeFile('dist/developers.html', developersHtml)
+  console.log('Prerendered /developers from DevelopersView')
 
   // /privacy and /support are interactive (router callbacks, Turnstile), so only their
   // head is prerendered; React still renders the body client-side. Without this they

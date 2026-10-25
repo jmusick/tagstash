@@ -12,3 +12,9 @@ export const SUPPORT_META = {
   description: 'Get help with your Tagstash account or send the team a message.',
   path: '/support',
 }
+
+export const DEVELOPERS_META = {
+  title: 'Developers - Tagstash REST API',
+  description: 'Use personal API keys to read and edit your Tagstash library. Browse routes, curl examples, limits, errors and the public profile API.',
+  path: '/developers',
+}

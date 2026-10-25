@@ -592,6 +592,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
         </span>
         <Link className="home-footer-privacy-link" to="/privacy">Privacy Policy</Link>
         <Link className="home-footer-privacy-link" to="/support">Support</Link>
+        <Link className="home-footer-privacy-link" to="/developers">Developers</Link>
         <button className="home-footer-privacy-link" data-cookie-preferences>Cookie Choices</button>
         <span className="version">v{version}</span>
       </footer>

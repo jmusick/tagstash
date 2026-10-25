@@ -20,6 +20,7 @@
 
 - [Homepage](https://tagsta.sh/): product overview, features, pricing, FAQ.
 - [Features](https://tagsta.sh/features): tagging, search, browser extensions, privacy, public sharing, and import/export details.
+- [Developers](https://tagsta.sh/developers): REST API reference for personal-key library access and the keyless public profile API, including requests, responses, limits, errors and curl examples.
 - [Support](https://tagsta.sh/support): contact form.
 - [Privacy Policy](https://tagsta.sh/privacy): data handling and cookie use.
 
