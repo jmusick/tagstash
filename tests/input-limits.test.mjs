@@ -49,6 +49,8 @@ test('a malformed update returns 400 and leaves the record and its tags unchange
       { url: ['https://e.com/'] },
       { description: 'x'.repeat(INPUT_LIMITS_SERVER.description + 1) },
       { description: { text: 'nope' } },
+      { note: 'x'.repeat(INPUT_LIMITS_SERVER.note + 1) },
+      { note: 42 },
     ]) {
       const response = await call(env, 'bookmarks/5', { method: 'PUT', headers, body: { ...valid, ...patch } });
       assert.equal(response.status, 400, JSON.stringify(patch).slice(0, 80));

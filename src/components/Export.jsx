@@ -27,7 +27,7 @@ export default function Export() {
   return (
     <section aria-labelledby="export-heading">
       <h2 id="export-heading">Export your bookmarks</h2>
-      <p>Download your entire library, including private bookmarks. Choose HTML for browsers, CSV for spreadsheets, or JSON to preserve dates, tags, favorites, and privacy settings.</p>
+      <p>Download your entire library, including private bookmarks and your notes. Choose HTML for browsers, CSV for spreadsheets, or JSON to preserve dates, tags, favorites, and privacy settings.</p>
       <div className="export-actions">
         {['html', 'csv', 'json'].map((format) => (
           <button key={format} type="button" className="btn btn-secondary" disabled={busy} onClick={() => download(format)}>

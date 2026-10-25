@@ -751,6 +751,9 @@ const INPUT_LIMITS = {
   title: 1000,
   url: 8192,
   description: 10000,
+  // Private Markdown note (issue #60), as large as a description: with every bookmark field at its
+  // limit and every character JSON-escaped (6 bytes), a create/update still fits MAX_JSON_BODY_BYTES.
+  note: 10000,
   tagName: 100,
   tagsPerBookmark: 50,
   username: 50,
@@ -874,7 +877,18 @@ const normalizeTagList = (tags) => {
 
 // Validates a whole create/update payload before anything is written, so a bad field can
 // never leave a half-applied change behind.
-const validateBookmarkInput = ({ title, url, description, tags }) => {
+// `note` follows the same convention as `tags`: omitted (undefined) = keep the stored note, `null`
+// or a blank string = no note, otherwise the Markdown text as sent (not trimmed: leading
+// whitespace can be Markdown syntax). Validated here; whether the column exists is the route's job.
+const normalizeNoteInput = (note) => {
+  if (note === undefined) return { note: undefined };
+  if (note === null) return { note: null };
+  if (typeof note !== 'string') return { error: 'Note must be a string' };
+  if (note.length > INPUT_LIMITS.note) return { error: `Note must be ${INPUT_LIMITS.note} characters or less` };
+  return { note: note.trim() ? note : null };
+};
+
+const validateBookmarkInput = ({ title, url, description, tags, note }) => {
   if (!isOptionalString(title) || !isOptionalString(url)) {
     return { error: 'Title and URL must be strings' };
   }
@@ -900,6 +914,8 @@ const validateBookmarkInput = ({ title, url, description, tags }) => {
   }
   const tagResult = normalizeTagList(tags);
   if (tagResult.error) return { error: tagResult.error };
+  const noteResult = normalizeNoteInput(note);
+  if (noteResult.error) return { error: noteResult.error };
 
   return {
     value: {
@@ -907,6 +923,7 @@ const validateBookmarkInput = ({ title, url, description, tags }) => {
       url: normalizedUrl,
       description: description || null,
       tags: tagResult.tags,
+      note: noteResult.note,
     },
   };
 };
@@ -1685,6 +1702,22 @@ const bookmarksHaveTrash = async (db) => {
   return hasColumn;
 };
 
+// --- Bookmark notes (migration 0020, issue #60) ---
+// A private Markdown note on a bookmark, owner-only: owner reads get it through SELECT *, and the
+// public surfaces (profile API, /u/:username SSR, sitemap) select named columns that never include
+// it. Every by-name write goes through bookmarksHaveNotes: before the migration a write that carries
+// a note answers NOTES_UNAVAILABLE (503) and every other write runs exactly as it did before.
+const notesColumnKnown = new WeakSet();
+const bookmarksHaveNotes = async (db) => {
+  if (notesColumnKnown.has(db)) return true;
+  const hasColumn = await bookmarksTableHasColumn(db, 'note');
+  if (hasColumn) notesColumnKnown.add(db);
+  return hasColumn;
+};
+
+const notesUnavailableResponse = () =>
+  jsonResponse({ error: "Notes can't be saved right now. Please try again later." }, 503);
+
 const columnRef = (alias, column) => (alias ? `${alias}.${column}` : column);
 
 // ` AND <alias>.deleted_at IS NULL` (or nothing before the migration). `alias` '' = unqualified.
@@ -1742,15 +1775,21 @@ const getUserPlanStatus = async (db, userId) => {
 // a statement for the caller's db.batch: meta.changes is 0 when the free limit refused it.
 // The bulk-import equivalent is importChunkStatements.
 // Trashed bookmarks do not count toward the limit (hasTrash adds the live condition).
-const insertBookmarkWithinPlanStatement = (db, userId, { title, url, description, faviconUrl }, { hasTrash = false } = {}) =>
+// `hasNotes` (migration 0020) adds the note column; without it the statement never names it.
+const insertBookmarkWithinPlanStatement = (
+  db,
+  userId,
+  { title, url, description, faviconUrl, note = null },
+  { hasTrash = false, hasNotes = false } = {}
+) =>
   db
     .prepare(
-      `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
-       SELECT ?1, ?2, ?3, ?4, ?5
+      `INSERT INTO bookmarks (user_id, title, url, description, favicon_url${hasNotes ? ', note' : ''})
+       SELECT ?1, ?2, ?3, ?4, ?5${hasNotes ? ', ?8' : ''}
        WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?6
           OR (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1${liveBookmarkClause(hasTrash, '')}) < ?7`
     )
-    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT);
+    .bind(userId, title, url, description, faviconUrl, MEMBERSHIP_TIERS.PAID, FREE_BOOKMARK_LIMIT, ...(hasNotes ? [note] : []));
 
 // Saving a URL that is already in the trash REPLACES the trashed copy: it is removed permanently
 // (with the same orphan-tag cleanup as any permanent delete) and the new save is created fresh
@@ -2141,6 +2180,8 @@ const listTrashedBookmarks = async (db, userId) => {
     ...bookmark,
     is_favorite: Number(bookmark.is_favorite || 0),
     is_private: Number(bookmark.is_private || 0),
+    // Trashed bookmarks keep their note, so a restore brings it back.
+    note: bookmark.note ?? null,
     tags: tagsByBookmark.get(bookmark.id) || [],
   }));
 };
@@ -2635,6 +2676,8 @@ const listBookmarks = async (db, userId) => {
     ...bookmark,
     is_favorite: Number(bookmark.is_favorite || 0),
     is_private: Number(bookmark.is_private || 0),
+    // The owner's private note; null when there is none (or before migration 0020).
+    note: bookmark.note ?? null,
   }));
 
   for (const bookmark of bookmarks) {
@@ -2678,7 +2721,7 @@ const prepareImportRow = (row) => {
   if (!row || typeof row !== 'object' || Array.isArray(row)) {
     return { error: 'Not a bookmark object' };
   }
-  const { title, url, description, tags } = row;
+  const { title, url, description, tags, note } = row;
   if (typeof title !== 'string' || typeof url !== 'string') {
     return { error: 'Title and URL must be strings' };
   }
@@ -2696,12 +2739,18 @@ const prepareImportRow = (row) => {
   if (!isOptionalString(description)) {
     return { error: 'Description must be a string' };
   }
+  if (!isOptionalString(note)) {
+    return { error: 'Note must be a string' };
+  }
   if (tags !== undefined && tags !== null && !Array.isArray(tags)) {
     return { error: 'Tags must be an array of strings' };
   }
 
   const safeTitle = clampText(trimmedTitle, INPUT_LIMITS.title);
   const safeDescription = description ? clampText(description, INPUT_LIMITS.description) : null;
+  // Same rules as a single save (blank = no note), but an over-long note is truncated like a description.
+  const keptNote = note && note.trim() ? note : null;
+  const safeNote = keptNote ? clampText(keptNote, INPUT_LIMITS.note) : null;
   const names = new Set();
   let droppedTags = 0;
   for (const tag of tags || []) {
@@ -2719,8 +2768,8 @@ const prepareImportRow = (row) => {
   }
 
   return {
-    value: { title: safeTitle, url: normalizedUrl, description: safeDescription, tags: [...names] },
-    truncated: safeTitle !== trimmedTitle || safeDescription !== (description || null),
+    value: { title: safeTitle, url: normalizedUrl, description: safeDescription, tags: [...names], note: safeNote },
+    truncated: safeTitle !== trimmedTitle || safeDescription !== (description || null) || safeNote !== keptNote,
     droppedTags,
   };
 };
@@ -2794,14 +2843,14 @@ const importChunkStatements = (
   db,
   userId,
   chunk,
-  { hasTrash = false, replaceTrashed = false, hasFavoriteTagsTable = false } = {}
+  { hasTrash = false, replaceTrashed = false, hasFavoriteTagsTable = false, hasNotes = false } = {}
 ) => {
   const payload = JSON.stringify(chunk);
   const replaceTrashedStatements = replaceTrashed
     ? permanentDeleteStatements(
         db,
         {
-          // Each record is [title, url, description, favicon, tags, legacyUrl]; a row is admitted
+          // Each record is [title, url, description, favicon, tags, legacyUrl, note]; a row is admitted
           // exactly when the INSERT below admits it.
           sql: `SELECT b.id FROM bookmarks b
                 WHERE b.user_id = ? AND b.deleted_at IS NOT NULL AND EXISTS (
@@ -2824,8 +2873,8 @@ const importChunkStatements = (
       .bind(payload),
     db
       .prepare(
-        `INSERT INTO bookmarks (user_id, title, url, description, favicon_url)
-         SELECT ?1, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')
+        `INSERT INTO bookmarks (user_id, title, url, description, favicon_url${hasNotes ? ', note' : ''})
+         SELECT ?1, json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]'), json_extract(value, '$[3]')${hasNotes ? ", json_extract(value, '$[6]')" : ''}
          FROM json_each(?2)
          WHERE (SELECT membership_tier FROM users WHERE id = ?1) = ?3
             OR key < ?4 - (SELECT COUNT(*) FROM bookmarks WHERE user_id = ?1${liveBookmarkClause(hasTrash, '')})
@@ -2897,6 +2946,13 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
   }
   summary.skipped = summary.invalid + summary.duplicates + overLimit;
 
+  // Before migration 0020 notes can't be stored: refuse the whole import (nothing written yet)
+  // rather than drop them silently. An import without notes runs as before.
+  const hasNotes = await bookmarksHaveNotes(db);
+  if (!hasNotes && accepted.some((bookmark) => bookmark.note)) {
+    return { summary, notesUnavailable: true };
+  }
+
   const records = accepted.map((bookmark) => [
     bookmark.title,
     bookmark.url,
@@ -2904,6 +2960,7 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
     getFaviconUrl(bookmark.url),
     bookmark.tags,
     legacyBookmarkUrl(bookmark.url),
+    bookmark.note,
   ]);
   const hasTrash = await bookmarksHaveTrash(db);
   const trashedUrls = hasTrash && records.length
@@ -2915,7 +2972,7 @@ const importBookmarks = async (db, userId, rows, remainingSlots) => {
     let results;
     try {
       const replaceTrashed = chunk.some((record) => trashedUrls.has(record[1]) || trashedUrls.has(record[5]));
-      const statements = importChunkStatements(db, userId, chunk, { hasTrash, replaceTrashed, hasFavoriteTagsTable });
+      const statements = importChunkStatements(db, userId, chunk, { hasTrash, replaceTrashed, hasFavoriteTagsTable, hasNotes });
       // upsert, insert, link are always the last three (the trash replacement, if any, comes first).
       const offset = statements.length - 3;
       results = (await db.batch(statements)).slice(offset);
@@ -4741,12 +4798,16 @@ async function handleBookmarks(request, env, segments, context = {}) {
       );
     }
 
-    const { summary, failed } = await importBookmarks(
+    const { summary, failed, notesUnavailable } = await importBookmarks(
       db,
       auth.user.id,
       bookmarks,
       planStatus.paidTier ? null : planStatus.remainingSlots
     );
+
+    if (notesUnavailable) {
+      return notesUnavailableResponse();
+    }
 
     if (failed) {
       return jsonResponse(
@@ -5158,16 +5219,21 @@ async function handleBookmarks(request, env, segments, context = {}) {
       return freeLimitResponse();
     }
 
-    const { title, url, description } = input.value;
+    const { title, url, description, note } = input.value;
     const tagNames = input.value.tags || [];
+    // Before migration 0020 a note can't be stored: refuse it rather than drop it silently.
+    const hasNotes = await bookmarksHaveNotes(db);
+    if (note && !hasNotes) {
+      return notesUnavailableResponse();
+    }
     // One transaction: the plan-guarded insert and its tag links land together or not at all.
     // The new row is the user's highest id inside the batch, which is how the link step finds
     // it; the link is gated on that insert having happened.
     const insertStatement = insertBookmarkWithinPlanStatement(
       db,
       auth.user.id,
-      { title, url, description, faviconUrl: getFaviconUrl(url) },
-      { hasTrash }
+      { title, url, description, faviconUrl: getFaviconUrl(url), note: note ?? null },
+      { hasTrash, hasNotes }
     );
     // A trashed copy of this URL is replaced by the new save (see replaceTrashedBookmarkStatements).
     const replaceTrashed = hasTrash
@@ -5251,13 +5317,22 @@ async function handleBookmarks(request, env, segments, context = {}) {
       if (input.error) {
         return jsonResponse({ error: input.error }, 400);
       }
-      const { title, url, description, tags: tagNames } = input.value;
+      const { title, url, description, tags: tagNames, note } = input.value;
+      // `note` omitted keeps the stored one (older clients such as the extension never send it).
+      // Before migration 0020 there is nothing stored, so clearing is a no-op and a note is refused.
+      const hasNotes = note !== undefined && (await bookmarksHaveNotes(db));
+      if (note && !hasNotes) {
+        return notesUnavailableResponse();
+      }
+      const writeNote = hasNotes;
 
       // One transaction for the row and (when `tags` was sent) the full tag replacement.
       const statements = [
         db
-          .prepare('UPDATE bookmarks SET title = ?, url = ?, description = ?, favicon_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?')
-          .bind(title, url, description, getFaviconUrl(url), bookmarkId, auth.user.id),
+          .prepare(
+            `UPDATE bookmarks SET title = ?, url = ?, description = ?, favicon_url = ?${writeNote ? ', note = ?' : ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?`
+          )
+          .bind(title, url, description, getFaviconUrl(url), ...(writeNote ? [note] : []), bookmarkId, auth.user.id),
       ];
       if (tagNames !== undefined) {
         statements.push(db.prepare('DELETE FROM bookmark_tags WHERE bookmark_id = ?').bind(bookmarkId));
