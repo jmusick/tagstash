@@ -61,6 +61,7 @@ import bcrypt from 'bcryptjs'
 import { chromium } from 'playwright-core'
 import { API_DOC_ROUTES } from '../src/content/developersApi.js'
 import { DEVELOPERS_META } from '../src/utils/pageMeta.js'
+import { duplicateStates } from './a11y-duplicates.mjs'
 
 const require = createRequire(import.meta.url)
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -912,6 +913,7 @@ async function owner(browser, theme) {
   await editSection.getByRole('button', { name: 'Cancel' }).click()
 
   await trashStates(page, scan, setBulk)
+  await duplicateStates(page, scan, go)
 
   // Reset Library (its idle form is scanned with the other tabs above). The reset request is
   // intercepted, so the seeded owner's library is never wiped.

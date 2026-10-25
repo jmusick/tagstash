@@ -3,6 +3,7 @@ Allow: /
 Disallow: /settings
 Disallow: /tags
 Disallow: /trash
+Disallow: /duplicates
 Disallow: /verify-email
 Disallow: /reset-password
 

@@ -1,5 +1,5 @@
 // Pages otherwise serves the SPA shell with status 200 for unknown addresses.
-const PAGE_PATHS = new Set(['/', '/features', '/developers', '/privacy', '/support', '/settings', '/tags', '/trash', '/verify-email', '/reset-password']);
+const PAGE_PATHS = new Set(['/', '/features', '/developers', '/privacy', '/support', '/settings', '/tags', '/trash', '/duplicates', '/verify-email', '/reset-password']);
 
 export async function onRequest({ request, next }) {
   const response = await next();
