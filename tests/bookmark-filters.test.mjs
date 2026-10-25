@@ -1,7 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { hasNoTags, countUntagged, getBookmarkDomain, countDomains } from '../src/utils/bookmarkFilters.js';
+import { hasNoTags, countUntagged, hasNote, countWithNotes, isFavoriteBookmark, countFavorites, getBookmarkDomain, countDomains } from '../src/utils/bookmarkFilters.js';
+
+test('"Has note" counts only non-blank notes (issue #75)', () => {
+  const bookmarks = [
+    { id: 1, note: '- remember' },
+    { id: 2, note: '   \n' },
+    { id: 3, note: null },
+    { id: 4 },
+    { id: 5, note: 42 },
+  ];
+  assert.deepEqual(bookmarks.filter(hasNote).map((b) => b.id), [1]);
+  assert.equal(countWithNotes(bookmarks), 1);
+  assert.equal(countWithNotes(undefined), 0);
+});
+
+test('favorites accept the API number flag and ignore anything else falsy', () => {
+  const bookmarks = [{ id: 1, is_favorite: 1 }, { id: 2, is_favorite: 0 }, { id: 3 }, { id: 4, is_favorite: true }];
+  assert.deepEqual(bookmarks.filter(isFavoriteBookmark).map((b) => b.id), [1, 4]);
+  assert.equal(countFavorites(bookmarks), 2);
+  assert.equal(countFavorites(null), 0);
+});
 
 test('hasNoTags is true for an empty, missing or null tags value', () => {
   assert.equal(hasNoTags({ id: 1, tags: [] }), true);

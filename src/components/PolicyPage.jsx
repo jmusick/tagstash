@@ -21,7 +21,7 @@ function PolicyPage({ logoSrc, onBack }) {
       </header>
 
       <main id="main" tabIndex={-1} className="privacy-content">
-        <p className="privacy-effective">Effective date: October 23, 2026</p>
+        <p className="privacy-effective">Effective date: October 25, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -41,8 +41,8 @@ function PolicyPage({ logoSrc, onBack }) {
               theme).
             </li>
             <li>
-              <strong>Bookmarks and tags:</strong> the URLs, titles, descriptions, and tags you
-              save to your account.
+              <strong>Bookmarks and tags:</strong> the URLs, titles, descriptions, tags, and
+              private notes you save to your account.
             </li>
             <li>
               <strong>API keys:</strong> if you create personal API keys, we store a fingerprint
@@ -142,7 +142,8 @@ function PolicyPage({ logoSrc, onBack }) {
             with the link at <code>tagsta.sh/u/your-username</code>, and through a public
             JSON API meant for embedding your bookmarks elsewhere. This is off by default,
             fully opt-in, and can be turned off at any time; you can also mark individual
-            bookmarks private to exclude them even while your profile is public.
+            bookmarks private to exclude them even while your profile is public. Notes on
+            your bookmarks are never shown on your public profile or its API.
           </p>
           <p>
             Public profiles are offered to search engines (and listed in our sitemap) only once

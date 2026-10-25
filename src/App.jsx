@@ -39,11 +39,14 @@ import { INPUT_LIMITS } from './utils/inputLimits'
 import { canUseDuplicateFinder } from './utils/duplicates'
 import { downloadBookmarks } from './utils/downloadBookmarks'
 import { BookmarkTagList } from './components/BookmarkParts'
+import BookmarkNote from './components/BookmarkNote'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
 import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Info, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
 
 const FREE_BOOKMARK_LIMIT = 50
+// Help text under both note fields (add and edit).
+const NOTE_HINT = 'Only you can see notes, even on public bookmarks. Markdown works: **bold**, _italic_, lists, `code` and links.'
 
 const normalizeBookmarkUrl = (value) => {
   const raw = (value || '').trim()
@@ -97,6 +100,8 @@ function App() {
   const { user, loading: authLoading, logout } = useAuth()
   const [theme, setTheme] = useState(getInitialTheme)
   const [linkTarget, setLinkTarget] = useState(getInitialLinkTarget)
+  // Links inside a note open the way bookmark links do (BookmarkNote adds its own rel).
+  const noteLinkProps = useMemo(() => linkTargetProps(linkTarget), [linkTarget])
   const [bookmarks, setBookmarks] = useState([])
   const [showAddForm, setShowAddForm] = useState(false)
   const [browserResetKey, setBrowserResetKey] = useState(0)
@@ -124,6 +129,7 @@ function App() {
     url: '',
     description: '',
     tags: '',
+    note: '',
   })
   const [fetchingEditDescription, setFetchingEditDescription] = useState(false)
   const [fetchingEditTitle, setFetchingEditTitle] = useState(false)
@@ -132,7 +138,8 @@ function App() {
     title: '',
     url: '',
     tags: '',
-    description: ''
+    description: '',
+    note: '',
   })
   const [tagDraft, setTagDraft] = useState('')
   const [editTagDraft, setEditTagDraft] = useState('')
@@ -520,13 +527,15 @@ function App() {
         title: formData.title,
         url: normalizedUrl,
         description: formData.description || null,
+        // Blank = no note; otherwise sent as typed (leading spaces can be Markdown).
+        note: formData.note.trim() ? formData.note : null,
         tags
       }
 
       await bookmarksAPI.create(bookmarkData)
       
       // Reset form and refresh bookmarks
-      setFormData({ title: '', url: '', tags: '', description: '' })
+      setFormData({ title: '', url: '', tags: '', description: '', note: '' })
       setTagDraft('')
       setLastFetchedDescriptionUrl('')
       setShowAddForm(false)
@@ -632,6 +641,7 @@ function App() {
       url: bookmark.url || '',
       description: decodeHtmlEntities(bookmark.description || ''),
       tags: tagsString,
+      note: bookmark.note || '',
     })
     setEditTagDraft('')
   }
@@ -646,7 +656,7 @@ function App() {
 
   const handleCancelEdit = () => {
     setEditingBookmarkId(null)
-    setEditFormData({ title: '', url: '', description: '', tags: '' })
+    setEditFormData({ title: '', url: '', description: '', tags: '', note: '' })
     setEditTagDraft('')
     setFocusBookmarkId(null)
   }
@@ -700,6 +710,7 @@ function App() {
         title: editFormData.title.trim(),
         url: normalizedUrl,
         description: editFormData.description.trim() || null,
+        note: editFormData.note.trim() ? editFormData.note : null,
         tags,
       })
       handleCancelEdit()
@@ -936,6 +947,19 @@ function App() {
               />
             </div>
             <div className="form-group">
+              <label htmlFor={`edit-note-${bookmark.id}`}>Note (private)</label>
+              <textarea
+                id={`edit-note-${bookmark.id}`}
+                name="note"
+                value={editFormData.note}
+                onChange={handleEditInputChange}
+                maxLength={INPUT_LIMITS.note}
+                rows="4"
+                aria-describedby={`edit-note-hint-${bookmark.id}`}
+              />
+              <small id={`edit-note-hint-${bookmark.id}`}>{NOTE_HINT}</small>
+            </div>
+            <div className="form-group">
               <label htmlFor={`edit-tags-${bookmark.id}`}>Tags</label>
               <div className="tag-input-shell">
                 {parseTags(editFormData.tags).map((tag) => (
@@ -999,6 +1023,7 @@ function App() {
             {displayDescription && (
               <p className="bookmark-description">{displayDescription}</p>
             )}
+            <BookmarkNote bookmarkId={bookmark.id} note={bookmark.note} linkProps={noteLinkProps} />
             <BookmarkTagList tags={bookmark.tags} selectedTags={selectedTags} onTagSelect={onTagSelect} />
           </>
         )}
@@ -1205,6 +1230,7 @@ function App() {
                     onTagFavoriteToggle={handleTagFavoriteToggle}
                     renderCard={renderOwnerCard}
                     showUntaggedFilter
+                    showNoteFilter
                     showDomainFilter
                     showDateFilter
                     focusBookmarkId={focusBookmarkId}
@@ -1403,6 +1429,19 @@ function App() {
                     placeholder="Brief description of this bookmark"
                   ></textarea>
                 </div>
+                <div className="form-group">
+                  <label htmlFor="note">Note (optional, private)</label>
+                  <textarea
+                    id="note"
+                    name="note"
+                    value={formData.note}
+                    onChange={handleInputChange}
+                    maxLength={INPUT_LIMITS.note}
+                    rows="4"
+                    aria-describedby="note-hint"
+                  ></textarea>
+                  <small id="note-hint">{NOTE_HINT}</small>
+                </div>
                 <div className="form-actions">
                   <button type="submit" className="btn-primary">Save bookmark</button>
                   <button
@@ -1410,7 +1449,7 @@ function App() {
                     className="btn-secondary"
                     onClick={() => {
                       setShowAddForm(false)
-                      setFormData({ title: '', url: '', tags: '', description: '' })
+                      setFormData({ title: '', url: '', tags: '', description: '', note: '' })
                       setTagDraft('')
                     }}
                   >

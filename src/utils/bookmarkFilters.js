@@ -12,6 +12,24 @@ export function countUntagged(bookmarks) {
   return Array.isArray(bookmarks) ? bookmarks.filter(hasNoTags).length : 0
 }
 
+// "Has note": the owner's private note (issue #60) has some non-blank text. Public profile
+// bookmarks never carry a note, so this is only meaningful in the owner's library.
+export function hasNote(bookmark) {
+  return typeof bookmark?.note === 'string' && bookmark.note.trim() !== ''
+}
+
+export function countWithNotes(bookmarks) {
+  return Array.isArray(bookmarks) ? bookmarks.filter(hasNote).length : 0
+}
+
+export function isFavoriteBookmark(bookmark) {
+  return Boolean(Number(bookmark?.is_favorite))
+}
+
+export function countFavorites(bookmarks) {
+  return Array.isArray(bookmarks) ? bookmarks.filter(isFavoriteBookmark).length : 0
+}
+
 // Related and the domain picker share the original site grouping, including its
 // multi-part suffix list. URL canonicalizes case, ports and IDNs (punycode).
 export function getBookmarkDomain(url) {

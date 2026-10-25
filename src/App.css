@@ -2177,3 +2177,184 @@ a.btn-field-action,
     margin-left: 0;
   }
 }
+
+/* ---------- Bookmark notes (owner's cards, issue #60) ---------- */
+/* Collapsed behind a toggle so a long note never stretches the card. The rendered Markdown
+   (src/utils/noteMarkdown.js) only ever uses the elements styled here, with no inline styles. */
+.bookmark-note {
+  padding-left: var(--row-indent);
+  min-width: 0;
+}
+
+.bookmark-note-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 24px;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-primary-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bookmark-note-toggle:hover {
+  border-color: var(--color-primary-strong);
+  color: var(--color-text);
+}
+
+.bookmark-note-chevron {
+  transition: transform 0.15s ease;
+}
+
+.bookmark-note.is-open .bookmark-note-chevron {
+  transform: rotate(180deg);
+}
+
+.bookmark-note-body {
+  max-width: 75ch;
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--color-primary-soft-strong);
+  border-radius: 0 8px 8px 0;
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.bookmark-note-loading {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.note-markdown > :first-child {
+  margin-top: 0;
+}
+
+.note-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.note-markdown p,
+.note-markdown ul,
+.note-markdown ol,
+.note-markdown blockquote,
+.note-markdown pre,
+.note-markdown table {
+  margin: 0 0 0.6rem;
+}
+
+.note-markdown ul,
+.note-markdown ol {
+  padding-left: 1.4rem;
+}
+
+.note-markdown .note-heading {
+  font-weight: 700;
+}
+
+.note-markdown a {
+  color: var(--color-link);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.note-markdown code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--color-panel);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85em;
+}
+
+/* Wrapped, not scrolled: a scrolling block would need its own keyboard focus. */
+.note-markdown .note-code-block {
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  background: var(--color-panel);
+  white-space: pre-wrap;
+}
+
+.note-markdown .note-code-block code {
+  padding: 0;
+  background: none;
+}
+
+.note-markdown blockquote {
+  padding-left: 0.7rem;
+  border-left: 3px solid var(--color-border-strong);
+  color: var(--color-text-soft);
+}
+
+.note-markdown hr {
+  border: 0;
+  border-top: 1px solid var(--color-border-strong);
+  margin: 0.6rem 0;
+}
+
+.note-markdown table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.note-markdown th,
+.note-markdown td {
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--color-border-strong);
+  text-align: left;
+  vertical-align: top;
+}
+
+@media (max-width: 640px) {
+  .bookmark-card {
+    grid-template-areas:
+      'fav title title'
+      'meta meta meta'
+      'desc desc desc'
+      'note note note'
+      'form form form'
+      'tags tags actions';
+  }
+
+  .bookmark-card.is-selectable {
+    grid-template-areas:
+      'sel fav title title'
+      'meta meta meta meta'
+      'desc desc desc desc'
+      'note note note note'
+      'form form form form'
+      'tags tags tags actions';
+  }
+
+  .bookmark-card .bookmark-note {
+    grid-area: note;
+    margin-top: 0.4rem;
+    padding-left: 0;
+  }
+}
+
+/* ---------- Attribute filters (owner's sidebar, issue #75) ---------- */
+/* Favorites, Has note and Without tags: toggles that combine with every other filter. */
+.attribute-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.attribute-filters-heading {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}

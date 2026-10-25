@@ -1,109 +1,8 @@
 import { useState, useRef } from 'react';
 import { X, Upload, FileText, CheckCircle } from 'lucide-react';
 import { bookmarksAPI } from '../api/api';
+import { parseBookmarksCSV, parseTagstashJSON } from '../utils/bookmarkImport';
 import './Import.css';
-
-// Parse a single CSV line, handling quoted fields with embedded commas/newlines.
-function parseCSVLine(line) {
-  const fields = [];
-  let inQuotes = false;
-  let current = '';
-
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  fields.push(current);
-  return fields;
-}
-
-// Parse Raindrop.io CSV export into bookmark objects.
-function parseRaindropCSV(text) {
-  // Normalise line endings
-  const raw = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-
-  // Split respecting quoted newlines
-  const lines = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (ch === '"') {
-      if (inQuotes && raw[i + 1] === '"') {
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-        current += ch;
-      }
-    } else if (ch === '\n' && !inQuotes) {
-      lines.push(current);
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  if (current.trim()) lines.push(current);
-
-  if (lines.length < 2) return [];
-
-  const headers = parseCSVLine(lines[0]).map((h) => h.trim().toLowerCase());
-  const col = (name) => headers.indexOf(name);
-
-  const idxTitle = col('title');
-  const idxNote = col('note');
-  const idxExcerpt = col('excerpt');
-  const idxUrl = col('url');
-  const idxFolder = col('folder');
-  const idxTags = col('tags');
-
-  if (idxTitle === -1 || idxUrl === -1) return null; // Not a Raindrop CSV
-
-  const bookmarks = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const fields = parseCSVLine(lines[i]);
-
-    const title = fields[idxTitle]?.trim() || '';
-    const url = fields[idxUrl]?.trim() || '';
-    if (!title || !url) continue;
-
-    const note = idxNote !== -1 ? (fields[idxNote]?.trim() || '') : '';
-    const excerpt = idxExcerpt !== -1 ? (fields[idxExcerpt]?.trim() || '') : '';
-    const description = note || excerpt || null;
-
-    const folder = idxFolder !== -1 ? (fields[idxFolder]?.trim() || '') : '';
-    const tagsRaw = idxTags !== -1 ? (fields[idxTags]?.trim() || '') : '';
-
-    const tags = tagsRaw
-      .split(',')
-      .map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
-      .filter((t) => t.length > 0);
-
-    // Add folder as a tag when it's meaningful
-    if (folder && folder.toLowerCase() !== 'unsorted') {
-      const folderTag = folder.toLowerCase().replace(/\s+/g, '-');
-      if (!tags.includes(folderTag)) tags.push(folderTag);
-    }
-
-    bookmarks.push({ title, url, description, tags });
-  }
-
-  return bookmarks;
-}
 
 // Parse a browser Netscape-style HTML bookmark export into bookmark objects.
 // Walks the folder hierarchy and uses folder names as tags.
@@ -158,12 +57,16 @@ function parseBrowserBookmarksHTML(html) {
       .map((f) => f.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''))
       .filter((t) => t.length > 0);
 
-    // Tag-aware Netscape exports (including Tagstash) also carry TAGS and a DD note.
+    // Tag-aware Netscape exports (including Tagstash) also carry TAGS and a DD description.
+    // Tagstash's own export keeps the private note in a NOTE attribute (newlines as &#10;).
     const exportedTags = (a.getAttribute('tags') || '').split(',')
       .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, '-')).filter(Boolean);
-    const note = a.closest('dt')?.nextElementSibling;
-    const description = note?.tagName === 'DD' ? note.textContent.trim() || null : null;
-    bookmarks.push({ title, url, description, tags: [...new Set([...tags, ...exportedTags])] });
+    const dd = a.closest('dt')?.nextElementSibling;
+    const description = dd?.tagName === 'DD' ? dd.textContent.trim() || null : null;
+    const noteText = a.getAttribute('note') || '';
+    const bookmark = { title, url, description, tags: [...new Set([...tags, ...exportedTags])] };
+    if (noteText.trim()) bookmark.note = noteText;
+    bookmarks.push(bookmark);
   });
 
   return bookmarks;
@@ -208,6 +111,33 @@ function Import({ onImportComplete }) {
       return;
     }
 
+    if (source === 'tagstash') {
+      const name = file.name.toLowerCase();
+      const isJson = name.endsWith('.json');
+      if (!isJson && !name.endsWith('.csv')) {
+        setError('Please select a Tagstash JSON or CSV export.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        const bookmarks = isJson ? parseTagstashJSON(text) : parseBookmarksCSV(text);
+        if (bookmarks === null) {
+          setError('This file does not look like a Tagstash export. Export from Settings → Export as JSON or CSV and try again.');
+          return;
+        }
+        if (bookmarks.length === 0) {
+          setError('No valid bookmarks found in this file.');
+          return;
+        }
+        setError('');
+        setParsed(bookmarks);
+        setStage('preview');
+      };
+      reader.readAsText(file);
+      return;
+    }
+
     if (source === 'raindrop') {
       if (!file.name.toLowerCase().endsWith('.csv')) {
         setError('Please select a CSV file.');
@@ -216,7 +146,7 @@ function Import({ onImportComplete }) {
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target.result;
-        const bookmarks = parseRaindropCSV(text);
+        const bookmarks = parseBookmarksCSV(text);
         if (bookmarks === null) {
           setError('This file does not look like a Raindrop.io CSV export. Expected columns: title, url, tags…');
           return;
@@ -291,6 +221,7 @@ function Import({ onImportComplete }) {
         <label htmlFor="import-source">Source</label>
         <select id="import-source" value={source} onChange={handleSourceChange}>
           <option value="raindrop">Raindrop.io (CSV)</option>
+          <option value="tagstash">Tagstash export (JSON or CSV)</option>
           <option value="firefox">Firefox Bookmarks (HTML)</option>
           <option value="chrome">Google Chrome Bookmarks (HTML)</option>
           <option value="pinboard">Pinboard.in (coming soon)</option>
@@ -321,14 +252,16 @@ function Import({ onImportComplete }) {
             : ''}
       </p>
 
-      {(source === 'raindrop' || source === 'firefox' || source === 'chrome') && stage === 'idle' && (
+      {(source === 'raindrop' || source === 'tagstash' || source === 'firefox' || source === 'chrome') && stage === 'idle' && (
         <>
           <p className="import-hint">
             {source === 'firefox'
               ? 'Export from Firefox: Bookmarks -> Manage Bookmarks -> Import and Backup -> Export Bookmarks to HTML. Then upload the file here.'
               : source === 'chrome'
                 ? 'Export from Chrome: Bookmark Manager -> Organize -> Export bookmarks. Then upload the HTML file here.'
-                : 'Export your bookmarks from Raindrop.io as a CSV file, then upload it here.'}
+                : source === 'tagstash'
+                  ? 'Upload a JSON or CSV file from Settings → Export. Descriptions, tags and notes come back with your bookmarks. (For a Tagstash HTML export, choose Firefox or Chrome.)'
+                  : 'Export your bookmarks from Raindrop.io as a CSV file, then upload it here.'}
           </p>
           <button
             type="button"
@@ -337,7 +270,7 @@ function Import({ onImportComplete }) {
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            aria-label={isBrowserHtmlSource ? 'Upload HTML bookmark file' : 'Upload CSV file'}
+            aria-label={isBrowserHtmlSource ? 'Upload HTML bookmark file' : source === 'tagstash' ? 'Upload Tagstash export file' : 'Upload CSV file'}
           >
             <FileText size={36} className="drop-zone-icon" />
             <span className="drop-zone-title">
@@ -345,14 +278,16 @@ function Import({ onImportComplete }) {
                 ? 'Drop your Firefox bookmarks HTML here'
                 : source === 'chrome'
                   ? 'Drop your Chrome bookmarks HTML here'
-                  : 'Drop your Raindrop.io CSV here'}
+                  : source === 'tagstash'
+                    ? 'Drop your Tagstash JSON or CSV export here'
+                    : 'Drop your Raindrop.io CSV here'}
             </span>
             <span className="drop-zone-sub">or click to browse</span>
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept={isBrowserHtmlSource ? '.html,.htm' : '.csv'}
+            accept={isBrowserHtmlSource ? '.html,.htm' : source === 'tagstash' ? '.json,.csv' : '.csv'}
             className="hidden-file-input"
             onChange={handleFileInput}
           />
@@ -378,9 +313,11 @@ function Import({ onImportComplete }) {
                   <tr key={i}>
                     <td className="preview-title">{bm.title}</td>
                     <td className="preview-url">
-                      <a href={bm.url} target="_blank" rel="noopener noreferrer">
-                        {bm.url}
-                      </a>
+                      {/^https?:\/\//i.test(bm.url) ? (
+                        <a href={bm.url} target="_blank" rel="noopener noreferrer">
+                          {bm.url}
+                        </a>
+                      ) : bm.url}
                     </td>
                     <td className="preview-tags">
                       {bm.tags.map((t) => (
