@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { createHash } from 'node:crypto';
-import { API_DOC_ROUTES, API_DOC_LIMITS, API_DOC_POLICY, API_DOC_BUDGETS } from '../src/content/developersApi.js';
+import { API_DOC_ROUTES, API_DOC_LIMITS, API_DOC_POLICY, API_DOC_BUDGETS, API_DOC_BOOKMARK_EXAMPLE } from '../src/content/developersApi.js';
 import { TRASH_RETENTION_DAYS } from '../src/utils/trash.js';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 import { call } from './helpers/api.mjs';
@@ -45,7 +45,7 @@ async function setup() {
   return env;
 }
 
-const bookmarkBody = { title: 'New reference', url: 'https://new.example/', description: 'Description', tags: ['reference'] };
+const bookmarkBody = { title: 'New reference', url: 'https://new.example/', description: 'Description', note: '**Private** note', tags: ['reference'] };
 const bodies = {
   'POST /api/bookmarks': bookmarkBody,
   'PUT /api/bookmarks/:id': bookmarkBody,
@@ -134,4 +134,17 @@ test('/developers is an indexable page and appears in the sitemap', async () => 
   assert.equal(response.headers.get('X-Robots-Tag'), null);
   const xml = await (await sitemap({ request: new Request('https://tagsta.sh/sitemap.xml'), env: {} })).text();
   assert.ok(xml.includes('<loc>https://tagsta.sh/developers</loc>'));
+});
+
+test('the documented Bookmark object has exactly the fields a key-authenticated read returns', async () => {
+  const env = await setup();
+  try {
+    const saved = await call(env, 'bookmarks', { method: 'POST', headers, body: bookmarkBody });
+    assert.equal(saved.status, 201);
+    const { bookmark } = await saved.json();
+    assert.equal(bookmark.note, bookmarkBody.note, 'a key can write the private note');
+    const read = await (await call(env, `bookmarks/${bookmark.id}`, { headers })).json();
+    assert.deepEqual(Object.keys(read.bookmark).sort(), Object.keys(API_DOC_BOOKMARK_EXAMPLE).sort());
+    assert.equal(read.bookmark.note, bookmarkBody.note);
+  } finally { env.sqlite.close(); }
 });

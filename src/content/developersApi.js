@@ -1,7 +1,7 @@
 // Public documentation contract. tests/developers-api.test.mjs exercises each
 // listed route with a personal key and checks these limits against the Worker.
 export const API_DOC_LIMITS = {
-  title: 1000, url: 8192, description: 10000, tagName: 100,
+  title: 1000, url: 8192, description: 10000, note: 10000, tagName: 100,
   tagsPerBookmark: 50, apiKeyName: 100, importBookmarks: 2000, bulkBookmarkIds: 500,
 }
 export const API_DOC_POLICY = {
@@ -14,7 +14,14 @@ export const API_DOC_BUDGETS = {
   importsPerHour: ['bookmark_import', 20, 60],
 }
 
-const bookmarkBody = 'title and url: required nonblank strings, on both create and update. description: optional string or null; omitted, null or empty clears it. tags: optional array of single-word strings or null; omitted keeps tags on update, null or [] clears them. See field rules below.'
+const bookmarkBody = 'title and url: required nonblank strings, on both create and update. description: optional string or null; omitted, null or empty clears it. note: optional private Markdown string or null; omitted keeps it on update, null or blank clears it, otherwise stored exactly as sent. tags: optional array of single-word strings or null; omitted keeps tags on update, null or [] clears them. See field rules below.'
+// The Bookmark object shown on the page. tests/developers-api.test.mjs checks its keys against a real response.
+export const API_DOC_BOOKMARK_EXAMPLE = {
+  id: 123, user_id: 7, title: 'Example reference', url: 'https://example.com/', description: 'A useful reference',
+  note: null, favicon_url: 'https://www.google.com/s2/favicons?sz=64&domain=example.com',
+  created_at: '2026-10-25 12:00:00', updated_at: '2026-10-25 12:00:00', is_favorite: 0, is_private: 0, deleted_at: null,
+  tags: [{ id: 4, name: 'reference' }],
+}
 const idsBody = `ids: required nonempty array of positive safe integers. Maximum ${API_DOC_LIMITS.bulkBookmarkIds} entries before de-duplication. Counts in the response use the de-duplicated ids.`
 
 // Response notation is descriptive, not literal JSON: Bookmark is defined on the page.
@@ -31,10 +38,10 @@ export const API_DOC_ROUTES = [
     response: '{ bookmark: Bookmark }', fields: ['bookmark'], status: 200, errors: '400 without url; 404 if no live match.' },
   { group: 'Bookmarks', method: 'POST', path: '/api/bookmarks', title: 'Save a bookmark',
     request: bookmarkBody, response: '{ message: string, bookmark: Bookmark }', fields: ['message', 'bookmark'], status: 201,
-    errors: '400 invalid fields; 403 at the free-plan limit. A saved URL that is in the trash replaces that trashed copy.' },
+    errors: '400 invalid fields; 403 at the free-plan limit; 503 if a note is sent before the notes migration (nothing is saved). A saved URL that is in the trash replaces that trashed copy.' },
   { group: 'Bookmarks', method: 'PUT', path: '/api/bookmarks/:id', title: 'Edit a bookmark',
     request: bookmarkBody, response: '{ message: string, bookmark: Bookmark }', fields: ['message', 'bookmark'], status: 200,
-    errors: '400 invalid fields; 404 if missing, not yours or trashed. Send title and url even when only changing tags.' },
+    errors: '400 invalid fields; 404 if missing, not yours or trashed; 503 if a note is sent before the notes migration. Send title and url even when only changing tags.' },
   { group: 'Bookmarks', method: 'DELETE', path: '/api/bookmarks/:id', title: 'Move to trash',
     request: 'No body. Removes the bookmark from the live library.',
     response: '{ message: string, trashed: boolean, retentionDays?: number }', fields: ['message', 'trashed'], status: 200,
@@ -109,10 +116,10 @@ export const API_DOC_ROUTES = [
     response: '{ description: string }', fields: ['description'], status: 200,
     errors: '400 unsafe/invalid URL; 404 no description; 422 non-HTML content; 429 budget exhausted; 500 fetch failure; 502 blocked response without a description or refused redirect; 504 timeout.' },
   { group: 'Metadata and import', method: 'POST', path: '/api/bookmarks/import', title: 'Import bookmarks',
-    request: 'bookmarks: required nonempty array, at most 2000 rows. Each row accepts title, url, description and tags, as described in Import behavior below. Other bookmark fields are not imported.',
+    request: 'bookmarks: required nonempty array, at most 2000 rows. Each row accepts title, url, description, note and tags, as described in Import behavior below. Other bookmark fields are not imported.',
     response: '{ imported: number, skipped: number, duplicates: number, invalid: number, truncated: number, droppedTags: number, limitReached: boolean, invalidRows: [{ index: number, error: string }], membership_tier: string, bookmark_limit: number | null }',
     fields: ['imported', 'skipped', 'duplicates', 'invalid', 'truncated', 'droppedTags', 'limitReached', 'invalidRows', 'membership_tier', 'bookmark_limit'], status: 200,
-    errors: '400 invalid/empty array or too many rows; 403 when already at the free limit; 413 body too large; 429 budget exhausted; 500 partial import (error plus summary counts, without tier/limit fields).' },
+    errors: '400 invalid/empty array or too many rows; 403 when already at the free limit; 413 body too large; 429 budget exhausted; 503 if a row carries a note before the notes migration; 500 partial import (error plus summary counts, without tier/limit fields).' },
 ]
 
 export const API_DOC_ERRORS = [

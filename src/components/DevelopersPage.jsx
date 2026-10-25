@@ -3,13 +3,13 @@ import AppFooter from './AppFooter'
 import { version } from '../../package.json'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
 import { DEVELOPERS_META } from '../utils/pageMeta'
-import { API_DOC_ROUTES, API_DOC_LIMITS, API_DOC_POLICY, API_DOC_BUDGETS, API_DOC_ERRORS } from '../content/developersApi'
+import { API_DOC_ROUTES, API_DOC_LIMITS, API_DOC_POLICY, API_DOC_BUDGETS, API_DOC_ERRORS, API_DOC_BOOKMARK_EXAMPLE } from '../content/developersApi'
 import './DevelopersPage.css'
 
 const groups = [...new Set(API_DOC_ROUTES.map(route => route.group))]
 const anchor = text => text.toLowerCase().replaceAll(' ', '-')
 const limitLabels = {
-  title: 'Title (after trimming)', url: 'URL (after normalization)', description: 'Description',
+  title: 'Title (after trimming)', url: 'URL (after normalization)', description: 'Description', note: 'Note',
   tagName: 'Each tag name', tagsPerBookmark: 'Tags per bookmark', apiKeyName: 'API key name in Settings',
   importBookmarks: 'Rows per import', bulkBookmarkIds: 'Ids per bulk request (before de-duplication)',
 }
@@ -69,22 +69,10 @@ curl --fail-with-body 'https://tagsta.sh/api/bookmarks' \\
             <section id="bookmark-shape">
               <h2>Bookmark fields and writes</h2>
               <p><code>Bookmark</code> in this reference means the following JSON object. This is an illustrative response; ids and dates come from your account.</p>
-              <CodeBlock label="JSON: bookmark response fields">{`{
-  "id": 123,
-  "user_id": 7,
-  "title": "Example reference",
-  "url": "https://example.com/",
-  "description": "A useful reference",
-  "favicon_url": "https://www.google.com/s2/favicons?sz=64&domain=example.com",
-  "created_at": "2026-10-25 12:00:00",
-  "updated_at": "2026-10-25 12:00:00",
-  "is_favorite": 0,
-  "is_private": 0,
-  "deleted_at": null,
-  "tags": [{ "id": 4, "name": "reference" }]
-}`}</CodeBlock>
-              <p>Ids are numbers. Bookmark flags are integers (0 or 1). Description and favicon may be null. Database timestamps are UTC, usually <code>YYYY-MM-DD HH:MM:SS</code>; <code>deleted_at</code> is null for live bookmarks. Trash responses also include <code>expires_at</code>.</p>
-              <p>Create and update accept <code>title</code>, <code>url</code>, <code>description</code> and <code>tags</code>. Title is trimmed. URLs must be HTTP(S); a missing scheme is prefixed with HTTPS, and bare roots keep a trailing slash. Title and URL are required for both POST and PUT. Omitting description on PUT clears it; omitting tags keeps existing tags.</p>
+              <CodeBlock label="JSON: bookmark response fields">{JSON.stringify(API_DOC_BOOKMARK_EXAMPLE, null, 2)}</CodeBlock>
+              <p>Ids are numbers. Bookmark flags are integers (0 or 1). Description, note and favicon may be null. Database timestamps are UTC, usually <code>YYYY-MM-DD HH:MM:SS</code>; <code>deleted_at</code> is null for live bookmarks. Trash responses also include <code>expires_at</code>.</p>
+              <p>Create and update accept <code>title</code>, <code>url</code>, <code>description</code>, <code>note</code> and <code>tags</code>. Title is trimmed. URLs must be HTTP(S); a missing scheme is prefixed with HTTPS, and bare roots keep a trailing slash. Title and URL are required for both POST and PUT. Omitting description on PUT clears it; omitting note or tags keeps the existing value.</p>
+              <p><code>note</code> is a private Markdown note, up to {API_DOC_LIMITS.note.toLocaleString('en-US')} characters. Only you can read it: it is never included in your public profile, its API or the sitemap, even for public bookmarks. It is stored as sent (not trimmed) and returned as raw Markdown; rendering it safely is up to your client. Null or a blank string clears it.</p>
               <p>Tags are trimmed, lowercased, de-duplicated single words. Blank names are dropped. Null or an empty array clears tags. Invalid types, spaces inside a tag or limits exceeded reject a normal create/update with 400 before any write. Use the dedicated toggle endpoints for favorites and privacy; these flags are not create/update body fields.</p>
               <p>Success shapes below use type notation, such as <code>string</code>, <code>Bookmark[]</code> and <code>?</code> for an optional field. Actual responses are JSON objects.</p>
             </section>
@@ -123,7 +111,7 @@ curl --fail-with-body -X DELETE 'https://tagsta.sh/api/bookmarks/123' \\
                 </>}
                 {group === 'Metadata and import' && <>
                   <h3>Import behavior</h3>
-                  <p>Import skips invalid rows and URLs already in your live library or repeated in the request. Rows need nonblank string titles and valid HTTP(S) URLs. Invalid objects, field types and overlong URLs are skipped. Overlong titles/descriptions are truncated. Import lowercases tags and replaces whitespace with hyphens; non-string, overlong and surplus tags are dropped, while blank and duplicate tags are ignored.</p>
+                  <p>Import skips invalid rows and URLs already in your live library or repeated in the request. Rows need nonblank string titles and valid HTTP(S) URLs. Invalid objects, field types and overlong URLs are skipped. Overlong titles, descriptions and notes are truncated; a non-string note makes the row invalid. Import lowercases tags and replaces whitespace with hyphens; non-string, overlong and surplus tags are dropped, while blank and duplicate tags are ignored.</p>
                   <p><code>truncated</code> counts rows changed by truncation; <code>droppedTags</code> counts discarded tag entries. <code>invalidRows</code> includes zero-based indexes and reasons for the first 20 invalid rows. <code>skipped</code> includes invalid, duplicate and over-limit rows. Accepted rows commit in chunks of up to 250. A failed chunk returns 500 with counts so far; retrying the same file skips already-imported URLs. Paid accounts receive <code>bookmark_limit: null</code>.</p>
                   <p>Use the library GET for export; there is no export endpoint. HTML/CSV parsing and output formats are handled by the web app, not these JSON routes.</p>
                   <CodeBlock label="Shell: import a JSON file">{`# bookmarks.json must contain {"bookmarks":[{"title":"Example","url":"https://example.com/","tags":["reading"]}]}
@@ -163,7 +151,7 @@ curl --fail-with-body 'https://tagsta.sh/api/bookmarks/import' \\
             <section id="public-profiles">
               <h2>Public profile API</h2>
               <p><code>GET /api/profiles/:username</code> is a stable, keyless endpoint for embedding public bookmarks on another website. Send no Authorization header or cookies. The owner must enable their public profile in Settings. Missing, private and suspended profiles all return the same 404 JSON error.</p>
-              <p>Repeat <code>?tag=</code> to filter by tags; every tag must match (AND). Values are trimmed, lowercased and de-duplicated in first-seen order. The returned <code>tags</code> list always describes the entire public collection, even when bookmarks are filtered. Bookmarks are newest created_at first, with no pagination.</p>
+              <p>Repeat <code>?tag=</code> to filter by tags; every tag must match (AND). Values are trimmed, lowercased and de-duplicated in first-seen order. The returned <code>tags</code> list always describes the entire public collection, even when bookmarks are filtered. Bookmarks are newest created_at first, with no pagination. Notes are never included.</p>
               <CodeBlock label="Shell: read public bookmarks matching two tags">{`# Replace USERNAME and the tag names with a public profile's values.
 curl --fail-with-body --get 'https://tagsta.sh/api/profiles/USERNAME' \\
   --data-urlencode 'tag=reference' \\
