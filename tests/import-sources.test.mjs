@@ -126,14 +126,11 @@ test('Pocket ril_export.html style list works, and TAGS merge with folder tags w
 </ul><h1>Read Archive</h1><ul>
 <li><a href="https://c.example/" time_added="1700000002" tags="tech">Story C</a></li>
 </ul></body></html>`;
-  assert.equal(looksLikeBookmarkHtml(pocket), false);
-  assert.equal(parseBookmarksHTML(pocket), null);
-
-  const withDoctype = pocket.replace('<!DOCTYPE html>', '<!DOCTYPE NETSCAPE-Bookmark-file-1>');
-  assert.deepEqual(parseBookmarksHTML(withDoctype).map((b) => [b.url, b.tags]), [
-    ['https://a.example/', ['news', 'tech']],
-    ['https://b.example/', []],
-    ['https://c.example/', ['tech']],
+  assert.equal(looksLikeBookmarkHtml(pocket), true);
+  assert.deepEqual(parseBookmarksHTML(pocket).map((b) => [b.title, b.url, b.tags]), [
+    ['Story A', 'https://a.example/', ['news', 'tech']],
+    ['Story B', 'https://b.example/', []],
+    ['Story C', 'https://c.example/', ['tech']],
   ]);
 
   const folderAndTags = '<DL><DT><H3>Tech</H3><DL><DT><A HREF="https://a.example/" TAGS="tech, News">A</A></DL></DL>';
@@ -159,4 +156,12 @@ test('Tagstash HTML export attributes: NOTE with newline entities, DD descriptio
   assert.deepEqual(parseBookmarksHTML(html), [
     { title: 'A', url: 'https://a.example/', description: 'desc', tags: ['a'], note: 'first\nsecond' },
   ]);
+});
+
+test('named HTML entities in titles and descriptions are decoded', () => {
+  const html = '<DL><DT><A HREF="https://a.example/" TAGS="caf&eacute;">Caf&eacute; &mdash; &ldquo;Menu&rdquo;&hellip; &copy; 2024 &amp;lt; &unknown; &#x263A; &#9731;</A><DD>It&rsquo;s &ndash; &euro;5 &trade; &bull; &Uuml;ber &yuml;&nbsp;x</DL>';
+  const [bookmark] = parseBookmarksHTML(html);
+  assert.equal(bookmark.title, 'Café — “Menu”… © 2024 &lt; &unknown; ☺ ☃');
+  assert.equal(bookmark.description, 'It’s – €5 ™ • Über ÿ\u00a0x');
+  assert.deepEqual(bookmark.tags, ['café']);
 });

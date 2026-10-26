@@ -276,12 +276,24 @@ export function parseInstapaperCSV(text) {
 
 // --- Netscape bookmark HTML (Firefox, Chrome, Safari, Pinboard, Pocket, del.icio.us...) ------
 
-const HTML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+// Latin-1 named entities, in code point order starting at U+00A0 (nbsp ... yuml).
+const LATIN1_NAMES = ('nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest '
+  + 'Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig '
+  + 'agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml').split(' ')
+
+const HTML_ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’', sbquo: '‚', ldquo: '“', rdquo: '”', bdquo: '„',
+  hellip: '…', bull: '•', trade: '™', euro: '€', dagger: '†', Dagger: '‡', permil: '‰',
+  lsaquo: '‹', rsaquo: '›', prime: '′', Prime: '″', larr: '←', rarr: '→', uarr: '↑', darr: '↓',
+  ensp: '\u2002', emsp: '\u2003', thinsp: '\u2009', OElig: 'Œ', oelig: 'œ', Scaron: 'Š', scaron: 'š', Yuml: 'Ÿ', fnof: 'ƒ',
+}
+LATIN1_NAMES.forEach((name, i) => { HTML_ENTITIES[name] = String.fromCharCode(0xa0 + i) })
 
 // One decode pass, so `&amp;lt;` stays `&lt;`.
 function decodeEntities(value) {
   return value.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi, (match, dec, hex, name) => {
-    if (name) return HTML_ENTITIES[name.toLowerCase()] ?? match
+    if (name) return HTML_ENTITIES[name] ?? HTML_ENTITIES[name.toLowerCase()] ?? match
     const code = dec ? parseInt(dec, 10) : parseInt(hex, 16)
     try {
       return String.fromCodePoint(code)
@@ -320,7 +332,10 @@ const SKIP_FOLDERS = new Set([
 
 // True for Netscape-style bookmark HTML, with or without the exact doctype.
 export function looksLikeBookmarkHtml(html) {
-  return /NETSCAPE-Bookmark-file/i.test(html) || (/<dl[\s>]/i.test(html) && /<a\s[^>]*href\s*=/i.test(html))
+  if (/NETSCAPE-Bookmark-file/i.test(html)) return true
+  if (/<dl[\s>]/i.test(html) && /<a\s[^>]*href\s*=/i.test(html)) return true
+  // Pocket's ril_export.html: a plain <ul> of links carrying time_added and tags attributes.
+  return /<a\s[^>]*time_added\s*=/i.test(html) || /<title>\s*Pocket Export\s*<\/title>/i.test(html)
 }
 
 // Parses Netscape-style bookmark HTML without a DOM, so it tolerates what real exports do:
