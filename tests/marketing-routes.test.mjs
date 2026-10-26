@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { onRequest } from '../functions/_middleware.js'
+import { onRequestGet as sitemap } from '../functions/sitemap.xml.js'
+import { getHomeStructuredData, getPricingStructuredData } from '../src/content/marketingSchema.js'
+import { PRICING_FAQS, PRICING_OFFERS } from '../src/content/pricing.js'
 
 test('the Features page stays indexable when served through Pages middleware', async () => {
   const response = await onRequest({
@@ -13,6 +16,28 @@ test('the Features page stays indexable when served through Pages middleware', a
   assert.equal(response.headers.get('X-Robots-Tag'), null)
   assert.equal(response.headers.get('Content-Security-Policy'), "default-src 'self'")
   assert.match(await response.text(), /Bookmark manager features/)
+})
+
+test('the Pricing page is indexable and listed in the sitemap', async () => {
+  const response = await onRequest({
+    request: new Request('https://tagsta.sh/pricing'),
+    next: async () => new Response('<h1>Tagstash pricing</h1>', { headers: { 'Content-Type': 'text/html' } }),
+  })
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('X-Robots-Tag'), null)
+  const xml = await (await sitemap({ request: new Request('https://tagsta.sh/sitemap.xml'), env: {} })).text()
+  assert.match(xml, /<loc>https:\/\/tagsta\.sh\/pricing<\/loc><lastmod>/)
+})
+
+test('the Pricing page schema shares the homepage offers and lists every pricing question', () => {
+  const graph = getPricingStructuredData('https://tagsta.sh')['@graph']
+  const software = graph.find(node => node['@type'] === 'SoftwareApplication')
+  assert.deepEqual(software.offers, PRICING_OFFERS)
+  const homeSoftware = getHomeStructuredData('https://tagsta.sh')['@graph'].find(node => node['@type'] === 'SoftwareApplication')
+  assert.equal(homeSoftware['@id'], software['@id'])
+  assert.deepEqual(homeSoftware.offers, PRICING_OFFERS)
+  const faq = graph.find(node => node['@type'] === 'FAQPage')
+  assert.deepEqual(faq.mainEntity.map(question => question.name), PRICING_FAQS.map(item => item.question))
 })
 
 test('an unknown SPA address stays a real nonindexable 404', async () => {

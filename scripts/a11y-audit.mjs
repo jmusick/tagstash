@@ -11,7 +11,7 @@
 //   anonymous : /, login error + sign-up + forgot-password states, the "finish deleting your
 //               account" screen (form, error, pending) and the "account deleted" page,
 //               /reset-password (form, recovery unavailable, success with keys revoked),
-//               /features, /developers (also no-JS and mobile), /privacy, /support, a public profile (/u/<owner>)
+//               /features, /pricing (also no-JS), /developers (also no-JS and mobile), /privacy, /support, a public profile (/u/<owner>)
 //   owner     : / (bookmark list, untagged/domain/month filters and no matches, edit mode, add form,
 //               a bookmark note collapsed and expanded, the Has note filter (active, no matches, no notes yet),
 //               the add and edit forms with a note and a refused/invalid note save,
@@ -62,7 +62,7 @@ import { fileURLToPath } from 'node:url'
 import bcrypt from 'bcryptjs'
 import { chromium } from 'playwright-core'
 import { API_DOC_ROUTES } from '../src/content/developersApi.js'
-import { DEVELOPERS_META } from '../src/utils/pageMeta.js'
+import { DEVELOPERS_META, PRICING_META } from '../src/utils/pageMeta.js'
 import { duplicateStates } from './a11y-duplicates.mjs'
 import { noteStates } from './a11y-notes.mjs'
 
@@ -411,10 +411,14 @@ async function anonymous(browser, theme) {
     if (await barePage.title() !== DEVELOPERS_META.title) throw new Error('Prerendered API documentation head was not applied')
     if (await barePage.locator('.developers-endpoint').count() !== API_DOC_ROUTES.length) throw new Error('Prerendered API reference is incomplete')
     await makeScanner(barePage, theme, 'anon')('/developers (prerendered, JavaScript disabled)', { checkTheme: false })
+    await go(barePage, '/pricing')
+    await barePage.getByRole('heading', { name: 'Tagstash pricing', exact: true }).waitFor()
+    if (await barePage.title() !== PRICING_META.title) throw new Error('Prerendered pricing head was not applied')
+    await makeScanner(barePage, theme, 'anon')('/pricing (prerendered, JavaScript disabled)', { checkTheme: false })
     await bare.close()
   }
 
-  for (const path of ['/features', '/developers', '/privacy', '/support', `/u/${OWNER.username}`]) {
+  for (const path of ['/features', '/pricing', '/developers', '/privacy', '/support', `/u/${OWNER.username}`]) {
     await go(page, path)
     await page.locator('main').first().waitFor()
     if (path.startsWith('/u/')) await page.locator('.bookmark-card').first().waitFor()

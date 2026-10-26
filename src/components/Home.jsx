@@ -567,7 +567,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
             </p>
           </div>
         </div>
-        <p className="pricing-note">Upgrade from Settings whenever you need more room.</p>
+        <p className="pricing-note">Upgrade from Settings whenever you need more room. <Link to="/pricing">Compare plans and billing</Link></p>
       </section>
 
       <section className="faq-section">

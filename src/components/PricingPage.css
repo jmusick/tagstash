@@ -1,0 +1,12 @@
+.pricing-intro { padding-bottom: 2.5rem; }
+.pricing-page-plans { padding-bottom: 3rem; }
+.pricing-page-plans .pricing-plan { display: flex; flex-direction: column; align-items: flex-start; gap: 0.6rem; }
+.pricing-page-plans .pricing-description { flex-grow: 1; margin-bottom: 0.9rem; }
+.pricing-plan-link { color: var(--color-link); font-weight: 600; padding: 0.85rem 0; }
+.pricing-included { padding: 3rem 0; border-top: 1px solid var(--color-border); }
+.pricing-included h2 { color: var(--color-text); font-stretch: var(--stretch-display); font-size: 1.75rem; }
+.pricing-included ul { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem 3rem; margin: 0 0 1.5rem; padding-left: 1.25rem; line-height: 1.6; }
+.pricing-included a { color: var(--color-link); }
+@media (max-width: 760px) {
+  .pricing-included ul { grid-template-columns: 1fr; }
+}

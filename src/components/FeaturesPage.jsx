@@ -19,6 +19,7 @@ export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSe
       <AppHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme}>
         <a className="features-nav-link" href="/">Home</a>
         <a className="features-nav-link" href="/features" aria-current="page">Features</a>
+        <a className="features-nav-link" href="/pricing">Pricing</a>
         <a className="features-button features-button--small" href={signedIn ? '/' : '/?signup=1#account'}>
           {signedIn ? 'Your bookmarks' : 'Start free'}
         </a>
@@ -128,7 +129,7 @@ export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSe
         <section className="features-closing" aria-labelledby="features-start-title">
           <div>
             <h2 id="features-start-title">Start with the links you want to keep.</h2>
-            <p>Free for up to 50 bookmarks. Need more room? Pro gives you unlimited bookmarks for $3/month or $36/year. Upgrade from Settings whenever you’re ready.</p>
+            <p>Free for up to 50 bookmarks. Need more room? Pro gives you unlimited bookmarks for $3/month or $36/year. Upgrade from Settings whenever you’re ready, or <a href="/pricing">compare the plans</a>.</p>
           </div>
           <a className="features-button" href={signedIn ? '/' : '/?signup=1#account'}>{signedIn ? 'Your bookmarks' : 'Create your free account'}</a>
         </section>

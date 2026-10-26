@@ -54,7 +54,7 @@ export async function onRequestGet({ request, next }) {
   </section>
   <section class="pricing-section">
     <h2 class="home-section-title">Pricing</h2>
-    <p class="pricing-note">Free: up to 50 bookmarks, with no time limit. Pro: unlimited bookmarks for $3/month, or $36 once a year. Same rate either way.</p>
+    <p class="pricing-note">Free: up to 50 bookmarks, with no time limit. Pro: unlimited bookmarks for $3/month, or $36 once a year. Same rate either way. <a href="/pricing">Compare plans and billing</a></p>
   </section>
   <section class="faq-section">
     <h2 class="home-section-title">Questions</h2>
