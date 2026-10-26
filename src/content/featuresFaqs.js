@@ -11,7 +11,7 @@ export const FEATURES_FAQS = [
   },
   {
     question: 'Can I move bookmarks into and out of Tagstash?',
-    answer: 'Yes. Import browser bookmark HTML files or a Raindrop.io CSV. Export your complete library, including private bookmarks, as HTML, CSV, or JSON. JSON preserves dates, tags, favorites, and privacy settings.',
+    answer: 'Yes. Import browser bookmark HTML files (including Safari), or exports from Raindrop.io, Pocket, Pinboard or Instapaper. Export your complete library, including private bookmarks, as HTML, CSV, or JSON. JSON preserves dates, tags, favorites, and privacy settings.',
   },
   {
     question: 'Can I use my shared bookmarks on another website?',

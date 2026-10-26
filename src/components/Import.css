@@ -54,15 +54,6 @@
   box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.18);
 }
 
-.import-upcoming {
-  border: 1px solid var(--color-border);
-  background-color: var(--color-surface-soft);
-  color: var(--color-text);
-  border-radius: 8px;
-  padding: 0.8rem 0.9rem;
-  font-size: 0.9rem;
-}
-
 .close-btn {
   background: none;
   border: none;

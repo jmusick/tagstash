@@ -1,76 +1,94 @@
 import { useState, useRef } from 'react';
 import { X, Upload, FileText, CheckCircle } from 'lucide-react';
 import { bookmarksAPI } from '../api/api';
-import { parseBookmarksCSV, parseTagstashJSON } from '../utils/bookmarkImport';
+import {
+  parseBookmarksCSV,
+  parseTagstashJSON,
+  parseBookmarksHTML,
+  parsePocketCSV,
+  parsePinboardJSON,
+  parseInstapaperCSV,
+} from '../utils/bookmarkImport';
 import './Import.css';
 
-// Parse a browser Netscape-style HTML bookmark export into bookmark objects.
-// Walks the folder hierarchy and uses folder names as tags.
-function parseBrowserBookmarksHTML(html) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
+const HTML_ERROR = 'This does not look like a bookmarks HTML export file. Please export bookmarks as HTML and try again.';
+const HTML_PARSERS = { '.html': parseBookmarksHTML, '.htm': parseBookmarksHTML };
+// Shared by the browser sources (Firefox, Chrome, Safari).
+const BROWSER_HTML = {
+  accept: ['.html', '.htm'],
+  typeError: 'Please select an HTML bookmarks export file.',
+  parsers: HTML_PARSERS,
+  mismatch: HTML_ERROR,
+  folders: true,
+};
 
-  const SKIP_FOLDERS = new Set([
-    'bookmarks menu',
-    'bookmarks toolbar',
-    'bookmarks bar',
-    'other bookmarks',
-    'mobile bookmarks',
-    'imported from firefox',
-    'toolbar',
-    'bookmarks',
-    'menu',
-  ]);
-
-  const bookmarks = [];
-  const anchors = doc.querySelectorAll('a[href]');
-
-  anchors.forEach((a) => {
-    const url = a.getAttribute('href');
-    const title = a.textContent.trim();
-    if (!url || !title) return;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) return;
-
-    // Walk up the DOM collecting folder names from H3s that precede sibling DLs.
-    const folderNames = [];
-    let el = a.parentElement;
-    while (el && el.tagName !== 'BODY') {
-      if (el.tagName === 'DL') {
-        let prev = el.previousElementSibling;
-        while (prev) {
-          if (prev.tagName === 'DT') {
-            const h3 = prev.querySelector('h3');
-            if (h3) {
-              folderNames.push(h3.textContent.trim());
-              break;
-            }
-          }
-          prev = prev.previousElementSibling;
-        }
-      }
-      el = el.parentElement;
-    }
-
-    const tags = folderNames
-      .reverse()
-      .filter((f) => f && !SKIP_FOLDERS.has(f.toLowerCase()))
-      .map((f) => f.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''))
-      .filter((t) => t.length > 0);
-
-    // Tag-aware Netscape exports (including Tagstash) also carry TAGS and a DD description.
-    // Tagstash's own export keeps the private note in a NOTE attribute (newlines as &#10;).
-    const exportedTags = (a.getAttribute('tags') || '').split(',')
-      .map((tag) => tag.trim().toLowerCase().replace(/\s+/g, '-')).filter(Boolean);
-    const dd = a.closest('dt')?.nextElementSibling;
-    const description = dd?.tagName === 'DD' ? dd.textContent.trim() || null : null;
-    const noteText = a.getAttribute('note') || '';
-    const bookmark = { title, url, description, tags: [...new Set([...tags, ...exportedTags])] };
-    if (noteText.trim()) bookmark.note = noteText;
-    bookmarks.push(bookmark);
-  });
-
-  return bookmarks;
-}
+// Everything that differs per source: accepted file types, instructions, and the parser for each
+// type (returns null when the file isn't from that source). The file extension picks the parser.
+const SOURCES = {
+  raindrop: {
+    label: 'Raindrop.io (CSV)',
+    accept: ['.csv'],
+    typeError: 'Please select a CSV file.',
+    hint: 'Export your bookmarks from Raindrop.io as a CSV file, then upload it here.',
+    drop: 'Drop your Raindrop.io CSV here',
+    parsers: { '.csv': parseBookmarksCSV },
+    mismatch: 'This file does not look like a Raindrop.io CSV export. Expected columns: title, url, tags…',
+  },
+  tagstash: {
+    label: 'Tagstash export (JSON or CSV)',
+    accept: ['.json', '.csv'],
+    typeError: 'Please select a Tagstash JSON or CSV export.',
+    hint: 'Upload a JSON or CSV file from Settings → Export. Descriptions, tags and notes come back with your bookmarks. (For a Tagstash HTML export, choose Firefox or Chrome.)',
+    drop: 'Drop your Tagstash JSON or CSV export here',
+    parsers: { '.json': parseTagstashJSON, '.csv': parseBookmarksCSV },
+    mismatch: 'This file does not look like a Tagstash export. Export from Settings → Export as JSON or CSV and try again.',
+  },
+  firefox: {
+    ...BROWSER_HTML,
+    label: 'Firefox Bookmarks (HTML)',
+    hint: 'Export from Firefox: Bookmarks -> Manage Bookmarks -> Import and Backup -> Export Bookmarks to HTML. Then upload the file here.',
+    drop: 'Drop your Firefox bookmarks HTML here',
+  },
+  chrome: {
+    ...BROWSER_HTML,
+    label: 'Google Chrome Bookmarks (HTML)',
+    hint: 'Export from Chrome: Bookmark Manager -> Organize -> Export bookmarks. Then upload the HTML file here.',
+    drop: 'Drop your Chrome bookmarks HTML here',
+  },
+  safari: {
+    ...BROWSER_HTML,
+    label: 'Safari Bookmarks (HTML)',
+    hint: 'Export from Safari: File -> Export -> Bookmarks. Then upload the HTML file here.',
+    drop: 'Drop your Safari bookmarks HTML here',
+  },
+  pocket: {
+    label: 'Pocket (CSV or HTML)',
+    accept: ['.csv', '.html', '.htm'],
+    typeError: 'Please select a Pocket export: a CSV file or the ril_export.html file.',
+    hint: 'Pocket shut down in 2025, so this is for an export file you already have: the CSV (title, url, time_added, tags, status) or the older ril_export.html. Upload it here.',
+    drop: 'Drop your Pocket CSV or HTML export here',
+    parsers: { '.csv': parsePocketCSV, ...HTML_PARSERS },
+    mismatch: 'This file does not look like a Pocket export. Expected a CSV with columns title, url, time_added, tags, status, or the ril_export.html file.',
+  },
+  pinboard: {
+    label: 'Pinboard.in (JSON)',
+    accept: ['.json'],
+    typeError: 'Please select a Pinboard JSON export.',
+    hint: 'Export from Pinboard: Settings -> Backup -> JSON. Then upload the .json file here.',
+    drop: 'Drop your Pinboard JSON export here',
+    parsers: { '.json': parsePinboardJSON },
+    mismatch: 'This file does not look like a Pinboard JSON export. Expected a list of bookmarks with href, description and tags.',
+  },
+  instapaper: {
+    label: 'Instapaper (CSV)',
+    accept: ['.csv'],
+    typeError: 'Please select an Instapaper CSV export.',
+    hint: 'Export from Instapaper: Settings -> Export -> Download .csv file. Then upload it here. Your own folders become tags.',
+    drop: 'Drop your Instapaper CSV here',
+    parsers: { '.csv': parseInstapaperCSV },
+    mismatch: 'This file does not look like an Instapaper CSV export. Expected columns: URL, Title, Selection, Folder, Timestamp…',
+  },
+};
 
 function Import({ onImportComplete }) {
   const [stage, setStage] = useState('idle'); // idle | preview | importing | done
@@ -81,89 +99,34 @@ function Import({ onImportComplete }) {
   const [source, setSource] = useState('raindrop');
   const fileInputRef = useRef(null);
 
-  const isBrowserHtmlSource = source === 'firefox' || source === 'chrome';
+  const config = SOURCES[source];
 
   const handleFile = (file) => {
     if (!file) return;
 
-    if (isBrowserHtmlSource) {
-      if (!file.name.toLowerCase().endsWith('.html') && !file.name.toLowerCase().endsWith('.htm')) {
-        setError('Please select an HTML bookmarks export file.');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const html = e.target.result;
-        if (!html.includes('NETSCAPE-Bookmark-file')) {
-          setError('This does not look like a bookmarks HTML export file. Please export bookmarks as HTML and try again.');
-          return;
-        }
-        const bookmarks = parseBrowserBookmarksHTML(html);
-        if (bookmarks.length === 0) {
-          setError('No valid bookmarks found in this file.');
-          return;
-        }
-        setError('');
-        setParsed(bookmarks);
-        setStage('preview');
-      };
-      reader.readAsText(file);
+    const name = file.name.toLowerCase();
+    const extension = config.accept.find((ext) => name.endsWith(ext));
+    if (!extension) {
+      setError(config.typeError);
       return;
     }
-
-    if (source === 'tagstash') {
-      const name = file.name.toLowerCase();
-      const isJson = name.endsWith('.json');
-      if (!isJson && !name.endsWith('.csv')) {
-        setError('Please select a Tagstash JSON or CSV export.');
+    const parse = config.parsers[extension];
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const bookmarks = parse(e.target.result);
+      if (bookmarks === null) {
+        setError(config.mismatch);
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
-        const bookmarks = isJson ? parseTagstashJSON(text) : parseBookmarksCSV(text);
-        if (bookmarks === null) {
-          setError('This file does not look like a Tagstash export. Export from Settings → Export as JSON or CSV and try again.');
-          return;
-        }
-        if (bookmarks.length === 0) {
-          setError('No valid bookmarks found in this file.');
-          return;
-        }
-        setError('');
-        setParsed(bookmarks);
-        setStage('preview');
-      };
-      reader.readAsText(file);
-      return;
-    }
-
-    if (source === 'raindrop') {
-      if (!file.name.toLowerCase().endsWith('.csv')) {
-        setError('Please select a CSV file.');
+      if (bookmarks.length === 0) {
+        setError('No valid bookmarks found in this file.');
         return;
       }
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const text = e.target.result;
-        const bookmarks = parseBookmarksCSV(text);
-        if (bookmarks === null) {
-          setError('This file does not look like a Raindrop.io CSV export. Expected columns: title, url, tags…');
-          return;
-        }
-        if (bookmarks.length === 0) {
-          setError('No valid bookmarks found in this file.');
-          return;
-        }
-        setError('');
-        setParsed(bookmarks);
-        setStage('preview');
-      };
-      reader.readAsText(file);
-      return;
-    }
-
-    setError('This import source is not available yet.');
+      setError('');
+      setParsed(bookmarks);
+      setStage('preview');
+    };
+    reader.readAsText(file);
   };
 
   const handleDrop = (e) => {
@@ -220,19 +183,11 @@ function Import({ onImportComplete }) {
       <div className="import-source-picker">
         <label htmlFor="import-source">Source</label>
         <select id="import-source" value={source} onChange={handleSourceChange}>
-          <option value="raindrop">Raindrop.io (CSV)</option>
-          <option value="tagstash">Tagstash export (JSON or CSV)</option>
-          <option value="firefox">Firefox Bookmarks (HTML)</option>
-          <option value="chrome">Google Chrome Bookmarks (HTML)</option>
-          <option value="pinboard">Pinboard.in (coming soon)</option>
+          {Object.entries(SOURCES).map(([id, { label }]) => (
+            <option key={id} value={id}>{label}</option>
+          ))}
         </select>
       </div>
-
-      {source === 'pinboard' && (
-        <div className="import-upcoming">
-          Pinboard.in import support is planned. For now, select Raindrop.io or Firefox Bookmarks.
-        </div>
-      )}
 
       <div role="alert" className="live-region">
         {error && (
@@ -252,17 +207,9 @@ function Import({ onImportComplete }) {
             : ''}
       </p>
 
-      {(source === 'raindrop' || source === 'tagstash' || source === 'firefox' || source === 'chrome') && stage === 'idle' && (
+      {stage === 'idle' && (
         <>
-          <p className="import-hint">
-            {source === 'firefox'
-              ? 'Export from Firefox: Bookmarks -> Manage Bookmarks -> Import and Backup -> Export Bookmarks to HTML. Then upload the file here.'
-              : source === 'chrome'
-                ? 'Export from Chrome: Bookmark Manager -> Organize -> Export bookmarks. Then upload the HTML file here.'
-                : source === 'tagstash'
-                  ? 'Upload a JSON or CSV file from Settings → Export. Descriptions, tags and notes come back with your bookmarks. (For a Tagstash HTML export, choose Firefox or Chrome.)'
-                  : 'Export your bookmarks from Raindrop.io as a CSV file, then upload it here.'}
-          </p>
+          <p className="import-hint">{config.hint}</p>
           <button
             type="button"
             className={`drop-zone${dragging ? ' drop-zone--active' : ''}`}
@@ -270,24 +217,16 @@ function Import({ onImportComplete }) {
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            aria-label={isBrowserHtmlSource ? 'Upload HTML bookmark file' : source === 'tagstash' ? 'Upload Tagstash export file' : 'Upload CSV file'}
+            aria-label={`Upload ${config.label.replace(/ \(.*\)$/, '').replace(/ export$/, '')} export file`}
           >
             <FileText size={36} className="drop-zone-icon" />
-            <span className="drop-zone-title">
-              {source === 'firefox'
-                ? 'Drop your Firefox bookmarks HTML here'
-                : source === 'chrome'
-                  ? 'Drop your Chrome bookmarks HTML here'
-                  : source === 'tagstash'
-                    ? 'Drop your Tagstash JSON or CSV export here'
-                    : 'Drop your Raindrop.io CSV here'}
-            </span>
+            <span className="drop-zone-title">{config.drop}</span>
             <span className="drop-zone-sub">or click to browse</span>
           </button>
           <input
             ref={fileInputRef}
             type="file"
-            accept={isBrowserHtmlSource ? '.html,.htm' : source === 'tagstash' ? '.json,.csv' : '.csv'}
+            accept={config.accept.join(',')}
             className="hidden-file-input"
             onChange={handleFileInput}
           />
@@ -336,7 +275,7 @@ function Import({ onImportComplete }) {
           </div>
           <p className="import-note">
             Bookmarks with duplicate URLs will be skipped automatically.
-            {source === 'firefox'
+            {config.folders
               ? ' Folder names are converted to tags.'
               : ' Multi-word tags (e.g. “health insurance”) are converted to hyphenated form.'}
           </p>

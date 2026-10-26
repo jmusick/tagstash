@@ -102,7 +102,7 @@ export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSe
         <section id="move" className="features-story" aria-labelledby="move-title">
           <div>
             <h2 id="move-title">Import and export your bookmark library.</h2>
-            <p>Import a bookmark HTML export from your browser or a Raindrop.io CSV. HTML imports also read tags and descriptions when they’re included in the file.</p>
+            <p>Import a bookmark HTML export from your browser (including Safari), or an export from Raindrop.io, Pocket, Pinboard or Instapaper. HTML imports also read tags and descriptions when they’re included in the file.</p>
             <p>Export your complete library, including private bookmarks, from Settings. Choose HTML for browser imports, CSV for a spreadsheet, or JSON to preserve dates, tags, favorites, and privacy settings.</p>
           </div>
           <div className="features-formats" aria-label="Export formats">
