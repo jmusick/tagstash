@@ -31,5 +31,5 @@ export const HOME_FEATURES = [
   { title: 'Save from your browser', description: 'The Chrome and Firefox extensions save the tab you are on without leaving the page.' },
   { title: 'Private by default', description: 'Nothing is shared until you choose to share it. Any bookmark can be marked private.' },
   { title: 'A public page, if you want one', description: 'Turn on a public profile to share a read-only, tag-filterable page of your bookmarks.' },
-  { title: 'Bring your bookmarks', description: 'Import an HTML export from any major browser, or a Raindrop.io CSV.' },
+  { title: 'Bring your bookmarks', description: 'Import an HTML export from any major browser, or a file from Raindrop.io, Pocket, Pinboard or Instapaper.' },
 ];

@@ -24,7 +24,7 @@ Current status at a glance:
 ## Features
 
 - Tag-first bookmark organization
-- Export your entire library from Settings → Import / Export as Netscape HTML, CSV, or JSON, including private bookmarks. JSON preserves dates, tags, favorites, and privacy settings; HTML/CSV support migration to other tools. HTML imports also read exported tags and descriptions.
+- Export your entire library from Settings → Import / Export as Netscape HTML, CSV, or JSON, including private bookmarks. JSON preserves dates, tags, favorites, and privacy settings; HTML/CSV support migration to other tools. HTML imports also read exported tags and descriptions. Settings → Import also reads Pocket (CSV or HTML), Pinboard (JSON), Instapaper (CSV) and Safari (HTML) exports.
 - Bookmark title, URL, description, and tag management
 - Private notes on bookmarks, written in Markdown (up to 10,000 characters). Only you see them: notes never appear on your public profile, its JSON API, the server-rendered profile page or the sitemap, even for public bookmarks. Cards show a "Show note" toggle that renders the note safely (no raw HTML, only http(s)/mailto links, no images). Library search matches note text, a "Has note" filter sits with Favorites and "Without tags" under "Show only" in the sidebar, and exports include notes (JSON/CSV `note` field, HTML `NOTE` attribute) that Settings → Import reads back from Tagstash's own JSON, CSV and HTML files. Notes are part of the bookmark API for your session and personal API keys (`note`: omit to keep, `null` to clear)
 - Base URL keeps the site root with a trailing slash (for example, `https://www.google.com/`); Trim URL removes queries and fragments
