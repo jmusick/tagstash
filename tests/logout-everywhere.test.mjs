@@ -106,8 +106,13 @@ test('simultaneous sign-outs increment token_version atomically', async () => {
   try {
     const headers = await webSession(env);
     const responses = await Promise.all([signOut(env, headers), signOut(env, headers)]);
-    assert.deepEqual(responses.map((r) => r.status), [200, 200]);
-    assert.equal(env.sqlite.prepare('SELECT token_version FROM users').get().token_version, 2);
+    // JWT verification timing decides whether the second request reads token_version before or
+    // after the first bump (a 403 is correct then); either way no increment may be lost.
+    const statuses = responses.map((r) => r.status);
+    assert.ok(statuses.every((s) => s === 200 || s === 403), `unexpected statuses ${statuses}`);
+    const succeeded = statuses.filter((s) => s === 200).length;
+    assert.ok(succeeded >= 1);
+    assert.equal(env.sqlite.prepare('SELECT token_version FROM users').get().token_version, succeeded);
     assert.equal((await call(env, 'auth/me', { headers })).status, 403);
     assert.equal((await call(env, 'auth/me', { headers: await webSession(env) })).status, 200);
   } finally { env.sqlite.close(); }
