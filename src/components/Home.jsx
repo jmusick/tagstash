@@ -400,6 +400,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
         <Logo src={logoSrc} className="home-logo" />
         <nav className="home-topnav" aria-label="Main">
           <Link className="home-features-link" to="/features">Features</Link>
+          <Link className="home-features-link" to="/pricing">Pricing</Link>
         </nav>
         <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
       </header>
