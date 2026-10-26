@@ -13,6 +13,14 @@ import './Import.css';
 
 const HTML_ERROR = 'This does not look like a bookmarks HTML export file. Please export bookmarks as HTML and try again.';
 const HTML_PARSERS = { '.html': parseBookmarksHTML, '.htm': parseBookmarksHTML };
+// Shared by the browser sources (Firefox, Chrome, Safari).
+const BROWSER_HTML = {
+  accept: ['.html', '.htm'],
+  typeError: 'Please select an HTML bookmarks export file.',
+  parsers: HTML_PARSERS,
+  mismatch: HTML_ERROR,
+  folders: true,
+};
 
 // Everything that differs per source: accepted file types, instructions, and the parser for each
 // type (returns null when the file isn't from that source). The file extension picks the parser.
@@ -36,34 +44,22 @@ const SOURCES = {
     mismatch: 'This file does not look like a Tagstash export. Export from Settings → Export as JSON or CSV and try again.',
   },
   firefox: {
+    ...BROWSER_HTML,
     label: 'Firefox Bookmarks (HTML)',
-    accept: ['.html', '.htm'],
-    typeError: 'Please select an HTML bookmarks export file.',
     hint: 'Export from Firefox: Bookmarks -> Manage Bookmarks -> Import and Backup -> Export Bookmarks to HTML. Then upload the file here.',
     drop: 'Drop your Firefox bookmarks HTML here',
-    parsers: HTML_PARSERS,
-    mismatch: HTML_ERROR,
-    folders: true,
   },
   chrome: {
+    ...BROWSER_HTML,
     label: 'Google Chrome Bookmarks (HTML)',
-    accept: ['.html', '.htm'],
-    typeError: 'Please select an HTML bookmarks export file.',
     hint: 'Export from Chrome: Bookmark Manager -> Organize -> Export bookmarks. Then upload the HTML file here.',
     drop: 'Drop your Chrome bookmarks HTML here',
-    parsers: HTML_PARSERS,
-    mismatch: HTML_ERROR,
-    folders: true,
   },
   safari: {
+    ...BROWSER_HTML,
     label: 'Safari Bookmarks (HTML)',
-    accept: ['.html', '.htm'],
-    typeError: 'Please select an HTML bookmarks export file.',
     hint: 'Export from Safari: File -> Export -> Bookmarks. Then upload the HTML file here.',
     drop: 'Drop your Safari bookmarks HTML here',
-    parsers: HTML_PARSERS,
-    mismatch: HTML_ERROR,
-    folders: true,
   },
   pocket: {
     label: 'Pocket (CSV or HTML)',
@@ -221,7 +217,7 @@ function Import({ onImportComplete }) {
             onDragLeave={() => setDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            aria-label={`Upload ${config.label.replace(/ \(.*\)$/, '')} export file`}
+            aria-label={`Upload ${config.label.replace(/ \(.*\)$/, '').replace(/ export$/, '')} export file`}
           >
             <FileText size={36} className="drop-zone-icon" />
             <span className="drop-zone-title">{config.drop}</span>

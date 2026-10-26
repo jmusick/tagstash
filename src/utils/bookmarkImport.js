@@ -244,7 +244,7 @@ export function parseInstapaperCSV(text) {
   const idxSelection = headers.indexOf('selection')
   const idxFolder = headers.indexOf('folder')
   const idxTags = headers.indexOf('tags')
-  if (idxUrl === -1 || idxTitle === -1 || (idxSelection === -1 && idxFolder === -1 && headers.indexOf('timestamp') === -1)) return null
+  if (idxUrl === -1 || idxTitle === -1 || (idxSelection === -1 && headers.indexOf('timestamp') === -1)) return null
 
   const bookmarks = []
   for (const fields of rows) {
@@ -259,7 +259,7 @@ export function parseInstapaperCSV(text) {
         const parsed = JSON.parse(tagsRaw)
         if (Array.isArray(parsed)) tagList = parsed.filter((tag) => typeof tag === 'string')
       } catch {
-        tagList = tagsRaw.split(',')
+        tagList = tagsRaw.replace(/[[\]"]/g, '').split(',')
       }
     } else if (tagsRaw) {
       tagList = tagsRaw.split(',')
@@ -413,6 +413,7 @@ export function parseBookmarksHTML(html) {
       else if (name === 'dl') {
         closeAnchor()
         closeDescription()
+        lastBookmark = null
         folderStack.pop()
       }
       continue

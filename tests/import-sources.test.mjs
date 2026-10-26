@@ -67,7 +67,7 @@ test('Instapaper CSV: Selection is the description, custom folders and a JSON-ar
     { title: 'Article B', url: 'https://b.example/', description: null, tags: ['recipes'] },
     { title: 'Article C', url: 'https://c.example/', description: null, tags: ['x', 'tech'] },
     { title: 'Article D', url: 'https://d.example/', description: null, tags: ['one', 'two'] },
-    { title: 'Article E', url: 'https://e.example/', description: null, tags: ['[not-json'] },
+    { title: 'Article E', url: 'https://e.example/', description: null, tags: ['not-json'] },
   ]);
 });
 
@@ -75,6 +75,8 @@ test('Instapaper CSV without a Tags column (older exports); other CSVs are rejec
   const csv = 'URL,Title,Selection,Folder,Timestamp\nhttps://a.example/,A,,Reading list,1';
   assert.deepEqual(parseInstapaperCSV(csv), [{ title: 'A', url: 'https://a.example/', description: null, tags: ['reading-list'] }]);
   assert.equal(parseInstapaperCSV('title,url,tags\nx,https://x.example,a'), null);
+  // A Raindrop CSV has url, title and folder but no Selection or Timestamp.
+  assert.equal(parseInstapaperCSV('id,title,note,excerpt,url,folder,tags,created\n1,x,,,https://x.example,Dev,a,2024-01-01'), null);
 });
 
 // --- Netscape HTML ---
