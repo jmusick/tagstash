@@ -422,6 +422,16 @@ async function anonymous(browser, theme) {
       throw new Error('Owner domain/month controls must not appear on a public profile')
     }
     await scan(path.startsWith('/u/') ? '/u/<name> (public profile)' : path)
+    if (path.startsWith('/u/')) {
+      // Search operators work on public profiles too; note: is owner-only, so it is not offered.
+      const tips = page.locator('.search-tips')
+      await tips.locator('summary').click()
+      if (!(await tips.evaluate((el) => el.open))) throw new Error('Search tips did not open on the public profile')
+      if ((await tips.textContent()).includes('note:')) throw new Error('Public profile search tips must not mention note:')
+      await page.getByRole('textbox', { name: 'Search bookmarks' }).fill('#reading -weekend')
+      await page.waitForFunction(() => document.querySelectorAll('.bookmark-card').length === 2)
+      await scan('/u/<name> (search tips open, operator query)')
+    }
     if (path === '/developers') {
       if (await page.title() !== DEVELOPERS_META.title) throw new Error('API documentation head was not applied')
       await page.setViewportSize({ width: 390, height: 844 })
@@ -644,6 +654,22 @@ async function owner(browser, theme) {
 
   await page.locator('.bookmark-card').first().waitFor()
   await scan('/ (bookmark list)')
+
+  // Search operators (issue #74) with the Search tips disclosure open.
+  const tips = page.locator('.search-tips')
+  const searchBox = page.getByRole('textbox', { name: 'Search bookmarks' })
+  const cardCount = (n) => page.waitForFunction((count) => document.querySelectorAll('.bookmark-card').length === count, n)
+  await tips.locator('summary').click()
+  if (!(await tips.evaluate((el) => el.open))) throw new Error('Search tips did not open')
+  if (!(await tips.textContent()).includes('note:')) throw new Error('Owner search tips should mention note:')
+  await searchBox.fill('#design -accessibility')
+  await cardCount(1)
+  await scan('/ (search tips open, operator query)')
+  await searchBox.fill('match:OR #tools created:2026-09')
+  await cardCount(5)
+  await searchBox.fill('')
+  await cardCount(7)
+  await tips.locator('summary').click()
 
   // "Without tags" filter: active (only the untagged bookmark), then combined with a
   // search that matches nothing so the empty state is scanned too.
