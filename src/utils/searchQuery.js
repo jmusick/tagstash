@@ -8,13 +8,14 @@
 //   #tag #"a tag"   has that tag (whole name, case-insensitive)
 //   title:x link:x note:x   only that field; the value may be quoted
 //   created:2026 created:2026-10 created:2026-10-05 (local dates, like the month filter)
-//   created:>D >=D <D <=D   after/from/before/through that year, month or day
+//   created:>D >=D <D <=D   after/from/before/through that year, month or day ("created:>= D" too)
 //   created:A..B    inclusive range, each end a year, month or day; A.. and ..B are open
 //   match:OR        the positive terms match with OR; exclusions always exclude
 //
-// Malformed input never throws: an unmatched quote is ignored, a bad date or an unknown key
-// (type:, https:) is searched as a plain word, and an empty operator ("-", "#", "title:") is
-// skipped so a half-typed query never hides everything.
+// Malformed input never throws: an unmatched quote is ignored, an unknown key (type:, https:) is
+// searched as a plain word, and an empty operator ("-", "#", "title:") or a created: value that is
+// not a date yet ("created:2", "created:2026-13") is skipped, so the rest of the query still
+// applies and a half-typed query never empties the list.
 import { decodeHtmlEntities } from './decodeHtmlEntities.js'
 import { parseSavedDate } from './bookmarkDisplay.js'
 
@@ -70,38 +71,30 @@ function tokenize(input) {
   return tokens
 }
 
-const pad = (n, width = 2) => String(n).padStart(width, '0')
-
 // A year, month or day in the visitor's local time zone, as the half-open instant range
 // [start, end). Returns null for anything that is not a real calendar date.
 export function parseDatePeriod(text) {
   const match = /^(\d{4})(?:-(\d{1,2})(?:-(\d{1,2}))?)?$/.exec(text)
   if (!match) return null
   const year = Number(match[1])
-  const month = match[2] === undefined ? null : Number(match[2])
+  const month = match[2] === undefined ? null : Number(match[2]) - 1
   const day = match[3] === undefined ? null : Number(match[3])
-  if (month !== null && (month < 1 || month > 12)) return null
-  if (day !== null) {
-    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
-    const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
-    if (day < 1 || day > daysInMonth) return null
-  }
   // setFullYear (not the Date constructor) so years below 100 are not mapped to 19xx.
   const localDate = (y, m, d) => {
     const date = new Date(0)
     date.setFullYear(y, m, d)
     date.setHours(0, 0, 0, 0)
-    return date.getTime()
+    return date
   }
-  const m0 = month === null ? 0 : month - 1
-  const d = day === null ? 1 : day
-  const start = localDate(year, m0, d)
+  const m0 = month ?? 0
+  const d = day ?? 1
+  const first = localDate(year, m0, d)
+  // Month 13, day 0, Feb 30 and the like roll over into another date: not a real calendar date.
+  if (first.getFullYear() !== year || first.getMonth() !== m0 || first.getDate() !== d) return null
   const end = day !== null
     ? localDate(year, m0, d + 1)
     : month !== null ? localDate(year, m0 + 1, 1) : localDate(year + 1, 0, 1)
-  const label = day !== null ? `${pad(year, 4)}-${pad(month)}-${pad(day)}`
-    : month !== null ? `${pad(year, 4)}-${pad(month)}` : pad(year, 4)
-  return { start, end, label }
+  return { start: first.getTime(), end: end.getTime() }
 }
 
 // created: values -> { from, to } (from inclusive, to exclusive; either may be null = open).
@@ -136,7 +129,7 @@ export function parseCreatedRange(text) {
   return period ? { from: period.start, to: period.end } : null
 }
 
-// Parses the search box text. Never throws; anything it cannot read becomes plain text.
+// Parses the search box text. Never throws: what it cannot read is a plain word or skipped.
 // Returns { mode: 'and' | 'or', terms: [{ type, negate, value, field?, range? }] }.
 export function parseSearchQuery(input) {
   const result = { mode: 'and', terms: [] }
@@ -146,8 +139,9 @@ export function parseSearchQuery(input) {
     if (text) result.terms.push({ type: 'text', negate, value: text })
   }
 
-  for (const token of tokenize(input)) {
-    const { negate, prefix, key, value, raw } = token
+  const tokens = tokenize(input)
+  for (let index = 0; index < tokens.length; index += 1) {
+    const { negate, prefix, key, value, raw } = tokens[index]
     if (prefix === '#') {
       const tag = normalizeText(value)
       if (tag) result.terms.push({ type: 'tag', negate, value: tag })
@@ -163,11 +157,19 @@ export function parseSearchQuery(input) {
       continue
     }
     if (key === 'created') {
-      const text = value.trim()
-      if (!text) continue
+      let text = value.trim()
+      // "created:>= 2026-01-01": a bare comparison takes the next plain word as its date, but
+      // only when that makes a date, so "created:> rye" still searches for rye.
+      const next = tokens[index + 1]
+      if (/^(>=|<=|>|<)$/.test(text) && next && !next.negate && !next.prefix && !next.key
+        && parseCreatedRange(text + next.value)) {
+        text += next.value
+        index += 1
+      }
+      // A value that is not a date (yet) is skipped, like an empty operator, rather than
+      // searched as text that no bookmark contains.
       const range = parseCreatedRange(text)
       if (range) result.terms.push({ type: 'created', negate, value: text, range })
-      else asText()
       continue
     }
     if (key) {

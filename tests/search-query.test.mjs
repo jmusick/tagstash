@@ -170,6 +170,20 @@ test('created: comparisons cover the whole year, month or day', () => {
   assert.deepEqual(search('created:>=2026-04'), [1]);
 });
 
+test('a bare created: comparison takes the next word as its date', () => {
+  assert.deepEqual(search('created:>= 2026-01-01'), [1, 2, 4]);
+  assert.deepEqual(search('created:> 2026-01-01'), [1, 4]);
+  assert.deepEqual(search('created:<   2026-01-01'), [3]);
+  assert.deepEqual(search('created:<= 2026-03 #recipes'), [4]);
+  assert.deepEqual(search('-created:>= 2026-03'), [2, 3, 5]);
+  assert.deepEqual(parseSearchQuery('created:>= 2026-01-01').terms.length, 1);
+  // Only when that makes a date; otherwise the next word is searched on its own.
+  assert.deepEqual(search('created:> rye'), [1]);
+  assert.deepEqual(search('created:>= #recipes'), [1, 4]);
+  assert.deepEqual(search('created:> -bread'), [2, 3, 5]);
+  assert.deepEqual(search('created:>='), [1, 2, 3, 4, 5]);
+});
+
 test('created: ranges are inclusive at each end\'s granularity', () => {
   assert.deepEqual(search('created:2026-01..2026-03'), [2, 4]);
   assert.deepEqual(search('created:2025-12-31..2026-01-01'), [2, 3]);
@@ -185,11 +199,11 @@ test('created: ranges are inclusive at each end\'s granularity', () => {
 
 test('date periods are real calendar dates', () => {
   const day = parseDatePeriod('2024-02-29');
-  assert.equal(day.label, '2024-02-29');
   assert.equal(day.start, new Date(2024, 1, 29).getTime());
   assert.equal(day.end, new Date(2024, 2, 1).getTime());
   assert.equal(parseDatePeriod('2026-12').end, new Date(2027, 0, 1).getTime());
-  for (const bad of ['2026-02-29', '2026-13', '2026-00', '2026-04-31', '2026-1-0', '26', '20261', '2026-', '2026-10-05T00', 'abcd', '']) {
+  assert.equal(parseDatePeriod('2000-02-29').end, new Date(2000, 2, 1).getTime());
+  for (const bad of ['2026-02-29', '1900-02-29', '2026-13', '2026-00', '2026-04-31', '2026-1-0', '2026-01-32', '26', '20261', '2026-', '2026-10-05T00', 'abcd', '']) {
     assert.equal(parseDatePeriod(bad), null, bad);
   }
   // Years below 100 are not mapped to the 1900s.
@@ -199,12 +213,21 @@ test('date periods are real calendar dates', () => {
   }
 });
 
-test('a bad created: value is searched as plain text, never throws', () => {
-  assert.deepEqual(parseSearchQuery('created:2026-13').terms, [{ type: 'text', negate: false, value: 'created:2026-13' }]);
-  assert.deepEqual(parseSearchQuery('-created:soon').terms, [{ type: 'text', negate: true, value: 'created:soon' }]);
-  assert.deepEqual(search('created:yesterday'), []);
-  assert.deepEqual(search('-created:yesterday'), [1, 2, 3, 4, 5]);
-  assert.deepEqual(search('created:2026-02-30'), []);
+test('a created: value that is not a date (yet) is skipped, so the rest still applies', () => {
+  // Every keystroke of a date being typed keeps the list instead of emptying it.
+  for (const text of ['created:2', 'created:20', 'created:202', 'created:2026-', 'created:2026-1', 'created:2026-10-',
+    'created:>', 'created:>=', 'created:<2', 'created:2026..', 'created:2026-01..2', 'created:2026-13',
+    'created:2026-02-30', 'created:yesterday', '-created:soon', 'created:"2026-13"']) {
+    const { terms } = parseSearchQuery(text);
+    assert.ok(terms.every((term) => term.type === 'created'), text);
+  }
+  for (const text of ['created:2', 'created:2026-', 'created:>', 'created:2026-13', 'created:yesterday', '-created:soon']) {
+    assert.deepEqual(parseSearchQuery(text).terms, [], text);
+    assert.deepEqual(search(text), [1, 2, 3, 4, 5], text);
+  }
+  assert.deepEqual(search('pickles created:2026-13'), [4]);
+  assert.deepEqual(search('created:20 #recipes'), [1, 4]);
+  assert.deepEqual(search('match:or created:2026-02-30 hiking'), [3]);
 });
 
 test('malformed input degrades to plain words instead of hiding everything', () => {
