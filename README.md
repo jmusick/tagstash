@@ -76,12 +76,15 @@ That hosted service is the official paid offering run by Stone Dragon Media LLC.
 - Context API
 - lucide-react
 
-The public `/features` page is prerendered during `npm run build` from the same
-React component used in the app. `scripts/prerender-features.mjs` writes complete
-HTML and page metadata to `dist/features.html`, including the styles needed
-before JavaScript loads. Feature copy lives in `src/components/FeaturesPage.jsx`.
-Cloudflare Pages serves the file at `/features`; the middleware must also list that
-path as an indexable page. `/features/` and `/features.html` redirect to `/features`.
+The public `/features`, `/pricing` and `/developers` pages are prerendered during
+`npm run build` from the same React components used in the app.
+`scripts/prerender-features.mjs` writes complete HTML and page metadata to
+`dist/features.html`, `dist/pricing.html` and `dist/developers.html`, including the
+styles needed before JavaScript loads. Feature copy lives in
+`src/components/FeaturesPage.jsx`; plan, price and billing copy lives in
+`src/content/pricing.js`. Cloudflare Pages serves each file at its extensionless
+path; the middleware must also list that path as an indexable page. `/features/`
+and `/features.html` redirect to `/features`, and likewise for the others.
 `/privacy` and `/support` get the same treatment for their `<head>` only (`dist/privacy.html`,
 `dist/support.html`), so crawlers see each page's own title, description and canonical
 without running JavaScript; their titles/descriptions live in `src/utils/pageMeta.js`.
