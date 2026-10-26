@@ -13,6 +13,12 @@ export const SUPPORT_META = {
   path: '/support',
 }
 
+export const PRICING_META = {
+  title: 'Pricing: Free and Pro Plans | Tagstash',
+  description: 'Tagstash is free for up to 50 bookmarks with no time limit. Pro gives you unlimited bookmarks for $3/month or $36/year. Every feature is on both plans.',
+  path: '/pricing',
+}
+
 export const DEVELOPERS_META = {
   title: 'Developers - Tagstash REST API',
   description: 'Use personal API keys to read and edit your Tagstash library. Browse routes, curl examples, limits, errors and the public profile API.',

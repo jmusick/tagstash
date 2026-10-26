@@ -3,57 +3,53 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { FEATURES_META } from '../src/utils/featuresMeta.js'
-import { getFeaturesStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
-import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META } from '../src/utils/pageMeta.js'
+import { getFeaturesStructuredData, getPricingStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
+import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META, PRICING_META } from '../src/utils/pageMeta.js'
 import { applyPageHead } from './page-head.mjs'
 
-// Render the same presentation used by the public React route. No copied copy,
-// runtime Function, or new deployment is needed for this static marketing page.
+// Render the same presentation used by the public React routes. No copied copy,
+// runtime Function, or new deployment is needed for these static pages.
 const server = await createServer({
   server: { middlewareMode: true },
   appType: 'custom',
   optimizeDeps: { noDiscovery: true, entries: [], include: [] },
 })
 try {
-  const { FeaturesView } = await server.ssrLoadModule('/src/components/FeaturesPage.jsx')
-  const markup = renderToStaticMarkup(createElement(FeaturesView))
   const manifest = JSON.parse(await readFile('dist/.vite/manifest.json', 'utf8'))
-  const styles = new Set()
-  const visited = new Set()
-  function collectStyles(key) {
-    if (visited.has(key)) return
-    visited.add(key)
-    const entry = manifest[key]
-    if (!entry) throw new Error(`Missing build manifest entry: ${key}`)
-    for (const css of entry.css || []) styles.add(css)
-    for (const dependency of entry.imports || []) collectStyles(dependency)
-  }
-  collectStyles('index.html')
-  collectStyles('src/components/FeaturesPage.jsx')
-
   const shell = await readFile('dist/index.html', 'utf8')
-  let html = applyPageHead(shell, FEATURES_META)
-  html = html
-    .replace('<div id="root"></div>', () => `<div id="root">${markup}</div>`)
-    .replace('</head>', `${[...styles].filter(css => !html.includes(`href="/${css}"`)).map((css) => `<link rel="stylesheet" href="/${css}" />`).join('\n')}\n<script type="application/ld+json" data-page-schema="true">${serializeStructuredData(getFeaturesStructuredData('https://tagsta.sh'))}</script>\n</head>`)
-  // Pages serves this at /features and redirects /features/ to the canonical
-  // extensionless URL. A directory index would instead redirect to /features/.
-  await writeFile('dist/features.html', html)
-  console.log('Prerendered /features from FeaturesView')
 
-  const { DevelopersView } = await server.ssrLoadModule('/src/components/DevelopersPage.jsx')
-  // Keep route CSS separate: importing a page must not make its styles a
-  // prerequisite for a different prerendered page.
-  styles.clear()
-  visited.clear()
-  collectStyles('index.html')
-  collectStyles('src/components/DevelopersPage.jsx')
-  let developersHtml = applyPageHead(shell, DEVELOPERS_META)
-  developersHtml = developersHtml
-    .replace('<div id="root"></div>', () => `<div id="root">${renderToStaticMarkup(createElement(DevelopersView))}</div>`)
-    .replace('</head>', `${[...styles].filter(css => !developersHtml.includes(`href="/${css}"`)).map(css => `<link rel="stylesheet" href="/${css}" />`).join('\n')}\n</head>`)
-  await writeFile('dist/developers.html', developersHtml)
-  console.log('Prerendered /developers from DevelopersView')
+  // Full-body pages: the view's markup, its head and its own CSS. Styles are
+  // collected per page so one page's CSS never becomes a prerequisite for another.
+  async function prerenderPage({ module, view, meta, structuredData }) {
+    const styles = new Set()
+    const visited = new Set()
+    function collectStyles(key) {
+      if (visited.has(key)) return
+      visited.add(key)
+      const entry = manifest[key]
+      if (!entry) throw new Error(`Missing build manifest entry: ${key}`)
+      for (const css of entry.css || []) styles.add(css)
+      for (const dependency of entry.imports || []) collectStyles(dependency)
+    }
+    collectStyles('index.html')
+    collectStyles(module.slice(1))
+
+    const View = (await server.ssrLoadModule(module))[view]
+    let html = applyPageHead(shell, meta)
+    const links = [...styles].filter(css => !html.includes(`href="/${css}"`)).map(css => `<link rel="stylesheet" href="/${css}" />`)
+    if (structuredData) links.push(`<script type="application/ld+json" data-page-schema="true">${serializeStructuredData(structuredData)}</script>`)
+    html = html
+      .replace('<div id="root"></div>', () => `<div id="root">${renderToStaticMarkup(createElement(View))}</div>`)
+      .replace('</head>', () => `${links.join('\n')}\n</head>`)
+    // Pages serves dist/<name>.html at /<name> and redirects /<name>/ to the canonical
+    // extensionless URL. A directory index would instead redirect to /<name>/.
+    await writeFile(`dist${meta.path}.html`, html)
+    console.log(`Prerendered ${meta.path} from ${view}`)
+  }
+
+  await prerenderPage({ module: '/src/components/FeaturesPage.jsx', view: 'FeaturesView', meta: FEATURES_META, structuredData: getFeaturesStructuredData('https://tagsta.sh') })
+  await prerenderPage({ module: '/src/components/PricingPage.jsx', view: 'PricingView', meta: PRICING_META, structuredData: getPricingStructuredData('https://tagsta.sh') })
+  await prerenderPage({ module: '/src/components/DevelopersPage.jsx', view: 'DevelopersView', meta: DEVELOPERS_META })
 
   // /privacy and /support are interactive (router callbacks, Turnstile), so only their
   // head is prerendered; React still renders the body client-side. Without this they

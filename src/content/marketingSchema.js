@@ -1,6 +1,17 @@
 import { HOME_FAQS } from './homeMarketing.js'
 import { FEATURES_FAQS, FEATURES_UPDATED } from './featuresFaqs.js'
 import { FEATURES_META } from '../utils/featuresMeta.js'
+import { PRICING_META } from '../utils/pageMeta.js'
+import { PRICING_FAQS, PRICING_OFFERS, PRICING_UPDATED } from './pricing.js'
+
+// One definition of the app entity, so every page that declares it agrees.
+const softwareEntity = (origin) => ({
+  '@type': 'SoftwareApplication', '@id': `${origin}/#software`,
+  name: 'Tagstash', url: `${origin}/`,
+  description: 'A tag-based bookmark manager for saving links, organizing bookmarks, and sharing a public profile. Free for your first 50 bookmarks.',
+  applicationCategory: 'Bookmark Manager', operatingSystem: 'Web, Chrome, Firefox',
+  offers: PRICING_OFFERS,
+})
 
 const faqEntity = (faqs) => ({
   '@type': 'FAQPage',
@@ -14,17 +25,7 @@ export function getHomeStructuredData(origin) {
   return {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'SoftwareApplication', '@id': `${origin}/#software`,
-        name: 'Tagstash', url: `${origin}/`,
-        description: 'A tag-based bookmark manager for saving links, organizing bookmarks, and sharing a public profile. Free for your first 50 bookmarks.',
-        applicationCategory: 'Bookmark Manager', operatingSystem: 'Web, Chrome, Firefox',
-        offers: [
-          { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD', description: 'Up to 50 bookmarks, no time limit.' },
-          { '@type': 'Offer', name: 'Pro Monthly', price: '3', priceCurrency: 'USD', description: 'Unlimited bookmarks, billed monthly, cancel anytime.' },
-          { '@type': 'Offer', name: 'Pro Annual', price: '36', priceCurrency: 'USD', description: 'Unlimited bookmarks, same $3/month rate billed once a year.' },
-        ],
-      },
+      softwareEntity(origin),
       faqEntity(HOME_FAQS),
       {
         '@type': 'Organization', name: 'Stone Dragon Media LLC', url: 'https://stonedragonmedia.com/',
@@ -56,6 +57,33 @@ export function getFeaturesStructuredData(origin) {
         ],
       },
       faqEntity(FEATURES_FAQS),
+    ],
+  }
+}
+
+export function getPricingStructuredData(origin) {
+  const url = `${origin}${PRICING_META.path}`
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      {
+        '@type': 'WebPage', '@id': `${url}#webpage`, url,
+        isPartOf: { '@id': `${origin}/#website` },
+        name: PRICING_META.title, description: PRICING_META.description,
+        dateModified: PRICING_UPDATED,
+        about: { '@id': `${origin}/#software` },
+        publisher: { '@type': 'Organization', name: 'Stone Dragon Media LLC', url: 'https://stonedragonmedia.com/' },
+        breadcrumb: { '@id': `${url}#breadcrumbs` },
+      },
+      softwareEntity(origin),
+      {
+        '@type': 'BreadcrumbList', '@id': `${url}#breadcrumbs`,
+        itemListElement: [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: `${origin}/` },
+          { '@type': 'ListItem', position: 2, name: 'Pricing', item: url },
+        ],
+      },
+      faqEntity(PRICING_FAQS),
     ],
   }
 }
