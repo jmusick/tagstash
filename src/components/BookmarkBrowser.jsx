@@ -7,6 +7,7 @@ import { DEFAULT_LINK_TARGET, linkTargetProps } from '../utils/linkTarget'
 import { BookmarkTagList } from './BookmarkParts'
 import { displayUrl, formatSavedDate } from '../utils/bookmarkDisplay'
 import { hasNoTags, countUntagged, hasNote, countWithNotes, isFavoriteBookmark, countFavorites, getBookmarkDomain, countDomains, getCreatedMonth, countCreatedMonths, formatCreatedMonth } from '../utils/bookmarkFilters'
+import { parseSearchQuery, matchesSearchQuery } from '../utils/searchQuery'
 
 // Honor the OS "reduce motion" setting for script-driven scrolling; CSS
 // scroll-behavior is already neutralised in index.css, but an explicit
@@ -137,29 +138,18 @@ function BookmarkBrowser({
   const domains = useMemo(() => [...countDomains(bookmarks)].sort(([a], [b]) => a.localeCompare(b)), [bookmarks])
   const months = useMemo(() => countCreatedMonths(bookmarks), [bookmarks])
 
+  // Search operators (quotes, -exclude, #tag, title:/link:/note:, created:, match:OR) are parsed
+  // once per query; see src/utils/searchQuery.js. note: matches nothing on public profiles,
+  // whose bookmarks never carry a note.
+  const searchQuery = useMemo(() => parseSearchQuery(searchTerm), [searchTerm])
+
   const filteredBookmarks = useMemo(() => {
     if (focusBookmarkId) {
       return sortedBookmarks.filter((bookmark) => bookmark.id === focusBookmarkId)
     }
 
-    const query = searchTerm.trim().toLowerCase()
     return sortedBookmarks.filter((bookmark) => {
-      const tagsText = Array.isArray(bookmark.tags)
-        ? bookmark.tags.map((tag) => tag.name).join(' ')
-        : ''
-
-      const searchable = [
-        decodeHtmlEntities(bookmark.title || ''),
-        bookmark.url || '',
-        decodeHtmlEntities(bookmark.description || ''),
-        // The owner's private note (absent on public profiles).
-        typeof bookmark.note === 'string' ? bookmark.note : '',
-        tagsText,
-      ]
-        .join(' ')
-        .toLowerCase()
-
-      const matchesSearch = !query || searchable.includes(query)
+      const matchesSearch = matchesSearchQuery(bookmark, searchQuery)
 
       const bookmarkTagNames = Array.isArray(bookmark.tags)
         ? bookmark.tags.map((tag) => tag.name?.toLowerCase()).filter(Boolean)
@@ -177,7 +167,7 @@ function BookmarkBrowser({
 
       return matchesSearch && matchesTag && matchesFavorite && matchesNote && matchesUntagged && matchesDomain && matchesMonth
     })
-  }, [sortedBookmarks, searchTerm, selectedTags, showFavoritesOnly, noteActive, untaggedActive, focusBookmarkId, domainActive, monthActive])
+  }, [sortedBookmarks, searchQuery, selectedTags, showFavoritesOnly, noteActive, untaggedActive, focusBookmarkId, domainActive, monthActive])
 
   // Only what is still in the result set counts as selected (a refresh, an edit or a deletion can
   // drop bookmarks from it), in the order they are listed.
@@ -428,6 +418,24 @@ function BookmarkBrowser({
             )}
             {toolbarExtra}
           </div>
+          <details className="search-tips">
+            <summary>Search tips</summary>
+            <ul>
+              <li>Several words find bookmarks that contain all of them.</li>
+              <li><code>&quot;exact phrase&quot;</code> finds those words together, in that order.</li>
+              <li><code>-word</code> or <code>-&quot;a phrase&quot;</code> leaves out bookmarks that contain it.</li>
+              <li><code>#tag</code> needs that tag; <code>-#tag</code> leaves it out.</li>
+              <li>
+                <code>title:</code>, <code>link:</code>{showNoteFilter && <>, <code>note:</code></>} search one field,
+                as in <code>title:&quot;two words&quot;</code>.
+              </li>
+              <li>
+                <code>created:2026-10</code>, <code>created:&gt;=2026-01-01</code> or <code>created:2026-01..2026-03</code> match
+                the date saved, in your time zone.
+              </li>
+              <li><code>match:OR</code> finds bookmarks with any of the terms instead of all.</li>
+            </ul>
+          </details>
         </div>
 
         {children}

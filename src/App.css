@@ -682,6 +682,51 @@
   color: var(--color-text);
 }
 
+/* Search operator help under the search box (issue #74). */
+.search-tips {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.search-tips summary {
+  width: fit-content;
+  min-height: 24px;
+  padding-block: 0.2rem;
+  cursor: pointer;
+  color: var(--color-link);
+  font-weight: 600;
+}
+
+.search-tips summary:hover {
+  color: var(--color-text);
+}
+
+.search-tips summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.search-tips ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.search-tips code {
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: var(--color-panel);
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.95em;
+  white-space: nowrap;
+}
+
 /* "Without tags" toggle (owner view), sits above the tag rack in the sidebar. */
 .untagged-filter-btn {
   display: flex;

@@ -74,7 +74,7 @@ export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSe
         <section id="find" className="features-story" aria-labelledby="find-title">
           <div>
             <h2 id="find-title">Search, sort, and revisit your bookmarks.</h2>
-            <p>Search across titles, URLs, descriptions, and tags. Combine search with tag filters, then sort by date saved, title, or URL to get the view you need.</p>
+            <p>Search across titles, URLs, descriptions, and tags. Use quotes for an exact phrase, <code>-word</code> to leave something out, <code>#tag</code>, <code>title:</code> or <code>created:2026-10</code> to narrow it down. Combine search with tag filters, then sort by date saved, title, or URL to get the view you need.</p>
             <p>Star useful bookmarks and filter to your favorites. When you want to revisit something you’ve forgotten, use Random to bring a bookmark back into view.</p>
           </div>
           <div className="features-aside">
