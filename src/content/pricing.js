@@ -10,7 +10,7 @@ export const PRICING_OFFERS = [
 ]
 
 export const PRICING_INCLUDED = [
-  'Unlimited tags per bookmark, tag merging and favorite tags',
+  'Up to 50 tags per bookmark, tag merging and favorite tags',
   'Search with operators, filters and sorting',
   'Private Markdown notes on bookmarks',
   'Chrome and Firefox extensions',
@@ -33,7 +33,7 @@ export const PRICING_FAQS = [
   },
   {
     question: 'Can I cancel Pro?',
-    answer: 'Yes. Open Settings and manage your subscription in the Stripe billing portal. Pro stays active until the end of the period you’ve already paid for.',
+    answer: 'Yes. Open Settings and cancel in the Stripe billing portal. Pro stays active until the end of the period you’ve already paid for, and Settings shows the date it ends. Deleting your account cancels Pro immediately instead.',
   },
   {
     question: 'What happens to my bookmarks if I stop paying?',

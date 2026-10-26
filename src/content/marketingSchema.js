@@ -4,6 +4,15 @@ import { FEATURES_META } from '../utils/featuresMeta.js'
 import { PRICING_META } from '../utils/pageMeta.js'
 import { PRICING_FAQS, PRICING_OFFERS, PRICING_UPDATED } from './pricing.js'
 
+// One definition of the app entity, so every page that declares it agrees.
+const softwareEntity = (origin) => ({
+  '@type': 'SoftwareApplication', '@id': `${origin}/#software`,
+  name: 'Tagstash', url: `${origin}/`,
+  description: 'A tag-based bookmark manager for saving links, organizing bookmarks, and sharing a public profile. Free for your first 50 bookmarks.',
+  applicationCategory: 'Bookmark Manager', operatingSystem: 'Web, Chrome, Firefox',
+  offers: PRICING_OFFERS,
+})
+
 const faqEntity = (faqs) => ({
   '@type': 'FAQPage',
   mainEntity: faqs.map(faq => ({
@@ -16,13 +25,7 @@ export function getHomeStructuredData(origin) {
   return {
     '@context': 'https://schema.org',
     '@graph': [
-      {
-        '@type': 'SoftwareApplication', '@id': `${origin}/#software`,
-        name: 'Tagstash', url: `${origin}/`,
-        description: 'A tag-based bookmark manager for saving links, organizing bookmarks, and sharing a public profile. Free for your first 50 bookmarks.',
-        applicationCategory: 'Bookmark Manager', operatingSystem: 'Web, Chrome, Firefox',
-        offers: PRICING_OFFERS,
-      },
+      softwareEntity(origin),
       faqEntity(HOME_FAQS),
       {
         '@type': 'Organization', name: 'Stone Dragon Media LLC', url: 'https://stonedragonmedia.com/',
@@ -72,12 +75,7 @@ export function getPricingStructuredData(origin) {
         publisher: { '@type': 'Organization', name: 'Stone Dragon Media LLC', url: 'https://stonedragonmedia.com/' },
         breadcrumb: { '@id': `${url}#breadcrumbs` },
       },
-      {
-        '@type': 'SoftwareApplication', '@id': `${origin}/#software`,
-        name: 'Tagstash', url: `${origin}/`,
-        applicationCategory: 'Bookmark Manager', operatingSystem: 'Web, Chrome, Firefox',
-        offers: PRICING_OFFERS,
-      },
+      softwareEntity(origin),
       {
         '@type': 'BreadcrumbList', '@id': `${url}#breadcrumbs`,
         itemListElement: [

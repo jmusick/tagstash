@@ -11,7 +11,7 @@ import './FeaturesPage.css'
 import './PricingPage.css'
 
 // Also rendered at build time, like FeaturesView: the initial HTML and React page share one source.
-export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {}, signedIn = false }) {
+export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {}, signedIn = false, isPro = false }) {
   const startHref = signedIn ? '/' : '/?signup=1#account'
   return (
     <div className="features-page pricing-page">
@@ -45,7 +45,7 @@ export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSel
             <p className="pricing-amount">$3<span className="pricing-period">/month</span></p>
             <p className="pricing-description">Unlimited bookmarks. Pay monthly and cancel any time, or pay $36 once a year. Same rate either way.</p>
             <a className="pricing-plan-link" href={signedIn ? '/settings' : startHref}>
-              {signedIn ? 'Upgrade in Settings' : 'Start free, upgrade from Settings'}
+              {isPro ? 'Manage billing in Settings' : signedIn ? 'Upgrade in Settings' : 'Start free, upgrade from Settings'}
             </a>
           </div>
         </section>
