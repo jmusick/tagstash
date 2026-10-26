@@ -498,6 +498,8 @@ tagstash/
 - `npm run test:auth` - Run only the auth session tests
 - `npm run test:a11y` - Run the axe accessibility audit against a locally served build (see AGENTS.md)
 
+GitHub Actions (`.github/workflows/ci.yml`) runs lint, `npm test`, the build and the accessibility audit on every pull request and push to `master`.
+
 ## Backlog and documentation
 
 [GitHub Issues](https://github.com/jmusick/tagstash/issues) owns actionable work,
