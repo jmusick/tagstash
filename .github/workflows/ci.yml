@@ -1,6 +1,4 @@
-# Lint, regression tests, build and the axe accessibility audit (#40).
-# Runs untrusted PR code with a read-only token and no secrets: everything is
-# local (in-memory SQLite tests, a local wrangler server with throwaway .dev.vars).
+# Shared checks run untrusted PR code with a read-only token and no secrets.
 name: CI
 
 on:
@@ -13,66 +11,45 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  WRANGLER_SEND_METRICS: 'false'
-
 jobs:
-  checks:
-    name: Lint, test and build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          cache: npm
-      # .npmrc's min-release-age / strict-allow-scripts are silently ignored before npm 11.19.
-      - name: Require npm 11.19+
-        run: node -e "const [a,b]=process.argv[1].split('.').map(Number); if (a<11||(a===11&&b<19)) { console.error('npm '+process.argv[1]+' is older than 11.19'); process.exit(1) }" "$(npm --version)"
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+  baseline:
+    name: Baseline
+    uses: jmusick/ci/.github/workflows/baseline.yml@8f28b7a6deeacce2fbc35539d56f810ba64656c2 # v0.2.3
 
-  a11y:
-    name: Accessibility audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+  web-app:
+    name: Web app
+    uses: jmusick/ci/.github/workflows/web-app.yml@8f28b7a6deeacce2fbc35539d56f810ba64656c2 # v0.2.3
+    with:
+      lint-command: npm run lint
+      test-command: npm test
+      build-command: npm run build
+      a11y-command: npm run test:a11y
+      a11y-setup-command: |
+        printf 'JWT_SECRET=%s\nSUPER_ADMIN_EMAIL=admin@example.test\n' "$(openssl rand -hex 32)" > .dev.vars
+        npm run setup:db
+      a11y-server-command: npx wrangler pages dev dist --local --ip 127.0.0.1 --port 5000
+      a11y-url: http://127.0.0.1:5000
+      a11y-ready-url: http://127.0.0.1:5000/api/health
+
+  # Require this check in branch protection; it fails unless both shared workflows pass.
+  gate:
+    name: CI gate
+    if: always()
+    needs: [baseline, web-app]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Require npm 11.19+
-        run: node -e "const [a,b]=process.argv[1].split('.').map(Number); if (a<11||(a===11&&b<19)) { console.error('npm '+process.argv[1]+' is older than 11.19'); process.exit(1) }" "$(npm --version)"
-      - run: npm ci
-      # The Chromium build that matches the pinned playwright-core (the audit launches
-      # full Chromium, so the headless shell is skipped).
-      - run: npx playwright-core install --with-deps --no-shell chromium
-      - run: npm run build
-      - name: Write throwaway .dev.vars
+      - name: Require every job to have passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          printf 'JWT_SECRET=%s\nSUPER_ADMIN_EMAIL=admin@example.test\n' "$(openssl rand -hex 32)" > .dev.vars
-      - run: npm run setup:db
-      - name: Start local server
-        run: |
-          nohup npx wrangler pages dev dist --local --ip 127.0.0.1 --port 5000 > "$RUNNER_TEMP/wrangler.log" 2>&1 &
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:5000/api/health > /dev/null; then exit 0; fi
-            sleep 2
+          echo "Job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A required job did not succeed."
+              exit 1
+            fi
           done
-          echo "Server did not answer /api/health within 120s"
-          exit 1
-      - run: npm run test:a11y
-      - name: Server log
-        if: failure()
-        run: cat "$RUNNER_TEMP/wrangler.log" || true

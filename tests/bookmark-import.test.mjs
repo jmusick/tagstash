@@ -247,7 +247,21 @@ test('imports racing single saves share the same limit', async () => {
     const [saveResults, importResults] = await Promise.all([Promise.all(saves), Promise.all(imports)]);
     const saved = saveResults.filter((r) => r.status === 201).length;
     assert.ok(saveResults.every((r) => r.status === 201 || r.status === 403));
-    const imported = (await Promise.all(importResults.map((r) => r.json()))).reduce((total, s) => total + s.imported, 0);
+    let imported = 0;
+    for (const response of importResults) {
+      const summary = await response.json();
+      // Another request can fill the account before this import's plan pre-check.
+      // That is a legitimate 403 without an import summary, not a failed import.
+      assert.ok(response.status === 200 || response.status === 403, JSON.stringify(summary));
+      if (response.status === 403) {
+        assert.match(summary.error, /Free users can save up to 50 bookmarks/);
+      } else {
+        assert.equal(typeof summary.imported, 'number');
+        assert.equal(summary.imported + summary.skipped, 6);
+        if (summary.imported < 6) assert.equal(summary.limitReached, true);
+        imported += summary.imported;
+      }
+    }
     assert.equal(saved + imported, 5);
     assert.equal(userBookmarks(env), 50);
     // No tag link points at a bookmark that wasn't created with it.
@@ -258,6 +272,18 @@ test('imports racing single saves share the same limit', async () => {
                OR (b.url LIKE 'https://' || t.name || '.example/%')
                OR (b.url LIKE 'https://' || substr(t.name, 1, instr(t.name, '-') - 1) || '.example/%'))`).get().n;
     assert.equal(stray, 0);
+  } finally { env.sqlite.close(); }
+});
+
+test('an import whose plan pre-check sees a full free account is refused without writes', async () => {
+  const { env, headers } = await racingSetup(50);
+  try {
+    const response = await importRows(env, headers, fileOf('late', 6));
+    assert.equal(response.status, 403);
+    assert.match((await response.json()).error, /Free users can save up to 50 bookmarks/);
+    assert.equal(userBookmarks(env), 50);
+    assert.equal(env.sqlite.prepare('SELECT COUNT(*) AS n FROM tags').get().n, 0);
+    assert.equal(env.sqlite.prepare('SELECT COUNT(*) AS n FROM bookmark_tags').get().n, 0);
   } finally { env.sqlite.close(); }
 });
 

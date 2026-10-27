@@ -1,0 +1,34 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels: [dependencies]
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      react:
+        patterns: ["react", "react-dom", "react-router-dom", "@types/react", "@types/react-dom"]
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Includes the SHA-pinned jmusick/ci reusable workflows.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 3
+    labels: [dependencies]
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
