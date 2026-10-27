@@ -1,7 +1,7 @@
 {
   "name": "tagstash",
   "private": true,
-  "version": "1.46.2",
+  "version": "1.46.3",
   "type": "module",
   "description": "A tag-based bookmarking web application",
   "engines": {

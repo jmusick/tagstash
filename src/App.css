@@ -727,21 +727,20 @@
   white-space: nowrap;
 }
 
-/* "Without tags" toggle (owner view), sits above the tag rack in the sidebar. */
+/* Compact attribute toggles above the tag rack in the owner's sidebar. */
 .untagged-filter-btn {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  width: 100%;
-  min-height: 2.5rem;
-  padding: 0.4rem 1.1rem;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.35rem 0.6rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 12px;
+  border-radius: 7px;
   background: var(--color-panel);
   color: var(--color-text);
   font: inherit;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
@@ -766,14 +765,14 @@
 
 /* ---------- Active filter (sidebar) ---------- */
 .library-filters {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem;
-  border: 1px solid var(--color-border-strong);
-  border-radius: 14px;
-  background: var(--color-panel);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.65rem;
   min-width: 0;
+}
+
+.library-filter-control:only-of-type {
+  grid-column: 1 / -1;
 }
 
 .library-filter-control {
@@ -801,7 +800,8 @@
   font: inherit;
 }
 
-.library-filter-control p {
+.library-filters-hint {
+  grid-column: 1 / -1;
   margin: 0;
   font-size: 0.85rem;
   color: var(--color-text-muted);
@@ -970,6 +970,31 @@
 .pagination-page-size select:focus {
   border-color: var(--color-primary-strong);
   box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.18);
+}
+
+/* Native arrows hug the edge on Windows; draw an inset arrow while keeping
+   the native select's keyboard, touch and option-menu behavior. */
+.library-filter-control select,
+.sort-control select,
+.pagination-page-size select {
+  appearance: none;
+  padding-right: 2rem;
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right calc(0.75rem + 4px) center, right 0.75rem center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+}
+
+@media (forced-colors: active) {
+  .library-filter-control select,
+  .sort-control select,
+  .pagination-page-size select {
+    appearance: auto;
+    background-image: none;
+    padding-right: 0.5rem;
+  }
 }
 
 .pagination-controls {
@@ -2389,7 +2414,7 @@ a.btn-field-action,
 /* Favorites, Has note and Without tags: toggles that combine with every other filter. */
 .attribute-filters {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin: 0;
   padding: 0;
@@ -2398,6 +2423,7 @@ a.btn-field-action,
 }
 
 .attribute-filters-heading {
+  flex-basis: 100%;
   margin: 0;
   font-size: 0.9rem;
   font-weight: 600;

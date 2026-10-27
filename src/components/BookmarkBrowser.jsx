@@ -647,8 +647,10 @@ function BookmarkBrowser({
                   )}
                   {months.map(({ value, label, count }) => <option key={value} value={value}>{label} ({count})</option>)}
                 </select>
-                <p id="bookmark-month-hint">Months use your local time zone. Counts reflect your whole library.</p>
               </div>
+            )}
+            {showDateFilter && (
+              <p id="bookmark-month-hint" className="library-filters-hint">Months use your local time zone. Counts reflect your whole library.</p>
             )}
           </div>
         )}
