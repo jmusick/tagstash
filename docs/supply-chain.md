@@ -39,6 +39,21 @@ npm audit              # the cooldown does not make already-pinned versions safe
 
 Never run `npm install` on a clean checkout just to get dependencies; use `npm ci`.
 
+### CI and automated updates
+
+`.github/workflows/ci.yml` calls SHA-pinned `jmusick/ci` reusable workflows. The baseline
+enforces the npm floor and lockfile integrity (public npm registry URLs, SHA-512 hashes
+and reviewed `allowScripts` entries), installs without scripts, runs `npm audit`
+at the high severity threshold and verifies registry signatures. It also scans the full
+Git history with Gitleaks; public pull requests get dependency review, which rejects
+moderate-or-higher runtime advisories. The web-app workflow installs normally under
+the script policy before running the project checks. **CI gate** requires both to pass.
+
+`.github/dependabot.yml` checks npm and GitHub Actions weekly on Mondays at 06:00 UTC,
+including the shared workflow SHA pins. Ordinary updates cool down for seven days
+(fourteen for npm majors); security updates are separate. React packages move as one
+group, other npm minor/patch updates as another, and actions as one group.
+
 ### A new dependency has an install script
 
 `npm install` (strict mode) fails and lists the package. Inspect its script and source in an

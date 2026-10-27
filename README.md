@@ -502,7 +502,7 @@ tagstash/
 - `npm run test:auth` - Run only the auth session tests
 - `npm run test:a11y` - Run the axe accessibility audit against a locally served build (see AGENTS.md)
 
-GitHub Actions (`.github/workflows/ci.yml`) runs lint, `npm test`, the build and the accessibility audit on every pull request and push to `master`.
+GitHub Actions (`.github/workflows/ci.yml`) calls the SHA-pinned [jmusick/ci](https://github.com/jmusick/ci) `baseline` and `web-app` workflows on pull requests and pushes to `master`, using Node 24. Baseline scans Git history for secrets, checks the npm version and lockfile, installs dependencies, audits advisories and verifies registry signatures; public pull requests also get dependency review. Web app runs lint, `npm test` and the build, plus the full accessibility audit on pull requests against a throwaway local server. The **CI gate** passes only when both shared workflows succeed. Dependabot checks npm packages and GitHub Actions (including shared workflow pins) weekly; its cooldown holds ordinary updates for seven days, or fourteen for npm majors.
 
 ## Backlog and documentation
 
