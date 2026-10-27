@@ -17,22 +17,15 @@ concurrency:
 jobs:
   baseline:
     name: Baseline
-    uses: jmusick/ci/.github/workflows/baseline.yml@8f28b7a6deeacce2fbc35539d56f810ba64656c2 # v0.2.3
+    uses: jmusick/ci/.github/workflows/baseline.yml@a8ac9c292577382c63e5a38af58d38a4cd6f8504 # v0.3.0
 
   web-app:
     name: Web app
-    uses: jmusick/ci/.github/workflows/web-app.yml@8f28b7a6deeacce2fbc35539d56f810ba64656c2 # v0.2.3
+    uses: jmusick/ci/.github/workflows/web-app.yml@a8ac9c292577382c63e5a38af58d38a4cd6f8504 # v0.3.0
     with:
       lint-command: npm run lint
       test-command: npm test
       build-command: npm run build
-      a11y-command: npm run test:a11y
-      a11y-setup-command: |
-        printf 'JWT_SECRET=%s\nSUPER_ADMIN_EMAIL=admin@example.test\n' "$(openssl rand -hex 32)" > .dev.vars
-        npm run setup:db
-      a11y-server-command: npx wrangler pages dev dist --local --ip 127.0.0.1 --port 5000
-      a11y-url: http://127.0.0.1:5000
-      a11y-ready-url: http://127.0.0.1:5000/api/health
 
   # Require this check in branch protection; it fails unless both shared workflows pass.
   gate:
