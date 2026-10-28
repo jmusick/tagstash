@@ -59,10 +59,11 @@ test('registration refuses hostile usernames; grandfathered ones are HTML-escape
     // Names from before the username policy (#17) can still hold markup, so emails must escape them.
     env.sqlite.prepare('INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, 1)')
       .run(hostile, 'hostile@example.com', 'x');
-    const reset = await onRequest({ env, request: new Request('https://tagsta.sh/api/auth/forgot-password', {
+    const background = [];
+    const reset = await onRequest({ env, waitUntil: (promise) => background.push(promise), request: new Request('https://tagsta.sh/api/auth/forgot-password', {
       method: 'POST', headers: webHeaders, body: JSON.stringify({ email: 'hostile@example.com' }) }) });
     assert.equal(reset.status, 200, await reset.clone().text());
-    await new Promise((resolve) => setImmediate(resolve));
+    await Promise.all(background);
     assert.ok(sent.length > 0, 'reset email sent');
     const html = sent.map((m) => m.html || '').join('');
     assert.ok(html.includes('&lt;/script&gt;'));

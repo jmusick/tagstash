@@ -796,6 +796,7 @@ function Settings({
                 onChange={handleUsernameChange}
                 required
                 aria-describedby="new-username-hint"
+                minLength={2}
                 maxLength={INPUT_LIMITS.username}
                 placeholder="Enter your new username"
               />
