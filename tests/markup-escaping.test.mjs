@@ -44,7 +44,7 @@ test('profile JSON-LD cannot close its script element', async () => {
   assert.ok(!html.includes('<img/src=x'));
 });
 
-test('registration bounds usernames; hostile names are HTML-escaped in verification email', async () => {
+test('registration refuses hostile usernames; grandfathered ones are HTML-escaped in email', async () => {
   const env = await createAuthEnv();
   env.CLOUDFLARE_API_TOKEN = 't'; env.CLOUDFLARE_ACCOUNT_ID = 'a';
   const sent = [];
@@ -55,8 +55,16 @@ test('registration bounds usernames; hostile names are HTML-escaped in verificat
       method: 'POST', headers: webHeaders, body: JSON.stringify({ username, email: `${username.length}@example.com`, password: 'long-enough-pass' }) }) });
     assert.equal((await register('a')).status, 400);
     assert.equal((await register('x'.repeat(51))).status, 400);
-    const registered = await register(hostile);
-    assert.equal(registered.status, 201, await registered.clone().text());
+    assert.equal((await register(hostile)).status, 400);
+    // Names from before the username policy (#17) can still hold markup, so emails must escape them.
+    env.sqlite.prepare('INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, 1)')
+      .run(hostile, 'hostile@example.com', 'x');
+    const background = [];
+    const reset = await onRequest({ env, waitUntil: (promise) => background.push(promise), request: new Request('https://tagsta.sh/api/auth/forgot-password', {
+      method: 'POST', headers: webHeaders, body: JSON.stringify({ email: 'hostile@example.com' }) }) });
+    assert.equal(reset.status, 200, await reset.clone().text());
+    await Promise.all(background);
+    assert.ok(sent.length > 0, 'reset email sent');
     const html = sent.map((m) => m.html || '').join('');
     assert.ok(html.includes('&lt;/script&gt;'));
     assert.ok(!html.includes('<img/src=x'));
