@@ -275,7 +275,7 @@ Last use is recorded at most once per minute when the existing database column i
 Auth regression checks: `npm run test:auth` (Node 22.13+ with built-in SQLite).
 These use an isolated in-memory database and never access production.
 
-- `POST /api/auth/register` — `201 { pendingVerification: true }` whether or not the email already has an account (its owner is emailed instead); `400` for invalid input, a taken username or a breached password
+- `POST /api/auth/register` — `201 { pendingVerification: true }` whether or not the email already has an account (its owner is emailed instead); `400` for invalid input (including a username outside the policy: letters, digits and single inner `.` `_` `-`, no reserved names), a taken username or a breached password
 - `POST /api/auth/login`
 - `POST /api/auth/session` — exchange a legacy bearer token for a web cookie session
 - `POST /api/auth/logout` — clear the current web session cookie
@@ -283,7 +283,7 @@ These use an isolated in-memory database and never access production.
 - `GET /api/auth/me`
 - `GET /api/auth/verify-email`
 - `POST /api/auth/resend-verification`
-- `PUT /api/auth/username`
+- `PUT /api/auth/username` — the new name must meet the same username policy; names that predate it keep working until changed
 - `PUT /api/auth/email` — reports an address already in use only after the current password is confirmed
 - `PUT /api/auth/password`
 - `PUT /api/auth/profile-public`
