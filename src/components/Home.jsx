@@ -12,6 +12,7 @@ import { version } from '../../package.json';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
 import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
+import { USERNAME_HINT, newUsernameError } from '../utils/usernamePolicy';
 import './Home.css';
 
 function Home({ logoSrc, theme, onSelectTheme }) {
@@ -97,8 +98,9 @@ function Home({ logoSrc, theme, onSelectTheme }) {
     if (isLogin) {
       result = await login(formData.email, formData.password);
     } else {
-      if (/\s/.test(formData.username.trim())) {
-        setError('Username cannot contain spaces');
+      const usernameError = newUsernameError(formData.username.trim());
+      if (usernameError) {
+        setError(usernameError);
         setLoading(false);
         return;
       }
@@ -444,10 +446,8 @@ function Home({ logoSrc, theme, onSelectTheme }) {
                   aria-describedby="username-hint"
                   autoComplete="username"
                   maxLength={INPUT_LIMITS.username}
-                  pattern="\S+"
-                  title="Username cannot contain spaces"
                 />
-                <small id="username-hint" className="form-hint">No spaces</small>
+                <small id="username-hint" className="form-hint">{USERNAME_HINT}</small>
               </div>
             )}
 

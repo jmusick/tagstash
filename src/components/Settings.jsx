@@ -9,6 +9,7 @@ import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../u
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { INPUT_LIMITS } from '../utils/inputLimits';
 import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
+import { USERNAME_HINT, newUsernameError } from '../utils/usernamePolicy';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../utils/accountDeletion';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../utils/accountReset';
 import './Settings.css';
@@ -517,14 +518,15 @@ function Settings({
         return;
       }
 
-      if (/\s/.test(trimmedUsername)) {
-        setError('Username cannot contain spaces');
+      if (trimmedUsername === user?.username) {
+        setError('New username must be different from current username');
         setLoading(false);
         return;
       }
 
-      if (trimmedUsername === user?.username) {
-        setError('New username must be different from current username');
+      const usernameError = newUsernameError(trimmedUsername);
+      if (usernameError) {
+        setError(usernameError);
         setLoading(false);
         return;
       }
@@ -793,12 +795,11 @@ function Settings({
                 value={usernameForm.newUsername}
                 onChange={handleUsernameChange}
                 required
-                minLength={2}
+                aria-describedby="new-username-hint"
                 maxLength={INPUT_LIMITS.username}
                 placeholder="Enter your new username"
-                pattern="\S+"
-                title="Username cannot contain spaces"
               />
+              <small id="new-username-hint" className="form-hint">{USERNAME_HINT}</small>
             </div>
 
             <div className="form-field">

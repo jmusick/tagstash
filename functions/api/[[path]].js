@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable, publicBookmarkCondition } from '../_lib/profileVisibility.js';
 import { newPasswordError } from '../../src/utils/passwordPolicy.js';
+import { newUsernameError } from '../../src/utils/usernamePolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
 import { TRASH_RETENTION_DAYS } from '../../src/utils/trash.js';
@@ -3404,16 +3405,9 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'All fields are required' }, 400);
     }
 
-    if (/\s/.test(trimmedUsername)) {
-      return jsonResponse({ error: 'Username cannot contain spaces' }, 400);
-    }
-
-    if (trimmedUsername.length < 2) {
-      return jsonResponse({ error: 'Username must be at least 2 characters' }, 400);
-    }
-
-    if (trimmedUsername.length > INPUT_LIMITS.username) {
-      return jsonResponse({ error: `Username must be ${INPUT_LIMITS.username} characters or less` }, 400);
+    const usernameError = newUsernameError(trimmedUsername);
+    if (usernameError) {
+      return jsonResponse({ error: usernameError }, 400);
     }
 
     const passwordError = passwordPolicyError(password);
@@ -3826,16 +3820,10 @@ async function handleAuth(request, env, segments, context = {}) {
       return jsonResponse({ error: 'Username and password are required' }, 400);
     }
 
-    if (/\s/.test(trimmedUsername)) {
-      return jsonResponse({ error: 'Username cannot contain spaces' }, 400);
-    }
-
-    if (trimmedUsername.length < 2) {
-      return jsonResponse({ error: 'Username must be at least 2 characters' }, 400);
-    }
-
-    if (trimmedUsername.length > 50) {
-      return jsonResponse({ error: 'Username must be 50 characters or less' }, 400);
+    // Grandfathered names that predate the policy keep working, but a rename must meet it.
+    const usernameError = newUsernameError(trimmedUsername);
+    if (usernameError) {
+      return jsonResponse({ error: usernameError }, 400);
     }
 
     const usernameCheck = await db
