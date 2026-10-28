@@ -5,7 +5,7 @@ import { INPUT_LIMITS } from './inputLimits.js';
 // usernames only: existing names that predate it are grandfathered and keep working everywhere,
 // but a rename must meet it.
 //
-// - usernameMinChars to INPUT_LIMITS.username characters.
+// - USERNAME_MIN_CHARS to INPUT_LIMITS.username characters.
 // - ASCII letters, digits, '.', '_' and '-' only, so every name routes as one /u/:username path
 //   segment and can't hide zero-width characters or Unicode look-alikes.
 // - Starts and ends with a letter or digit, with no two punctuation characters in a row.
