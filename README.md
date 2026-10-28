@@ -69,7 +69,7 @@ That hosted service is the official paid offering run by Stone Dragon Media LLC.
 
 ### Frontend
 
-- React 18
+- React 19
 - React Router
 - Vite
 - Axios
