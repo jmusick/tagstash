@@ -58,6 +58,7 @@ function Home({ logoSrc, theme, onSelectTheme }) {
   useEffect(() => {
     if (!accountNotice) return;
     if (accountNotice === 'deleted') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot router notice, applied after the first render (see above) and then cleared
       setView('deleted');
     } else if (accountNotice === 'signedOutEverywhere') {
       setSignedOutEverywhere(true);

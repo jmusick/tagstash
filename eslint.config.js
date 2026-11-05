@@ -27,7 +27,7 @@ export default [
       ...js.configs.recommended.rules,
       ...react.configs.recommended.rules,
       ...react.configs['jsx-runtime'].rules,
-      ...reactHooks.configs.recommended.rules,
+      ...reactHooks.configs.flat.recommended.rules,
       'react/jsx-no-target-blank': 'off',
       // No PropTypes in this codebase; props aren't runtime-validated.
       'react/prop-types': 'off',

@@ -177,8 +177,11 @@ function BookmarkBrowser({
   )
   const selectedCountRef = useRef(0)
   // Counts the stored ids (not the filtered ones) so the "cleared" note shows even when the new
-  // filter already hides everything that was selected.
-  selectedCountRef.current = selectMode ? selectedIds.size : 0
+  // filter already hides everything that was selected. Set in an effect declared before the one
+  // that reads it, so it still holds the count from the render whose filters just changed.
+  useEffect(() => {
+    selectedCountRef.current = selectMode ? selectedIds.size : 0
+  })
 
   // Changing any filter clears the selection (see above) and says so.
   const filterSignature = [searchTerm, selectedTags.join('\u0000'), showFavoritesOnly, noteActive, untaggedActive, domainActive, monthActive, focusBookmarkId].join('|')
@@ -232,7 +235,11 @@ function BookmarkBrowser({
     setTimeout(() => selectToggleRef.current?.focus(), 0)
   }
 
+  // The page resets below stay effects on purpose. They run in this order after a commit, so when
+  // a filter change also shrinks the results the clamp has the last word on the page; moving
+  // either into render would change which page the user lands on.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional, see above
     setCurrentPage(1)
     setPageAnnouncement('')
   }, [searchTerm, selectedTags, showFavoritesOnly, noteActive, untaggedActive, sortBy, sortDirection, itemsPerPage, domainActive, monthActive])
@@ -241,6 +248,7 @@ function BookmarkBrowser({
 
   useEffect(() => {
     if (currentPage > totalPages) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional, see above
       setCurrentPage(totalPages)
     }
   }, [currentPage, totalPages])
@@ -263,6 +271,7 @@ function BookmarkBrowser({
   // stale once a focused bookmark (e.g. from the Random button) is cleared.
   useEffect(() => {
     if (!focusBookmarkId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- runs after the page effects above, so a focused bookmark lands on page 1
     setSearchTerm('')
     setSelectedTags([])
     setShowFavoritesOnly(false)

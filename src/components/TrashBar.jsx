@@ -47,10 +47,9 @@ export default function TrashBar({
 
   // Deleting "the selection" has nothing to act on once the selection is empty; the trash can
   // also be emptied from under an open "empty" panel (e.g. in another tab, then refreshed).
-  useEffect(() => {
-    if (panel === 'purge' && selectedCount === 0) setPanel(null)
-    if (panel === 'empty' && total === 0) setPanel(null)
-  }, [selectedCount, total, panel])
+  // Adjusted while rendering (instead of in an effect) so the panel never renders for nothing.
+  if (panel === 'purge' && selectedCount === 0) setPanel(null)
+  if (panel === 'empty' && total === 0) setPanel(null)
 
   const confirm = async (action) => {
     // The page reports the outcome (and moves focus to it); the panel closes either way.

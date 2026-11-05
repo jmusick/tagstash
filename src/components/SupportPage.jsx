@@ -19,7 +19,14 @@ const reportMessageFor = (reported) => {
 function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
   useDocumentMeta(SUPPORT_META);
 
-  const [email, setEmail] = useState(prefillEmail);
+  const [email, setEmail] = useState(prefillEmail || '');
+  // A new prefill (e.g. the account finishing loading) replaces whatever is in the field,
+  // adjusted while rendering rather than in an effect.
+  const [prevPrefillEmail, setPrevPrefillEmail] = useState(prefillEmail);
+  if (prefillEmail !== prevPrefillEmail) {
+    setPrevPrefillEmail(prefillEmail);
+    setEmail(prefillEmail || '');
+  }
   const [searchParams] = useSearchParams();
   const [message, setMessage] = useState(() => reportMessageFor(searchParams.get('report')));
   const [captchaToken, setCaptchaToken] = useState('');
@@ -28,10 +35,6 @@ function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
   const [success, setSuccess] = useState('');
   const widgetContainerRef = useRef(null);
   const widgetIdRef = useRef(null);
-
-  useEffect(() => {
-    setEmail(prefillEmail || '');
-  }, [prefillEmail]);
 
   useEffect(() => {
     if (!TURNSTILE_SITE_KEY || !widgetContainerRef.current) return;
