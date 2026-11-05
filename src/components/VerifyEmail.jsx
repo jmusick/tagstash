@@ -20,6 +20,7 @@ function VerifyEmail({ logoSrc }) {
     const token = params.get('token');
 
     if (!token) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the link is read and redeemed once per mount here; the page starts on "Verifying"
       setStatus('error');
       setMessage('No verification token found in the link.');
       return;

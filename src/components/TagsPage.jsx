@@ -31,6 +31,7 @@ function TagsPage() {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on load; it sets the loading flag before the request
     fetchTags()
   }, [fetchTags])
 

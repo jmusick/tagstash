@@ -71,6 +71,7 @@ function ConsentBanner() {
       wasGrantedRef.current = true
       loadAnalytics()
     } else if (stored !== 'denied') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is read once after mount, alongside loading analytics; the banner starts hidden
       setVisible(true)
     }
 

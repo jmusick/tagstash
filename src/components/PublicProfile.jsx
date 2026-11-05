@@ -58,6 +58,7 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
 
   useEffect(() => {
     if (username) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on load; it sets the loading flag before the request
       fetchProfile()
     }
   }, [username, fetchProfile])

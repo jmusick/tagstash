@@ -108,7 +108,7 @@ function Settings({
     try {
       setBillingLoading(true);
       const res = await billingAPI.createCheckoutSession(plan);
-      window.location.href = res.data.url;
+      window.location.assign(res.data.url);
     } catch (err) {
       setError(err?.response?.data?.error || 'Failed to start checkout');
     } finally {
@@ -120,7 +120,7 @@ function Settings({
     try {
       setBillingLoading(true);
       const res = await billingAPI.createPortalSession();
-      window.location.href = res.data.url;
+      window.location.assign(res.data.url);
     } catch (err) {
       setError(err?.response?.data?.error || 'Failed to open billing portal');
     } finally {
@@ -140,7 +140,11 @@ function Settings({
     password: '',
   });
 
-  useEffect(() => {
+  // Refill both fields whenever the account object changes, adjusted while rendering rather than
+  // in an effect (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  const [formUser, setFormUser] = useState(user);
+  if (formUser !== user) {
+    setFormUser(user);
     setUsernameForm((prev) => ({
       ...prev,
       newUsername: user?.username || '',
@@ -150,7 +154,7 @@ function Settings({
       ...prev,
       newEmail: user?.email || '',
     }));
-  }, [user]);
+  }
 
   const handleUsernameChange = (e) => {
     setUsernameForm({
@@ -1453,6 +1457,8 @@ function Settings({
                             })
                           : 'Never'}
                       </p>
+                      {/* Checked against the clock on every render on purpose, so an expired lock drops off on the next update. */}
+                      {/* eslint-disable-next-line react-hooks/purity -- see above */}
                       {member.locked_until && member.locked_until > Date.now() && (
                         <p className="admin-user-locked">
                           Locked after failed logins until{' '}

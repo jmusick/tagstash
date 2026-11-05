@@ -23,6 +23,7 @@ function TagCloud({ tags: providedTags, selectedTags = [], onTagSelect, onTagAdd
 
   useEffect(() => {
     if (selfManaged) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch on load/refresh; it sets the loading flag before the request
       fetchTags();
     }
   }, [selfManaged, refreshKey, fetchTags]);

@@ -92,10 +92,9 @@ export default function BulkBar({
     target?.focus()
   }, [panel])
 
-  // A panel about "the selection" has nothing to act on once the selection is empty.
-  useEffect(() => {
-    if (count === 0 && panel && panel !== 'blocked') setPanel(null)
-  }, [count, panel])
+  // A panel about "the selection" has nothing to act on once the selection is empty. Adjusted
+  // while rendering (instead of in an effect) so the panel never renders for an empty selection.
+  if (count === 0 && panel && panel !== 'blocked') setPanel(null)
 
   const handleToolbarKeyDown = (event) => handleToolbarArrowKeys(event, toolbarRef.current)
 
