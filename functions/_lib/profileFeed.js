@@ -7,7 +7,7 @@
 // non-public or suspended profile is the same 404, and only public (not private, not trashed)
 // bookmarks appear. Feeds select named columns and never include the owner-only `note`.
 import { parseDbTimestamp, publicBookmarkCondition } from './profileVisibility.js';
-import { profileFeedPath } from '../../src/utils/profileFeed.js';
+import { normalizeTagFilters, profileFeedPath } from '../../src/utils/profileFeed.js';
 
 export { profileFeedPath };
 
@@ -20,9 +20,7 @@ export const FEED_CACHE_TTL_SECONDS = 60;
 
 // Same normalization as the profile API's ?tag= (trimmed, lowercased, de-duplicated,
 // first-seen order), and AND semantics like it.
-export const parseFeedTags = (url) => [...new Set(
-  url.searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean)
-)];
+export const parseFeedTags = (url) => normalizeTagFilters(url.searchParams.getAll('tag'));
 
 // SQLite LOWER() folds ASCII only, so the cache key folds ASCII only too: JS toLowerCase()
 // would merge two distinct usernames into one entry.
@@ -42,11 +40,11 @@ export const feedBookmarksQuery = (schema, tagCount) => {
       AND EXISTS (SELECT 1 FROM bookmark_tags ft JOIN tags fn ON fn.id = ft.tag_id
                   WHERE ft.bookmark_id = b.id AND LOWER(fn.name) = ?)`).join('');
   return `WITH recent AS (
-    SELECT b.id, b.title, b.url, b.description, b.created_at FROM bookmarks b
+    SELECT b.id, b.title, b.url, b.description, b.created_at, b.updated_at FROM bookmarks b
     WHERE b.user_id = ?${publicBookmarkCondition(schema)}${tagFilters}
     ORDER BY b.created_at DESC, b.id DESC LIMIT ${FEED_ITEM_LIMIT}
   )
-  SELECT r.id, r.title, r.url, r.description, r.created_at,
+  SELECT r.id, r.title, r.url, r.description, r.created_at, r.updated_at,
     (SELECT json_group_array(t.name) FROM bookmark_tags bt JOIN tags t ON t.id = bt.tag_id
      WHERE bt.bookmark_id = r.id) AS tags
   FROM recent r ORDER BY r.created_at DESC, r.id DESC`;
@@ -97,7 +95,11 @@ export function renderProfileFeed({ origin, username, tags = [], bookmarks = [],
   const tagLabel = tags.length ? ` tagged ${tags.join(' + ')}` : '';
   const title = `@${username}'s bookmarks${tagLabel} - Tagstash`;
   const description = `The newest public bookmarks${tagLabel} saved by @${username} on Tagstash.`;
-  const newest = bookmarks.length ? rfc822(bookmarks[0].created_at) : '';
+  // Newest save or edit among the items, so retitling or retagging one moves the build date.
+  const changedAt = Math.max(...bookmarks.flatMap((b) => [parseDbTimestamp(b.created_at), parseDbTimestamp(b.updated_at)]).filter(Number.isFinite));
+  const newest = Number.isFinite(changedAt) ? new Date(changedAt).toUTCString() : '';
+  // Stable across username changes (a rename must not make every item look new in readers).
+  const guidBase = `tag:${new URL(origin).hostname},2026:bookmark:`;
 
   const items = bookmarks.map((bookmark) => {
     const link = safeHttpUrl(bookmark.url) || profileUrl.toString();
@@ -109,7 +111,7 @@ export function renderProfileFeed({ origin, username, tags = [], bookmarks = [],
       + `<link>${xmlEscape(link)}</link>`
       + (bookmark.description ? `<description>${xmlEscape(bookmark.description)}</description>` : '')
       + categories
-      + `<guid isPermaLink="false">${xmlEscape(`${origin}/u/${encodeURIComponent(username)}#bookmark-${bookmark.id}`)}</guid>`
+      + `<guid isPermaLink="false">${xmlEscape(`${guidBase}${bookmark.id}`)}</guid>`
       + (pubDate ? `<pubDate>${pubDate}</pubDate>` : '')
       + '</item>';
   });

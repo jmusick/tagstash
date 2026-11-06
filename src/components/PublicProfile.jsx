@@ -6,7 +6,7 @@ import AppFooter from './AppFooter'
 import BookmarkBrowser from './BookmarkBrowser'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
 import { removeProfileSnapshot } from '../utils/profileSnapshot'
-import { profileFeedUrl } from '../utils/profileFeed'
+import { normalizeTagFilters, profileFeedUrl } from '../utils/profileFeed'
 
 function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   const { username } = useParams()
@@ -17,13 +17,11 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState('')
-  const [initialSelectedTags] = useState(() => (
-    [...new Set(searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
-  ))
+  const [initialSelectedTags] = useState(() => normalizeTagFilters(searchParams.getAll('tag')))
 
   const topTagNames = tags.slice(0, 5).map((tag) => tag.name)
   // RSS feed for what's on screen: the selected tags (kept in ?tag=) narrow it the same way.
-  const feedTags = [...new Set(searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
+  const feedTags = normalizeTagFilters(searchParams.getAll('tag'))
   const feedHref = profile ? profileFeedUrl(profile.username, feedTags) : ''
   const feedTitle = profile
     ? `@${profile.username}'s bookmarks${feedTags.length ? ` tagged ${feedTags.join(' + ')}` : ''} - Tagstash`

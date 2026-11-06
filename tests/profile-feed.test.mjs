@@ -106,7 +106,7 @@ test('a public profile serves RSS 2.0 of its newest public bookmarks, never priv
     assert.equal(field(items[0], 'link'), 'https://new.example/a?b=1&amp;c=2');
     assert.equal(field(items[0], 'description'), 'A described page');
     assert.equal(field(items[0], 'pubDate'), 'Fri, 02 Jan 2026 09:30:00 GMT');
-    assert.match(field(items[0], 'guid'), /^https:\/\/tagsta\.sh\/u\/Reader#bookmark-\d+$/);
+    assert.match(field(items[0], 'guid'), /^tag:tagsta\.sh,2026:bookmark:\d+$/, 'guid does not depend on the username');
     assert.ok(items[0].includes('<guid isPermaLink="false">'));
     assert.equal(field(items[1], 'description'), undefined, 'no empty description element');
     assert.deepEqual([...items[1].matchAll(/<category>([^<]*)<\/category>/g)].map((m) => m[1]), ['alpha', 'zeta']);
@@ -270,4 +270,18 @@ test('the profile page advertises its feed to visible profiles only, and the cli
   } finally { delete globalThis.HTMLRewriter; env.sqlite.close(); }
 
   assert.equal(profileFeedUrl('a b', ['x&y', 'z'], 'https://tagsta.sh'), 'https://tagsta.sh/u/a%20b/feed.xml?tag=x%26y&tag=z');
+});
+
+test('lastBuildDate follows the newest save or edit, and an empty feed still has one', () => {
+  const xml = renderProfileFeed({
+    origin: 'https://tagsta.sh',
+    username: 'u',
+    bookmarks: [
+      { id: 2, title: 'new', url: 'https://a.example/', created_at: '2026-03-01 00:00:00', updated_at: '2026-03-01 00:00:00' },
+      { id: 1, title: 'edited', url: 'https://b.example/', created_at: '2026-01-01 00:00:00', updated_at: '2026-04-01 12:00:00' },
+    ],
+  });
+  assert.ok(xml.includes('<lastBuildDate>Wed, 01 Apr 2026 12:00:00 GMT</lastBuildDate>'));
+  const empty = renderProfileFeed({ origin: 'https://tagsta.sh', username: 'u', now: new Date('2026-05-01T00:00:00Z') });
+  assert.ok(empty.includes('<lastBuildDate>Fri, 01 May 2026 00:00:00 GMT</lastBuildDate>'));
 });
