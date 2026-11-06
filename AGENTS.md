@@ -204,6 +204,16 @@ Webhook updates and billing-state clearing also guard the marker in their SQL,
 so requests already in flight cannot replace/remove the billing IDs needed for
 deletion. Keep those conditions atomic rather than relying only on a prior read.
 
+The Stripe webhook (issue #13) accepts any of several `v1` signatures (secret
+rotation) via `crypto.subtle.verify`. It matches `checkout.session.completed` by
+our own `metadata.userId` (else the stored customer ID, never by email) and
+`customer.subscription.updated`/`deleted` by the exact stored subscription ID,
+never by customer alone. Every handled event re-reads the subscription from Stripe
+(`fetchCurrentStripeSubscription`) and writes its current status, so duplicates and
+out-of-order deliveries are harmless and there is no event-ID table. A Stripe failure
+returns 502 so Stripe retries; a missing `STRIPE_SECRET_KEY` returns 503. Tests:
+`tests/stripe-webhook.test.mjs`.
+
 Owners delete their own account through `POST /auth/delete-account` (issue #153;
 Settings → Delete Account). It is `deleteAccount` behind `requireAuth`, a body of
 `{ password, confirmation }` (the shared `ACCOUNT_DELETION_CONFIRMATION` word from
