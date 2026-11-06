@@ -296,11 +296,20 @@ for (const race of [false, true]) {
         return statement;
       };
     }
-    for (const [type, object] of [
-      ['checkout.session.completed', { metadata: { userId: '2' }, customer: 'cus_replacement', subscription: 'sub_replacement' }],
-      ['customer.subscription.updated', { customer: 'cus_target', status: 'active' }],
-      ['customer.subscription.deleted', { customer: 'cus_target' }],
+    // Stripe reports every subscription as live and owned by the customer the event names, so
+    // only the deletion guard can stop the write.
+    const subscriptionStatus = { sub_replacement: ['cus_replacement', 'active'], sub_target: ['cus_target', 'active'] };
+    state.stripe(({ url }) => {
+      const id = url.pathname.split('/').at(-1);
+      const [customer, status] = subscriptionStatus[id];
+      return Response.json({ id, customer, status });
+    });
+    for (const [type, object, status] of [
+      ['checkout.session.completed', { mode: 'subscription', metadata: { userId: '2' }, customer: 'cus_replacement', subscription: 'sub_replacement' }],
+      ['customer.subscription.updated', { id: 'sub_target', customer: 'cus_target', status: 'active' }],
+      ['customer.subscription.deleted', { id: 'sub_target', customer: 'cus_target' }, 'canceled'],
     ]) {
+      subscriptionStatus.sub_target[1] = status || 'active';
       state.env.sqlite.prepare('UPDATE users SET deletion_started_at = ? WHERE id = 2').run(race ? null : '2026-01-01');
       const before = withoutDeletionState(snapshot(state.env));
       const body = JSON.stringify({ type, data: { object } });
