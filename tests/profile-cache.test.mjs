@@ -309,6 +309,10 @@ const KEYS = [
   'https://tagsta.sh/api/profiles/alice',
   'https://tagsta.sh/api/profiles/alice?tag=poe2',
   'https://tagsta.sh/api/profiles/alice?tag=guides',
+  // The RSS feed (issue #94) shares the purge: base plus the same single-tag variants.
+  'https://tagsta.sh/u/alice/feed.xml',
+  'https://tagsta.sh/u/alice/feed.xml?tag=poe2',
+  'https://tagsta.sh/u/alice/feed.xml?tag=guides',
 ];
 
 test('turning the profile private purges the base and single-tag entries; the public tags only', async () => {

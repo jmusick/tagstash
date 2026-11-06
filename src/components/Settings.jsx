@@ -12,6 +12,7 @@ import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import { USERNAME_HINT, newUsernameError } from '../utils/usernamePolicy';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../utils/accountDeletion';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../utils/accountReset';
+import { profileFeedUrl } from '../utils/profileFeed';
 import './Settings.css';
 
 function Settings({
@@ -656,11 +657,12 @@ function Settings({
   const isSuspended = Boolean(user?.suspended);
 
   const publicProfileUrl = `${window.location.origin}/u/${user?.username || ''}`;
+  const publicApiTag = publicApiTagInput.trim().toLowerCase();
   const publicApiUrl = (() => {
     const base = `${window.location.origin}/api/profiles/${user?.username || ''}`;
-    const tag = publicApiTagInput.trim().toLowerCase();
-    return tag ? `${base}?tag=${encodeURIComponent(tag)}` : base;
+    return publicApiTag ? `${base}?tag=${encodeURIComponent(publicApiTag)}` : base;
   })();
+  const publicFeedUrl = profileFeedUrl(user?.username || '', publicApiTag ? [publicApiTag] : []);
 
   const handleCopyText = async (text) => {
     try {
@@ -963,11 +965,12 @@ function Settings({
                 </div>
 
                 <div>
-                  <strong>API access</strong>
+                  <strong>API and RSS access</strong>
                   <p>
                     The same bookmarks are also available as JSON, so you can pull them into another
-                    site &mdash; cross-origin requests are already allowed. Leave the tag field blank
-                    for all public bookmarks, or enter a tag to get only bookmarks with that tag.
+                    site &mdash; cross-origin requests are already allowed &mdash; and as an RSS feed
+                    of your newest public bookmarks for feed readers. Leave the tag field blank for
+                    all public bookmarks, or enter a tag to get only bookmarks with that tag.
                   </p>
                 </div>
 
@@ -992,6 +995,19 @@ function Settings({
                   />
                   <button type="button" onClick={() => handleCopyText(publicApiUrl)} className="btn-secondary">
                     <Copy size={14} /> Copy API URL
+                  </button>
+                </div>
+
+                <div className="public-profile-link">
+                  <input
+                    type="text"
+                    readOnly
+                    aria-label="RSS feed URL"
+                    value={publicFeedUrl}
+                    onFocus={(e) => e.target.select()}
+                  />
+                  <button type="button" onClick={() => handleCopyText(publicFeedUrl)} className="btn-secondary">
+                    <Copy size={14} /> Copy RSS URL
                   </button>
                 </div>
               </>

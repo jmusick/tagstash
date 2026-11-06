@@ -6,6 +6,7 @@ import AppFooter from './AppFooter'
 import BookmarkBrowser from './BookmarkBrowser'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
 import { removeProfileSnapshot } from '../utils/profileSnapshot'
+import { profileFeedUrl } from '../utils/profileFeed'
 
 function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   const { username } = useParams()
@@ -21,6 +22,12 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   ))
 
   const topTagNames = tags.slice(0, 5).map((tag) => tag.name)
+  // RSS feed for what's on screen: the selected tags (kept in ?tag=) narrow it the same way.
+  const feedTags = [...new Set(searchParams.getAll('tag').map((tag) => tag.trim().toLowerCase()).filter(Boolean))]
+  const feedHref = profile ? profileFeedUrl(profile.username, feedTags) : ''
+  const feedTitle = profile
+    ? `@${profile.username}'s bookmarks${feedTags.length ? ` tagged ${feedTags.join(' + ')}` : ''} - Tagstash`
+    : ''
   useDocumentMeta({
     enabled: !loading,
     title: notFound || error ? 'Profile Not Found - Tagstash' : `${profile?.username}'s Bookmarks - Tagstash`,
@@ -69,6 +76,22 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   useLayoutEffect(() => {
     if (!loading) removeProfileSnapshot()
   }, [loading])
+
+  // Feed autodiscovery. The SSR adds the untagged feed link (functions/u/[username].js); this
+  // reuses it, follows the selected tags, and removes it when leaving the profile.
+  useEffect(() => {
+    if (!feedHref) return undefined
+    let link = document.head.querySelector('link[rel="alternate"][type="application/rss+xml"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'alternate'
+      link.type = 'application/rss+xml'
+      document.head.appendChild(link)
+    }
+    link.href = feedHref
+    link.title = feedTitle
+    return () => link.remove()
+  }, [feedHref, feedTitle])
 
   const handleSelectedTagsChange = (selectedTags) => {
     const next = new URLSearchParams()
@@ -133,6 +156,9 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
         >
           Report this profile
         </Link>
+        <a className="footer-privacy-link" href={feedHref} type="application/rss+xml">
+          {feedTags.length ? 'RSS feed for these tags' : 'RSS feed'}
+        </a>
       </AppFooter>
     </div>
   )

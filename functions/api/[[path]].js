@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable, publicBookmarkCondition } from '../_lib/profileVisibility.js';
+import { FEED_MAX_TAG_LENGTH, profileFeedCacheKey } from '../_lib/profileFeed.js';
 import { newPasswordError } from '../../src/utils/passwordPolicy.js';
 import { newUsernameError } from '../../src/utils/usernamePolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
@@ -189,11 +190,13 @@ const isCacheableTagFilter = (appliedTags) =>
 
 // Cache keys to drop when a profile stops being (or may stop being) visible: the base URL plus
 // the single-tag variant of each tag on the user's public bookmarks (the documented consumer
-// usage). Multi-tag combinations can't be enumerated and simply expire after the TTL.
+// usage), for both the profile API and the RSS feed (/u/:username/feed.xml, functions/_lib/
+// profileFeed.js). Multi-tag combinations can't be enumerated and simply expire after the TTL.
 // Returns [] without touching the DB when there's no Cache API.
 const collectProfileCacheKeys = async (db, request, userId, username) => {
   if (!getEdgeCache() || !username) return [];
-  const keys = [profileCacheKey(request, username, [])];
+  const origin = new URL(request.url).origin;
+  const keys = [profileCacheKey(request, username, []), profileFeedCacheKey(origin, username)];
   try {
     const hasIsPrivate = await bookmarksTableHasColumn(db, 'is_private');
     const rows = await db
@@ -210,6 +213,7 @@ const collectProfileCacheKeys = async (db, request, userId, username) => {
     const names = new Set((rows.results || []).map((row) => String(row.name).trim().toLowerCase()).filter(Boolean));
     for (const name of names) {
       if (name.length <= PROFILE_CACHE_MAX_TAG_LENGTH) keys.push(profileCacheKey(request, username, [name]));
+      if (name.length <= FEED_MAX_TAG_LENGTH) keys.push(profileFeedCacheKey(origin, username, [name]));
     }
   } catch (error) {
     console.error('[profile-cache] tag lookup for purge failed:', error?.name || 'error');
