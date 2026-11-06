@@ -185,7 +185,7 @@ test('hostile titles, tags and URLs are escaped, control characters dropped, uns
       { id: 2, title: '', url: 'https://ok.example/', created_at: '2026-01-01 00:00:00', tags: 'not json' },
     ],
   });
-  assert.ok(!/<script|<\/title><script|<b>|<t>|\u0001|\0008/i.test(xml));
+  assert.ok(!/<script|<\/title><script|<b>|<t>|\u0001|\u0008/i.test(xml));
   assert.ok(xml.includes('&lt;/title&gt;&lt;script&gt;alert(1)&lt;/script&gt;'));
   const [first, second] = itemsOf(xml);
   assert.equal(field(first, 'link'), 'https://tagsta.sh/u/o&apos;brien%3Cx%3E?tag=a%26b', 'javascript: links fall back to the profile');
