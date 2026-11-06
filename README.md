@@ -41,6 +41,7 @@ Current status at a glance:
 - Email verification via Cloudflare Email Sending
 - Opt-in public profiles (`/u/:username`) for sharing your bookmarks via a link, with per-bookmark privacy control and tag filtering
 - Public JSON API (`/api/profiles/:username`, optionally tag-filtered) for embedding your bookmarks on other sites, with ready-to-copy URLs in Settings
+- RSS feed per public profile, optionally per tag (`/u/:username/feed.xml?tag=...`), linked from the profile page and Settings
 - Super admin controls for managing users, roles, and tiers, plus moderation (suspend an account, force a profile private)
 - Three theme options (Slate, Midnight, Light), with your pick synced to your account when logged in
 - Preference for opening bookmark links in a new tab or the same tab (Settings → Preferences), synced to your account
@@ -418,13 +419,14 @@ Request bodies must be JSON objects sent as `application/json` (415 otherwise) a
 
 ### Public Profiles
 
+- `GET /u/:username/feed.xml` — RSS 2.0 feed of the profile's newest 50 public bookmarks (newest first, tags as `<category>`), with the same optional repeatable `?tag=` AND filter, e.g. `/u/alice/feed.xml?tag=poe2`. Same visibility rules and identical `404` as the JSON API, more than 10 tag filters is a `400`, every response is `noindex`, CORS is open, and successful feeds share the API's 60-second edge cache and purges. Notes are never included.
 - `GET /api/profiles/:username` — unauthenticated; returns a user's public, non-private bookmarks and tags if they've opted in via `PUT /api/auth/profile-public`. Profiles that aren't public, don't exist, or belong to a suspended account all answer the same `404`.
 
 This is a stable, documented public API meant for third-party consumption (not just internal page-support data) — Settings surfaces ready-to-copy URLs for it. Responses are JSON with CORS enabled for all origins, so it can be fetched directly from another site's frontend or from a server-side build/SSR step. The site's Content Security Policy governs only Tagstash's own pages, not consumers of this API.
 
 Successful responses are cached at the Cloudflare edge for 60 seconds (`Cache-Control: public, max-age=0, s-maxage=60`; browsers always revalidate), keyed on the username and `?tag=` filters only. A change to a profile's bookmarks can therefore take up to a minute to show up, and a profile that is made private or suspended can keep being served for up to a minute from data centers that were not purged. Errors and 404s are never cached.
 
-Optional repeatable `?tag=` query param filters to bookmarks that have *all* of the given tags (AND):
+Optional repeatable `?tag=` query param filters to bookmarks that have *all* of the given tags (AND). The same filter works on the profile's RSS feed (below):
 
 ```
 GET /api/profiles/alice
