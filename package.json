@@ -1,7 +1,7 @@
 {
   "name": "tagstash",
   "private": true,
-  "version": "1.46.8",
+  "version": "1.46.9",
   "type": "module",
   "description": "A tag-based bookmarking web application",
   "engines": {
@@ -32,11 +32,11 @@
     "test:a11y": "node scripts/a11y-audit.mjs"
   },
   "dependencies": {
-    "axios": "^1.20.0",
+    "axios": "^1.21.0",
     "bcryptjs": "^3.0.3",
-    "jose": "^6.2.13",
-    "lucide-react": "^0.577.0",
-    "markdown-to-jsx": "9.10.3",
+    "jose": "^6.2.14",
+    "lucide-react": "^1.61.0",
+    "markdown-to-jsx": "9.10.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.4"
@@ -54,7 +54,7 @@
     "globals": "^17.4.0",
     "playwright-core": "1.64.1",
     "vite": "^8.3.5",
-    "wrangler": "^4.151.3"
+    "wrangler": "^4.155.0"
   },
   "overrides": {
     "undici": "^7.30.1"
