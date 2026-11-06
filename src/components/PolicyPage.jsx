@@ -21,7 +21,7 @@ function PolicyPage({ logoSrc, onBack }) {
       </header>
 
       <main id="main" tabIndex={-1} className="privacy-content">
-        <p className="privacy-effective">Effective date: October 25, 2026</p>
+        <p className="privacy-effective">Effective date: November 5, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -140,10 +140,11 @@ function PolicyPage({ logoSrc, onBack }) {
             You can choose to make your profile public in Settings. When enabled, your
             username and any bookmarks you haven't marked private become viewable by anyone
             with the link at <code>tagsta.sh/u/your-username</code>, and through a public
-            JSON API meant for embedding your bookmarks elsewhere. This is off by default,
+            JSON API meant for embedding your bookmarks elsewhere and an RSS feed for feed
+            readers. This is off by default,
             fully opt-in, and can be turned off at any time; you can also mark individual
             bookmarks private to exclude them even while your profile is public. Notes on
-            your bookmarks are never shown on your public profile or its API.
+            your bookmarks are never shown on your public profile, its API or its feed.
           </p>
           <p>
             Public profiles are offered to search engines (and listed in our sitemap) only once
