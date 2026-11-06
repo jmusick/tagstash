@@ -3221,36 +3221,76 @@ const clearStripeBillingState = async (db, userId) => {
     .run();
 };
 
+const STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300;
+
+// Stripe signs `${t}.${rawBody}` with HMAC-SHA256 and may send several `v1` signatures at once
+// (one per active secret while a webhook secret is being rolled), so any matching one is
+// accepted. crypto.subtle.verify does the comparison, which keeps it constant-time.
 const verifyStripeSignature = async (rawBody, sigHeader, secret) => {
   if (!sigHeader || !secret) return false;
-  const parts = {};
+  let timestamp = null;
+  const signatures = [];
   for (const part of sigHeader.split(',')) {
     const idx = part.indexOf('=');
-    if (idx > 0) parts[part.slice(0, idx)] = part.slice(idx + 1);
+    if (idx <= 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (key === 't') timestamp = value;
+    else if (key === 'v1' && /^[0-9a-f]{64}$/i.test(value)) signatures.push(value);
   }
-  const timestamp = parts.t;
-  const signature = parts.v1;
-  if (!timestamp || !signature) return false;
+  if (!timestamp || !/^\d+$/.test(timestamp) || signatures.length === 0) return false;
   // Reject webhooks older than 5 minutes to prevent replay attacks
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - parseInt(timestamp, 10)) > 300) return false;
-  const payload = `${timestamp}.${rawBody}`;
+  if (Math.abs(now - Number(timestamp)) > STRIPE_WEBHOOK_TOLERANCE_SECONDS) return false;
   const key = await crypto.subtle.importKey(
     'raw',
     encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
-    ['sign']
+    ['verify']
   );
-  const mac = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  const expected = Array.from(new Uint8Array(mac))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-  return expected === signature;
+  const payload = encoder.encode(`${timestamp}.${rawBody}`);
+  for (const signature of signatures) {
+    const bytes = new Uint8Array(signature.match(/../g).map((byte) => parseInt(byte, 16)));
+    if (await crypto.subtle.verify('HMAC', key, bytes, payload)) return true;
+  }
+  return false;
 };
 
-const processStripeEvent = async (db, event) => {
-  const { type, data } = event;
+const PAID_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
+const ENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired'];
+const tierForSubscriptionStatus = (status) => (
+  PAID_SUBSCRIPTION_STATUSES.includes(status) ? MEMBERSHIP_TIERS.PAID : MEMBERSHIP_TIERS.FREE
+);
+const isStripeId = (value, prefix) => typeof value === 'string' && value.startsWith(prefix) && value.length <= 255;
+
+// The subscription as Stripe has it now. Webhook payloads can arrive late, twice or out of
+// order, so the tier always comes from this, never from the event. A subscription Stripe no
+// longer knows counts as ended; any other failure throws, the webhook answers 502 and Stripe
+// retries the delivery.
+const fetchCurrentStripeSubscription = async (subscriptionId, env) => {
+  try {
+    const subscription = await stripeRequest('GET', `/subscriptions/${encodeURIComponent(subscriptionId)}`, null, env);
+    if (subscription?.id !== subscriptionId) throw new UpstreamError('stripe', 'Subscription identity was not confirmed');
+    return subscription;
+  } catch (error) {
+    if (error instanceof UpstreamError && error.status === 404 && error.code === 'resource_missing') {
+      return { id: subscriptionId, status: 'canceled', missing: true };
+    }
+    throw error;
+  }
+};
+
+const subscriptionCustomerId = (subscription) => (
+  typeof subscription?.customer === 'string' ? subscription.customer : subscription?.customer?.id
+);
+
+// Every handled event re-reads the subscription from Stripe and writes that state, so a
+// duplicate delivery re-applies the same answer and a stale one can't undo a newer change.
+// Events are matched to an account only by our own checkout's metadata.userId or by the exact
+// IDs stored on the account, never by email.
+const processStripeEvent = async (db, event, env) => {
+  const { type, data } = event || {};
   const obj = data?.object;
   const activeAccountCondition = await usersTableHasColumn(db, 'deletion_started_at')
     ? ' AND deletion_started_at IS NULL' : '';
@@ -3258,60 +3298,68 @@ const processStripeEvent = async (db, event) => {
   if (type === 'checkout.session.completed') {
     const customerId = obj?.customer;
     const subscriptionId = obj?.subscription;
+    if (obj?.mode !== 'subscription' || !isStripeId(customerId, 'cus_') || !isStripeId(subscriptionId, 'sub_')) {
+      return { handled: false, reason: 'Not a subscription checkout' };
+    }
     const userId = Number(obj?.metadata?.userId);
-    const email = normalizeEmail(obj?.customer_email || obj?.customer_details?.email);
     let user = null;
     if (Number.isInteger(userId) && userId > 0) {
       user = await db.prepare('SELECT * FROM users WHERE id = ?').bind(userId).first();
-    }
-    if (!user && email) {
-      user = await db
-        .prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)')
-        .bind(email)
-        .first();
+    } else {
+      user = await db.prepare('SELECT * FROM users WHERE stripe_customer_id = ?').bind(customerId).first();
     }
     if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user' };
+
+    const subscription = await fetchCurrentStripeSubscription(subscriptionId, env);
+    if (subscriptionCustomerId(subscription) !== customerId) {
+      return { handled: false, reason: 'Subscription does not belong to this checkout' };
+    }
+    if (ENDED_SUBSCRIPTION_STATUSES.includes(subscription.status)) {
+      return { handled: false, reason: 'Subscription already ended' };
+    }
+    // An unpaid (asynchronous) or incomplete checkout still links the subscription, so the
+    // customer.subscription.updated that later marks it active can find this account.
+    const tier = tierForSubscriptionStatus(subscription.status);
     await db
       .prepare(
         `UPDATE users SET membership_tier = ?, stripe_customer_id = ?, stripe_subscription_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`
       )
-      .bind(MEMBERSHIP_TIERS.PAID, customerId, subscriptionId, user.id)
+      .bind(tier, customerId, subscriptionId, user.id)
       .run();
-    return { handled: true, action: 'membership_upgraded', eventType: type };
+    return {
+      handled: true,
+      action: tier === MEMBERSHIP_TIERS.PAID ? 'membership_upgraded' : 'subscription_linked',
+      status: subscription.status,
+      eventType: type,
+    };
   }
 
-  if (type === 'customer.subscription.deleted') {
-    const customerId = obj?.customer;
+  if (type === 'customer.subscription.updated' || type === 'customer.subscription.deleted') {
+    const subscriptionId = obj?.id;
+    if (!isStripeId(subscriptionId, 'sub_')) return { handled: false, reason: 'Missing subscription ID' };
     const user = await db
-      .prepare('SELECT * FROM users WHERE stripe_customer_id = ?')
-      .bind(customerId)
+      .prepare('SELECT * FROM users WHERE stripe_subscription_id = ?')
+      .bind(subscriptionId)
       .first();
-    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user for customer' };
+    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user for subscription' };
+
+    const subscription = await fetchCurrentStripeSubscription(subscriptionId, env);
+    const tier = tierForSubscriptionStatus(subscription.status);
+    const ended = ENDED_SUBSCRIPTION_STATUSES.includes(subscription.status);
+    // The stored subscription ID is part of the condition, so a checkout that linked a newer
+    // subscription while Stripe was being asked can't be overwritten by this older one.
     await db
       .prepare(
-        `UPDATE users SET membership_tier = ?, stripe_subscription_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`
+        `UPDATE users SET membership_tier = ?${ended ? ', stripe_subscription_id = NULL' : ''}, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND stripe_subscription_id = ?${activeAccountCondition}`
       )
-      .bind(MEMBERSHIP_TIERS.FREE, user.id)
+      .bind(tier, user.id, subscriptionId)
       .run();
-    return { handled: true, action: 'membership_downgraded', eventType: type };
-  }
-
-  if (type === 'customer.subscription.updated') {
-    const customerId = obj?.customer;
-    const status = obj?.status;
-    const user = await db
-      .prepare('SELECT * FROM users WHERE stripe_customer_id = ?')
-      .bind(customerId)
-      .first();
-    if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user for customer' };
-    const tier = ['active', 'trialing'].includes(status) ? MEMBERSHIP_TIERS.PAID : MEMBERSHIP_TIERS.FREE;
-    if (user.membership_tier !== tier) {
-      await db
-        .prepare(`UPDATE users SET membership_tier = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?${activeAccountCondition}`)
-        .bind(tier, user.id)
-        .run();
-    }
-    return { handled: true, action: 'subscription_status_synced', status, eventType: type };
+    return {
+      handled: true,
+      action: ended ? 'membership_downgraded' : 'subscription_status_synced',
+      status: subscription.status,
+      eventType: type,
+    };
   }
 
   return { handled: false, reason: `Unhandled event type: ${type}` };
@@ -5511,7 +5559,11 @@ async function handleBilling(request, env, segments) {
     } catch {
       return jsonResponse({ error: 'Invalid JSON body' }, 400);
     }
-    const result = await processStripeEvent(db, event);
+    // Handled events re-read the subscription from Stripe; a non-2xx makes Stripe retry later.
+    if (!env.STRIPE_SECRET_KEY) {
+      return jsonResponse({ error: 'Stripe is not configured' }, 503);
+    }
+    const result = await processStripeEvent(db, event, env);
     return jsonResponse({ received: true, result });
   }
 
@@ -5658,10 +5710,7 @@ async function handleBilling(request, env, segments) {
       });
     }
 
-    const status = subscription?.status;
-    const nextTier = ['active', 'trialing'].includes(status)
-      ? MEMBERSHIP_TIERS.PAID
-      : MEMBERSHIP_TIERS.FREE;
+    const nextTier = tierForSubscriptionStatus(subscription?.status);
 
     if (dbUser.membership_tier !== nextTier) {
       await db
