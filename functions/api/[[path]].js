@@ -3045,6 +3045,9 @@ const stripeIdempotencyKey = async (purpose, userId, parts) => {
 };
 
 const isStripeMissingResourceError = (error) => /No such (customer|subscription)/i.test(error?.message || '');
+// Stripe's structured 404 for an ID it doesn't know (stricter than the message check above).
+const isStripeResourceMissing = (error) => error instanceof UpstreamError && error.status === 404 && error.code === 'resource_missing';
+const ENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired'];
 
 // `replacingCustomerId` is set when recreating a customer Stripe no longer knows, so that
 // request can't replay the (deleted) customer created under the same key earlier.
@@ -3093,13 +3096,13 @@ const removeStripeResourceForDeletion = async (resource, id, env) => {
     if (resource === 'subscriptions') {
       const subscription = await stripeRequest('GET', `/subscriptions/${encodeURIComponent(id)}`, null, env);
       if (subscription.id !== id) throw new UpstreamError('stripe', 'Subscription identity was not confirmed');
-      if (['canceled', 'incomplete_expired'].includes(subscription.status)) return;
+      if (ENDED_SUBSCRIPTION_STATUSES.includes(subscription.status)) return;
     }
     const result = await stripeRequest('DELETE', `/${resource}/${encodeURIComponent(id)}`, null, env);
     const removed = result.id === id && (resource === 'customers' ? result.deleted === true : result.status === 'canceled');
     if (!removed) throw new UpstreamError('stripe', 'Billing deletion was not confirmed');
   } catch (error) {
-    if (error instanceof UpstreamError && error.status === 404 && error.code === 'resource_missing') return;
+    if (isStripeResourceMissing(error)) return;
     throw new UpstreamError('stripe', 'Account billing deletion failed', { status: error.status });
   }
 };
@@ -3258,7 +3261,6 @@ const verifyStripeSignature = async (rawBody, sigHeader, secret) => {
 };
 
 const PAID_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
-const ENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired'];
 const tierForSubscriptionStatus = (status) => (
   PAID_SUBSCRIPTION_STATUSES.includes(status) ? MEMBERSHIP_TIERS.PAID : MEMBERSHIP_TIERS.FREE
 );
@@ -3274,16 +3276,10 @@ const fetchCurrentStripeSubscription = async (subscriptionId, env) => {
     if (subscription?.id !== subscriptionId) throw new UpstreamError('stripe', 'Subscription identity was not confirmed');
     return subscription;
   } catch (error) {
-    if (error instanceof UpstreamError && error.status === 404 && error.code === 'resource_missing') {
-      return { id: subscriptionId, status: 'canceled', missing: true };
-    }
+    if (isStripeResourceMissing(error)) return { id: subscriptionId, status: 'canceled' };
     throw error;
   }
 };
-
-const subscriptionCustomerId = (subscription) => (
-  typeof subscription?.customer === 'string' ? subscription.customer : subscription?.customer?.id
-);
 
 // Every handled event re-reads the subscription from Stripe and writes that state, so a
 // duplicate delivery re-applies the same answer and a stale one can't undo a newer change.
@@ -3311,7 +3307,7 @@ const processStripeEvent = async (db, event, env) => {
     if (!user || user.deletion_started_at) return { handled: false, reason: 'No matching user' };
 
     const subscription = await fetchCurrentStripeSubscription(subscriptionId, env);
-    if (subscriptionCustomerId(subscription) !== customerId) {
+    if (subscription.customer !== customerId) {
       return { handled: false, reason: 'Subscription does not belong to this checkout' };
     }
     if (ENDED_SUBSCRIPTION_STATUSES.includes(subscription.status)) {
@@ -3346,6 +3342,9 @@ const processStripeEvent = async (db, event, env) => {
     const subscription = await fetchCurrentStripeSubscription(subscriptionId, env);
     const tier = tierForSubscriptionStatus(subscription.status);
     const ended = ENDED_SUBSCRIPTION_STATUSES.includes(subscription.status);
+    if (!ended && user.membership_tier === tier) {
+      return { handled: true, action: 'subscription_status_synced', status: subscription.status, eventType: type };
+    }
     // The stored subscription ID is part of the condition, so a checkout that linked a newer
     // subscription while Stripe was being asked can't be overwritten by this older one.
     await db

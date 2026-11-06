@@ -170,6 +170,25 @@ test('a paid checkout upgrades the account named in its metadata', async (t) => 
   assert.deepEqual({ ...user() }, { membership_tier: 'paid', stripe_customer_id: 'cus_current', stripe_subscription_id: 'sub_new' });
 });
 
+test('a free-trial checkout (no payment required) upgrades while Stripe says trialing', async (t) => {
+  const { deliver, subscriptions, user } = await setup(t, { tier: 'free', customer: 'cus_current', subscription: null });
+  subscriptions.sub_trial = { customer: 'cus_current', status: 'trialing' };
+  const response = await deliver('checkout.session.completed', {
+    mode: 'subscription', payment_status: 'no_payment_required', metadata: { userId: '1' }, customer: 'cus_current', subscription: 'sub_trial',
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual({ ...user() }, { membership_tier: 'paid', stripe_customer_id: 'cus_current', stripe_subscription_id: 'sub_trial' });
+});
+
+test('an update that changes nothing leaves the row untouched', async (t) => {
+  const { env, deliver, subscriptions } = await setup(t);
+  subscriptions.sub_current = { customer: 'cus_current', status: 'active' };
+  env.sqlite.exec("UPDATE users SET updated_at = '2026-01-01 00:00:00' WHERE id = 1");
+  const response = await deliver('customer.subscription.updated', { id: 'sub_current', status: 'active' });
+  assert.equal(response.status, 200);
+  assert.equal(env.sqlite.prepare('SELECT updated_at FROM users WHERE id = 1').get().updated_at, '2026-01-01 00:00:00');
+});
+
 test('an unpaid checkout links the subscription but upgrades only once Stripe says it is active', async (t) => {
   const { deliver, subscriptions, user } = await setup(t, { tier: 'free', customer: 'cus_current', subscription: null });
   subscriptions.sub_new = { customer: 'cus_current', status: 'incomplete' };
