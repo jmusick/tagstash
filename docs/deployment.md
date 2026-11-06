@@ -2,12 +2,14 @@
 
 Configuration checked October 10, 2026 through the authenticated Cloudflare Pages
 API, Wrangler, and the GitHub check for the deployed commit. This is a dated check.
+The production branch was renamed to `main` on November 5, 2026 (#167); the
+other values are from the October 10 check.
 
 | Setting | Expected value |
 | --- | --- |
 | Git repository | `jmusick/tagstash` (repository ID `1194713067`) |
 | Pages project | `tagstash` |
-| Production branch | `master` |
+| Production branch | `main` |
 | Automatic production deployment | Enabled |
 | Build root | Repository root |
 | Build command | `npm run build` |
@@ -20,8 +22,8 @@ API, Wrangler, and the GitHub check for the deployed commit. This is a dated che
 The source configuration still records the repository spelling `Tagstash`;
 GitHub resolves it to `tagstash`, with the same repository ID. The latest successful
 Git push deployment was commit `1416e12769ff81d884e72a3977f397f7943d208a`,
-completed October 7, 2026. Its GitHub Cloudflare Pages check succeeded. Local
-`master` and `origin/master` matched that commit during this check.
+completed October 7, 2026. Its GitHub Cloudflare Pages check succeeded. The local
+and remote production branch matched that commit during this check.
 
 `wrangler.toml` defines the output directory, runtime compatibility date, and D1
 binding. Build command, Git branch controls, and domains are managed in Pages.
@@ -35,7 +37,7 @@ variables and is disabled; configure isolated preview resources before enabling 
 1. Run `npm run build`, `npm run lint`, and `npm test` on the proposed change.
 2. Review D1 migrations separately. Pages deployment does not apply them. Apply
    required migrations in the reviewed order, preserving new-column guards.
-3. Push the reviewed release to `master`; verify the Cloudflare Pages check and
+3. Push the reviewed release to `main`; verify the Cloudflare Pages check and
    deployed commit hash. There is no separate GitHub Actions website deploy job.
 4. Check `/`, `/features`, `/privacy`, `/support`, `/api/health`, `/sitemap.xml`,
    `/robots.txt`, and `/llms.txt`. All returned 200 on October 10.

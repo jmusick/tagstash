@@ -199,7 +199,7 @@ Default local URLs:
 
 Tagstash is designed for Cloudflare Pages + D1.
 
-The GitHub integration deploys `master` from `jmusick/tagstash` to the `tagstash`
+The GitHub integration deploys `main` from `jmusick/tagstash` to the `tagstash`
 Pages project. Its build command is `npm run build`, output directory is `dist`,
 and repository root is the build root. See [deployment configuration and checks](docs/deployment.md).
 
@@ -502,7 +502,7 @@ tagstash/
 - `npm run test:auth` - Run only the auth session tests
 - `npm run test:a11y` - Retained axe accessibility audit tooling; testing is currently paused (see AGENTS.md)
 
-GitHub Actions (`.github/workflows/ci.yml`) calls the SHA-pinned [jmusick/ci](https://github.com/jmusick/ci) `baseline` and `web-app` workflows on pull requests and pushes to `master`, using Node 24. Baseline scans Git history for secrets, checks the npm version and lockfile, installs dependencies, audits advisories and verifies registry signatures; public pull requests also get dependency review. Web app runs lint, `npm test` and the build. Both workflows are pinned to shared CI v0.3.0; accessibility testing is currently paused locally and in CI. The **CI gate** passes only when both shared workflows succeed. Dependabot checks npm packages and GitHub Actions (including shared workflow pins) weekly; its cooldown holds ordinary updates for seven days, or fourteen for npm majors.
+GitHub Actions (`.github/workflows/ci.yml`) calls the SHA-pinned [jmusick/ci](https://github.com/jmusick/ci) `baseline` and `web-app` workflows on pull requests and pushes to `main`, using Node 24. Baseline scans Git history for secrets, checks the npm version and lockfile, installs dependencies, audits advisories and verifies registry signatures; public pull requests also get dependency review. Web app runs lint, `npm test` and the build. Both workflows are pinned to shared CI v0.3.0; accessibility testing is currently paused locally and in CI. The **CI gate** passes only when both shared workflows succeed. Dependabot checks npm packages and GitHub Actions (including shared workflow pins) weekly; its cooldown holds ordinary updates for seven days, or fourteen for npm majors.
 
 ## Backlog and documentation
 
