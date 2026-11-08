@@ -2,9 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { onRequest } from '../functions/_middleware.js'
 import { onRequestGet as sitemap } from '../functions/sitemap.xml.js'
-import { getHomeStructuredData, getPricingStructuredData } from '../src/content/marketingSchema.js'
+import { getFeaturesStructuredData, getHomeStructuredData, getPricingStructuredData } from '../src/content/marketingSchema.js'
+import { FEATURES_UPDATED } from '../src/content/featuresFaqs.js'
 import { readFileSync } from 'node:fs'
-import { PRICING_FAQS, PRICING_INCLUDED, PRICING_OFFERS } from '../src/content/pricing.js'
+import { PRICING_FAQS, PRICING_INCLUDED, PRICING_OFFERS, PRICING_UPDATED } from '../src/content/pricing.js'
 import { PRICING_META } from '../src/utils/pageMeta.js'
 
 test('the Features page stays indexable when served through Pages middleware', async () => {
@@ -83,5 +84,32 @@ test('marketing route handling preserves asset redirects and API responses', asy
     assert.equal(response.status, status)
     assert.equal(response.headers.get('X-Robots-Tag'), null)
     if (path === '/features/') assert.equal(response.headers.get('Location'), '/features')
+  }
+})
+
+test('Features and Pricing show one content date in the page, the schema and the sitemap', async () => {
+  const xml = await (await sitemap({ request: new Request('https://tagsta.sh/sitemap.xml'), env: {} })).text()
+  const spelled = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })
+  for (const [path, updated, component, getSchema] of [
+    ['/features', FEATURES_UPDATED, 'src/components/FeaturesPage.jsx', getFeaturesStructuredData],
+    ['/pricing', PRICING_UPDATED, 'src/components/PricingPage.jsx', getPricingStructuredData],
+  ]) {
+    assert.match(xml, new RegExp(`<loc>https://tagsta\\.sh${path}</loc><lastmod>${updated}</lastmod>`), path)
+    const page = getSchema('https://tagsta.sh')['@graph'].find(node => node['@type'] === 'WebPage')
+    assert.equal(page.dateModified, updated, path)
+    const source = readFileSync(new URL(`../${component}`, import.meta.url), 'utf8')
+    assert.match(source, new RegExp(`<time dateTime=\\{[A-Z_]+\\}>${spelled(updated)}</time>`), path)
+  }
+})
+
+test('every marketing page that describes the app uses the complete SoftwareApplication entity', () => {
+  // A partial inline SoftwareApplication (name and url only) is an invalid Software App rich result.
+  const home = getHomeStructuredData('https://tagsta.sh')['@graph'].find(node => node['@type'] === 'SoftwareApplication')
+  for (const getSchema of [getFeaturesStructuredData, getPricingStructuredData]) {
+    const graph = getSchema('https://tagsta.sh')['@graph']
+    const page = graph.find(node => node['@type'] === 'WebPage')
+    assert.deepEqual(page.about, { '@id': 'https://tagsta.sh/#software' })
+    assert.deepEqual(graph.find(node => node['@type'] === 'SoftwareApplication'), home)
+    assert.ok(!JSON.stringify(page).includes('SoftwareApplication'))
   }
 })
