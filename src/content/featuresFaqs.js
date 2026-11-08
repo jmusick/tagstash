@@ -1,4 +1,4 @@
-export const FEATURES_UPDATED = '2026-10-07'
+export const FEATURES_UPDATED = '2026-10-26'
 
 export const FEATURES_FAQS = [
   {

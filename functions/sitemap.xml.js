@@ -1,11 +1,14 @@
 // Dynamic XML sitemap: static marketing pages + public profiles that pass the indexing bar.
 import { getProfileSchema, isProfileIndexable, publicBookmarkCondition, visibleProfileCondition } from './_lib/profileVisibility.js';
+import { FEATURES_UPDATED } from '../src/content/featuresFaqs.js';
+import { PRICING_UPDATED } from '../src/content/pricing.js';
 
 const STATIC_PATHS = [
   // Content-change dates; update these when editing a page's substantive content.
-  { path: '/', lastmod: '2026-10-07' },
-  { path: '/features', lastmod: '2026-10-07' },
-  { path: '/pricing', lastmod: '2026-10-26' },
+  // /features and /pricing use the date their page text and schema dateModified show.
+  { path: '/', lastmod: '2026-10-26' },
+  { path: '/features', lastmod: FEATURES_UPDATED },
+  { path: '/pricing', lastmod: PRICING_UPDATED },
   { path: '/developers', lastmod: '2026-10-25' },
   { path: '/privacy', lastmod: '2026-11-05' },
   { path: '/support', lastmod: '2026-08-17' },

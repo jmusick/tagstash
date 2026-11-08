@@ -45,10 +45,11 @@ export function getFeaturesStructuredData(origin) {
         isPartOf: { '@id': `${origin}/#website` },
         name: FEATURES_META.title, description: FEATURES_META.description,
         dateModified: FEATURES_UPDATED,
-        about: { '@type': 'SoftwareApplication', name: 'Tagstash', url: `${origin}/` },
+        about: { '@id': `${origin}/#software` },
         publisher: { '@type': 'Organization', name: 'Stone Dragon Media LLC', url: 'https://stonedragonmedia.com/' },
         breadcrumb: { '@id': `${url}#breadcrumbs` },
       },
+      softwareEntity(origin),
       {
         '@type': 'BreadcrumbList', '@id': `${url}#breadcrumbs`,
         itemListElement: [
