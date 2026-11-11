@@ -47,6 +47,7 @@ Current status at a glance:
 - Preference for opening bookmark links in a new tab or the same tab (Settings → Preferences), synced to your account
 - Responsive UI for desktop and mobile
 - Firefox/browser extension companion for saving the current tab quickly
+- Share target for the installed web app: on Android Chrome (and other browsers that support Web Share Target), installing Tagstash adds it to the system share sheet; sharing a link opens the add form with its URL and title filled in, plus the page's metadata for any missing title or description. Signed-out users are asked to log in first. iOS Safari does not support share targets
 - Refresh button plus a quiet 5-minute background poll so bookmarks saved elsewhere (e.g. the browser extension) show up without a page reload
 - Random button for jumping straight to a random bookmark in edit mode
 - Tag Management page (`/tags`) for merging two tags into one, renaming a tag on every bookmark that uses it (renaming onto an existing tag merges them), and deleting a tag from all of your bookmarks, with a confirmation step for anything that can't be undone

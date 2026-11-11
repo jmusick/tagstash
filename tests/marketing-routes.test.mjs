@@ -63,7 +63,7 @@ test('an unknown SPA address stays a real nonindexable 404', async () => {
 })
 
 test('owner pages are real 200 responses rather than the SPA 404', async () => {
-  for (const path of ['/trash', '/tags', '/settings', '/duplicates']) {
+  for (const path of ['/trash', '/tags', '/settings', '/duplicates', '/share']) {
     const response = await onRequest({
       request: new Request(`https://tagsta.sh${path}`),
       next: async () => new Response('<div id="root"></div>', { headers: { 'Content-Type': 'text/html' } }),

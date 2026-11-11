@@ -15,7 +15,7 @@ import { NEW_PASSWORD_HINT, newPasswordError } from '../utils/passwordPolicy';
 import { USERNAME_HINT, newUsernameError } from '../utils/usernamePolicy';
 import './Home.css';
 
-function Home({ logoSrc, theme, onSelectTheme }) {
+function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
   usePageStructuredData(getHomeStructuredData);
   useDocumentMeta({
     title: 'Tagstash - Tag-Based Bookmark Manager',
@@ -422,6 +422,11 @@ function Home({ logoSrc, theme, onSelectTheme }) {
           {signedOutEverywhere && (
             <div className="auth-success" role="status" tabIndex={-1} ref={signedOutNoticeRef}>
               You are signed out of all devices, including browser extensions. Personal API keys are still active.
+            </div>
+          )}
+          {shareNotice && isLogin && (
+            <div className="auth-success" role="status">
+              Log in to save the link you shared. It opens in the add form once you are signed in.
             </div>
           )}
           <h2 className="auth-card-title">

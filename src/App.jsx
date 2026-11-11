@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, lazy, Suspense } from 'react'
-import { Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { version } from '../package.json'
 import './App.css'
 import { useAuth } from './context/AuthContext'
@@ -43,6 +43,7 @@ import { BookmarkTagList } from './components/BookmarkParts'
 import BookmarkNote from './components/BookmarkNote'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
+import { SHARE_TARGET_PATH, peekSharedLink, clearSharedLink } from './utils/shareTarget'
 import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Info, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
 
 const FREE_BOOKMARK_LIMIT = 50
@@ -143,6 +144,7 @@ function App() {
     note: '',
   })
   const [tagDraft, setTagDraft] = useState('')
+  const addFormHeadingRef = useRef(null)
   const [editTagDraft, setEditTagDraft] = useState('')
   const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
   const [usageUpgradePlan, setUsageUpgradePlan] = useState('monthly')
@@ -501,6 +503,41 @@ function App() {
       setFetchingDescription(false)
     }
   }
+
+  // Share target (issue #102): /share redirects a signed-in user here, and the link captured
+  // by main.jsx opens the add form. The title and description are filled from the page's
+  // metadata only where the share left them empty, and only if the URL hasn't been changed.
+  // It leaves fetchingDescription alone so it can't flip the manual Fetch From Site state.
+  const fetchSharedLinkMetadata = async (url) => {
+    try {
+      const response = await bookmarksAPI.fetchMetadata(url)
+      const fetchedTitle = response.data?.title?.trim() || ''
+      const fetchedDescription = response.data?.description || ''
+      setFormData((prev) => (prev.url !== url ? prev : {
+        ...prev,
+        title: prev.title || fetchedTitle,
+        description: prev.description || fetchedDescription,
+      }))
+      setLastFetchedDescriptionUrl(url)
+    } catch {
+      // Metadata is a convenience; the form stays usable without it.
+    }
+  }
+
+  useEffect(() => {
+    if (!user || pathname !== '/') return
+    const shared = peekSharedLink()
+    if (!shared) return
+    clearSharedLink()
+    setFormData({ title: shared.title, url: shared.url, tags: '', description: '', note: '' })
+    setTagDraft('')
+    setLastFetchedDescriptionUrl('')
+    setShowAddForm(true)
+    setError(shared.url ? '' : 'The shared item had no link. Paste the URL to save it.')
+    setTimeout(() => addFormHeadingRef.current?.focus(), 0)
+    // At the free limit the save would fail, so don't spend a metadata lookup on it.
+    if (shared.url && !isFreeLimitReached) fetchSharedLinkMetadata(shared.url)
+  }, [user, pathname, isFreeLimitReached])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -1083,6 +1120,12 @@ function App() {
     <RouteAnnouncer />
     <Suspense fallback={<div className="loading-container"><p>Loading...</p></div>}>
       <Routes>
+        <Route
+          path={SHARE_TARGET_PATH}
+          element={user ? <Navigate to="/" replace /> : (
+            <Home logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} shareNotice={!!peekSharedLink()} />
+          )}
+        />
         <Route path="/verify-email" element={<VerifyEmail logoSrc={logoSrc} />} />
         <Route path="/reset-password" element={<ResetPassword logoSrc={logoSrc} />} />
         <Route path="/u/:username" element={<PublicProfile logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} linkTarget={linkTarget} />} />
@@ -1326,7 +1369,7 @@ function App() {
 
           {showAddForm && (
             <div className="add-bookmark-form" id="add-bookmark-form">
-              <h2>Add a bookmark</h2>
+              <h2 ref={addFormHeadingRef} tabIndex={-1}>Add a bookmark</h2>
               {isFreeLimitReached && (
                 <p className="usage-limit-warning">
                   Free plan limit reached ({FREE_BOOKMARK_LIMIT} bookmarks). Upgrade to paid to continue adding bookmarks.
