@@ -29,6 +29,9 @@ updates:
     labels: [dependencies]
     cooldown:
       default-days: 7
+      # The owner's shared workflows (jmusick/ci) are proposed as soon as they're released.
+      exclude:
+        - "jmusick/*"
     groups:
       actions:
         patterns: ["*"]
