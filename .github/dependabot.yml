@@ -1,10 +1,15 @@
+# Dependabot version updates, from the jmusick/ci template. Security updates are a separate repository
+# setting and are not controlled by this file.
+#
+# Cadence: one monthly batch per ecosystem keeps review to a single sitting. The cooldown holds each new
+# release back for a week (two for majors) so a yanked or compromised release is usually caught before it
+# reaches a PR. Cooldown does not delay security updates, and jmusick/ci releases skip it.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
     open-pull-requests-limit: 5
     labels: [dependencies]
@@ -13,23 +18,21 @@ updates:
       semver-major-days: 14
     groups:
       react:
-        patterns: ["react", "react-dom", "react-router-dom", "@types/react", "@types/react-dom"]
+        patterns: ["react", "react-dom", "react-router*", "@types/react", "@types/react-dom"]
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
 
-  # Includes the SHA-pinned jmusick/ci reusable workflows.
+  # Keeps SHA-pinned actions current, including the jmusick/ci shared workflows.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: "06:00"
     open-pull-requests-limit: 3
     labels: [dependencies]
     cooldown:
       default-days: 7
-      # The owner's shared workflows (jmusick/ci) are proposed as soon as they're released.
       exclude:
         - "jmusick/*"
     groups:

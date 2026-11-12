@@ -49,7 +49,7 @@ Git history with Gitleaks; public pull requests get dependency review, which rej
 moderate-or-higher runtime advisories. The web-app workflow installs normally under
 the script policy before running the project checks. **CI gate** requires both to pass.
 
-`.github/dependabot.yml` checks npm and GitHub Actions weekly on Mondays at 06:00 UTC,
+`.github/dependabot.yml` checks npm and GitHub Actions monthly, on the 1st at 06:00 UTC,
 including the shared workflow SHA pins. Ordinary updates cool down for seven days
 (fourteen for npm majors); security updates are separate. React packages move as one
 group, other npm minor/patch updates as another, and actions as one group.
