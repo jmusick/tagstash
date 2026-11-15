@@ -2431,3 +2431,110 @@ a.btn-field-action,
   font-weight: 600;
   color: var(--color-text);
 }
+
+/* The browser's controls and results share the desktop grid. Keeping filters
+   before results in the DOM also gives phones a useful reading/focus order. */
+.app-main > .bookmark-browser-content {
+  display: contents;
+}
+.app-main:has(> .bookmark-browser-content) {
+  row-gap: 0;
+}
+.main-content > .toolbar { grid-column: 1; grid-row: 1; }
+.main-content > .browser-content { grid-column: 1; grid-row: 2; min-width: 0; }
+.main-content > .bookmarks-section { grid-column: 1; grid-row: 3; min-width: 0; }
+.main-content > .browser-filters { grid-column: 2; grid-row: 1 / span 3; }
+.browser-filters-content { display: flex; flex-direction: column; gap: 0.85rem; }
+.browser-filters-toggle,
+.membership-mobile-toggle { display: none; }
+.display-options { min-width: 0; max-width: 100%; }
+.display-options summary {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--color-border-field);
+  border-radius: 7px;
+  background: var(--color-panel);
+  color: var(--color-text-soft);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.display-options-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+}
+
+@media (max-width: 1024px) {
+  .main-content > .browser-filters { grid-column: 1; grid-row: 2; margin-bottom: 0.75rem; }
+  .main-content > .browser-content { grid-row: 3; }
+  .main-content > .bookmarks-section { grid-row: 4; }
+  .browser-filters-toggle { display: block; width: 100%; min-height: 44px; }
+  .browser-filters-content { display: none; }
+  .browser-filters.is-expanded .browser-filters-content { display: flex; }
+  .browser-filters .tag-cloud { order: -1; }
+}
+
+@media (max-width: 640px) {
+  .membership-summary { padding: 0; }
+  .membership-mobile-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 44px;
+    padding: 0.5rem 0.75rem;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: var(--color-text-soft);
+    font: inherit;
+    font-size: var(--text-sm);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+  }
+  .membership-mobile-toggle span:last-child { color: var(--color-link); }
+  .membership-plan-details { display: none; padding: 0.75rem; }
+  .membership-summary.is-expanded .membership-plan-details { display: block; }
+  .display-options { width: 100%; }
+  .display-options-fields { flex-direction: column; }
+  .display-options select { min-height: 44px; }
+  .bookmark-card {
+    grid-template-areas:
+      'fav title title'
+      'meta meta meta'
+      'desc desc desc'
+      'note note note'
+      'form form form'
+      'tags tags tags'
+      'actions actions actions';
+  }
+  .bookmark-card.is-selectable {
+    grid-template-areas:
+      'sel fav title title'
+      'meta meta meta meta'
+      'desc desc desc desc'
+      'note note note note'
+      'form form form form'
+      'tags tags tags tags'
+      'actions actions actions actions';
+  }
+  .bookmark-card .bookmark-actions {
+    justify-self: end;
+    margin: 0.4rem 0 0;
+    gap: 0.25rem;
+  }
+  .bookmark-actions .icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    opacity: 1;
+  }
+  .bookmark-actions .delete-btn { margin-left: 0.5rem; }
+  .browser-filters .tag-cloud { padding: 0.8rem; }
+  .browser-filters .tag-cloud-items { gap: 0.65rem 0.4rem; }
+  .browser-filters .tag-cloud-item { font-size: var(--text-meta); max-width: calc(100% - 0.6em); flex: 0 1 auto; }
+  .browser-filters .tag-cloud-chip-name { min-width: 0; }
+  .browser-filters .tag-name { overflow: hidden; text-overflow: ellipsis; }
+  .browser-filters .tag-chip-actions { flex-shrink: 0; }
+}

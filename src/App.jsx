@@ -147,6 +147,7 @@ function App() {
   const addFormHeadingRef = useRef(null)
   const [editTagDraft, setEditTagDraft] = useState('')
   const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
+  const [mobileUsageExpanded, setMobileUsageExpanded] = useState(false)
   const [usageUpgradePlan, setUsageUpgradePlan] = useState('monthly')
   const [startingUpgrade, setStartingUpgrade] = useState(false)
   const [billingMessage, setBillingMessage] = useState(() => {
@@ -1506,47 +1507,55 @@ function App() {
           )}
 
           {!isPaidMember && (
-            <section className="membership-summary membership-summary-free">
-              <div className="membership-summary-head">
-                <strong>Free Plan</strong>
-                <span>{bookmarkUsageCount} / {FREE_BOOKMARK_LIMIT} bookmarks used</span>
-              </div>
-              <div className="usage-meter" aria-hidden="true">
-                <div className="usage-meter-bar" style={{ width: `${freeUsagePercent}%` }} />
-              </div>
-              <div className="membership-summary-actions">
-                <div className="upgrade-plan-toggle" role="group" aria-label="Choose billing plan">
+            <section className={`membership-summary membership-summary-free ${mobileUsageExpanded ? 'is-expanded' : ''}`}>
+              <button type="button" className="membership-mobile-toggle"
+                aria-expanded={mobileUsageExpanded} aria-controls="library-plan-details"
+                onClick={() => setMobileUsageExpanded((expanded) => !expanded)}>
+                <span>Free · {bookmarkUsageCount}/{FREE_BOOKMARK_LIMIT} bookmarks</span>
+                <span>{mobileUsageExpanded ? 'Hide plans' : 'Plans'}</span>
+              </button>
+              <div id="library-plan-details" className="membership-plan-details">
+                <div className="membership-summary-head">
+                  <strong>Free Plan</strong>
+                  <span>{bookmarkUsageCount} / {FREE_BOOKMARK_LIMIT} bookmarks used</span>
+                </div>
+                <div className="usage-meter" aria-hidden="true">
+                  <div className="usage-meter-bar" style={{ width: `${freeUsagePercent}%` }} />
+                </div>
+                <div className="membership-summary-actions">
+                  <div className="upgrade-plan-toggle" role="group" aria-label="Choose billing plan">
+                    <button
+                      type="button"
+                      className={`upgrade-plan-btn ${usageUpgradePlan === 'monthly' ? 'active' : ''}`}
+                      aria-pressed={usageUpgradePlan === 'monthly'}
+                      onClick={() => setUsageUpgradePlan('monthly')}
+                      disabled={startingUpgrade}
+                    >
+                      Monthly
+                    </button>
+                    <button
+                      type="button"
+                      className={`upgrade-plan-btn ${usageUpgradePlan === 'annual' ? 'active' : ''}`}
+                      aria-pressed={usageUpgradePlan === 'annual'}
+                      onClick={() => setUsageUpgradePlan('annual')}
+                      disabled={startingUpgrade}
+                    >
+                      Annual
+                    </button>
+                  </div>
                   <button
                     type="button"
-                    className={`upgrade-plan-btn ${usageUpgradePlan === 'monthly' ? 'active' : ''}`}
-                    aria-pressed={usageUpgradePlan === 'monthly'}
-                    onClick={() => setUsageUpgradePlan('monthly')}
+                    className="upgrade-placeholder-link"
+                    onClick={handleUpgradeFromUsageCard}
                     disabled={startingUpgrade}
                   >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    className={`upgrade-plan-btn ${usageUpgradePlan === 'annual' ? 'active' : ''}`}
-                    aria-pressed={usageUpgradePlan === 'annual'}
-                    onClick={() => setUsageUpgradePlan('annual')}
-                    disabled={startingUpgrade}
-                  >
-                    Annual
+                    {startingUpgrade ? 'Opening checkout...' : `Upgrade (${usageUpgradePlan === 'monthly' ? 'Monthly' : 'Annual'})`}
                   </button>
                 </div>
-                <button
-                  type="button"
-                  className="upgrade-placeholder-link"
-                  onClick={handleUpgradeFromUsageCard}
-                  disabled={startingUpgrade}
-                >
-                  {startingUpgrade ? 'Opening checkout...' : `Upgrade (${usageUpgradePlan === 'monthly' ? 'Monthly' : 'Annual'})`}
-                </button>
+                {isFreeLimitReached && (
+                  <p className="usage-limit-warning">You reached the free limit. Upgrade to paid to keep adding bookmarks.</p>
+                )}
               </div>
-              {isFreeLimitReached && (
-                <p className="usage-limit-warning">You reached the free limit. Upgrade to paid to keep adding bookmarks.</p>
-              )}
             </section>
           )}
                   </BookmarkBrowser>

@@ -66,6 +66,7 @@ function BookmarkBrowser({
   bulkActions,
   children,
 }) {
+  const [filtersExpanded, setFiltersExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [showUntaggedOnly, setShowUntaggedOnly] = useState(false)
@@ -108,10 +109,10 @@ function BookmarkBrowser({
         })
         break
       case 'alpha':
-        items.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+        items.sort((a, b) => b.title.localeCompare(a.title, undefined, { sensitivity: 'base' }))
         break
       case 'url':
-        items.sort((a, b) => a.url.localeCompare(b.url, undefined, { sensitivity: 'base' }))
+        items.sort((a, b) => b.url.localeCompare(a.url, undefined, { sensitivity: 'base' }))
         break
       case 'date':
       default:
@@ -352,6 +353,11 @@ function BookmarkBrowser({
     searchTerm.trim() || selectedTags.length > 0 || showFavoritesOnly || noteActive || untaggedActive || domainActive || monthActive || focusBookmarkId
   )
 
+  const sortLabel = { date: 'Date saved', lastUpdated: 'Last updated', alpha: 'Title', url: 'URL' }[sortBy]
+  const directionLabel = sortBy === 'alpha' || sortBy === 'url'
+    ? (sortDirection === 'asc' ? 'A–Z' : 'Z–A')
+    : (sortDirection === 'asc' ? 'Oldest' : 'Newest')
+
   const activeFilterChipLabel = focusBookmarkId
     ? 'Random'
     : null
@@ -369,7 +375,7 @@ function BookmarkBrowser({
 
   return (
     <>
-      <div className="main-content">
+      <div className="main-content bookmark-browser-content">
         <div className="toolbar">
           <div className="toolbar-row toolbar-row-actions">
             <div className="search-control">
@@ -447,7 +453,150 @@ function BookmarkBrowser({
           </details>
         </div>
 
-        {children}
+        <aside className={`sidebar browser-filters ${filtersExpanded ? 'is-expanded' : ''}`} aria-label="Bookmark filters">
+          <button type="button" className="btn-secondary browser-filters-toggle"
+            aria-expanded={filtersExpanded} aria-controls="bookmark-filters"
+            onClick={() => setFiltersExpanded((expanded) => !expanded)}>
+            {filtersExpanded ? 'Hide tags and filters' : 'Tags and filters'}{hasActiveFilters ? ' · Active' : ''}
+          </button>
+          <div id="bookmark-filters" className="browser-filters-content">
+            {(domainActive || monthActive || selectedTags.length > 0) && (
+              <div className="active-tag-filter">
+                <div className="active-tag-filter-head">
+                  <span>Filtering by</span>
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => {
+                      setSelectedTags([])
+                      handleClearDomainFilter()
+                      setMonthFilter('')
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <div className="active-tag-filter-list">
+                  {domainActive && (
+                    <span className="active-domain-filter">
+                      <span>Domain: {domainActive}</span>
+                      <button type="button" onClick={handleClearDomainFilter} aria-label="Clear domain filter">
+                        <X size={13} />
+                      </button>
+                    </span>
+                  )}
+                  {monthActive && (
+                    <span className="active-domain-filter">
+                      <span>Saved: {formatCreatedMonth(monthActive)}</span>
+                      <button type="button" onClick={() => setMonthFilter('')} aria-label="Clear month filter">
+                        <X size={13} />
+                      </button>
+                    </span>
+                  )}
+                  {selectedTags.map((tag) => (
+                    <span key={tag} className="tag-stock tag-stock--active">
+                      <span>{tag}</span>
+                      <button type="button" className="tag-stock-remove" onClick={() => handleTagRemove(tag)} aria-label={`Remove ${tag} from filter`}>
+                        <X size={12} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                {selectedTags.length > 1 && (
+                  <p className="active-tag-filter-hint">Showing bookmarks that have all of these tags.</p>
+                )}
+              </div>
+            )}
+            {(showDomainFilter || showDateFilter) && (
+              <div className="library-filters">
+                {showDomainFilter && (
+                  <div className="library-filter-control">
+                    <label htmlFor="bookmark-domain">Domain</label>
+                    <select id="bookmark-domain" value={domainActive || ''} onChange={(e) => {
+                      if (focusBookmarkId) onClearFocus?.()
+                      setDomainFilter(e.target.value || null)
+                    }}>
+                      <option value="">All domains</option>
+                      {domainActive && !domains.some(([domain]) => domain === domainActive) && (
+                        <option value={domainActive}>{domainActive} (0)</option>
+                      )}
+                      {domains.map(([domain, count]) => <option key={domain} value={domain}>{domain} ({count})</option>)}
+                    </select>
+                  </div>
+                )}
+                {showDateFilter && (
+                  <div className="library-filter-control">
+                    <label htmlFor="bookmark-month">Month saved</label>
+                    <select id="bookmark-month" value={monthActive} aria-describedby="bookmark-month-hint" onChange={(e) => {
+                      if (focusBookmarkId) onClearFocus?.()
+                      setMonthFilter(e.target.value)
+                    }}>
+                      <option value="">All months</option>
+                      {monthActive && !months.some(({ value }) => value === monthActive) && (
+                        <option value={monthActive}>{formatCreatedMonth(monthActive)} (0)</option>
+                      )}
+                      {months.map(({ value, label, count }) => <option key={value} value={value}>{label} ({count})</option>)}
+                    </select>
+                  </div>
+                )}
+                {showDateFilter && (
+                  <p id="bookmark-month-hint" className="library-filters-hint">Months use your local time zone. Counts reflect your whole library.</p>
+                )}
+              </div>
+            )}
+            {showAttributeFilters && (
+              <div className="attribute-filters" role="group" aria-labelledby="attribute-filters-heading">
+                <p id="attribute-filters-heading" className="attribute-filters-heading">Show only</p>
+                {sidebarFavorites && (
+                  <button
+                    type="button"
+                    className={`untagged-filter-btn ${showFavoritesOnly ? 'active' : ''}`}
+                    onClick={handleToggleFavorites}
+                    aria-pressed={showFavoritesOnly}
+                    title="Show only your favorite bookmarks"
+                  >
+                    <span>Favorites</span>
+                    {!loading && <span className="untagged-filter-count">{favoriteCount}</span>}
+                  </button>
+                )}
+                {showNoteFilter && (
+                  <button
+                    type="button"
+                    className={`untagged-filter-btn ${noteActive ? 'active' : ''}`}
+                    onClick={handleToggleNote}
+                    aria-pressed={noteActive}
+                    title="Show only bookmarks that have a note"
+                  >
+                    <span>Has note</span>
+                    {!loading && <span className="untagged-filter-count">{noteCount}</span>}
+                  </button>
+                )}
+                {showUntaggedFilter && (
+                  <button
+                    type="button"
+                    className={`untagged-filter-btn ${untaggedActive ? 'active' : ''}`}
+                    onClick={handleToggleUntagged}
+                    aria-pressed={untaggedActive}
+                    title="Show only bookmarks that have no tags"
+                  >
+                    <span>Without tags</span>
+                    {!loading && <span className="untagged-filter-count">{untaggedCount}</span>}
+                  </button>
+                )}
+              </div>
+            )}
+            <TagCloud
+              tags={tags}
+              selectedTags={selectedTags}
+              onTagSelect={handleTagSelect}
+              onTagAdd={handleTagAdd}
+              onTagFavoriteToggle={onTagFavoriteToggle}
+              refreshKey={tagsRefreshKey}
+            />
+          </div>
+        </aside>
+
+        <div className="browser-content">{children}</div>
 
         <div className="bookmarks-section">
           <h2 ref={resultsHeadingRef} tabIndex={-1} className="sr-only">Bookmarks</h2>
@@ -473,41 +622,46 @@ function BookmarkBrowser({
                   : `${filteredBookmarks.length} of ${bookmarks.length} bookmarks`}
               </p>
               <div className="results-controls">
-                <div className="sort-control">
-                  <label htmlFor="sortBy">Sort</label>
-                  <select
-                    id="sortBy"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                  >
-                    <option value="date">Date saved</option>
-                    <option value="lastUpdated">Last updated</option>
-                    <option value="alpha">Title</option>
-                    <option value="url">URL</option>
-                  </select>
-                  <select
-                    id="sortDirection"
-                    aria-label="Sort direction"
-                    value={sortDirection}
-                    onChange={(e) => setSortDirection(e.target.value)}
-                  >
-                    <option value="desc">{sortBy === 'alpha' || sortBy === 'url' ? 'Z to A' : 'Newest first'}</option>
-                    <option value="asc">{sortBy === 'alpha' || sortBy === 'url' ? 'A to Z' : 'Oldest first'}</option>
-                  </select>
-                </div>
-                <div className="pagination-page-size">
-                  <label htmlFor="itemsPerPage">Per page</label>
-                  <select
-                    id="itemsPerPage"
-                    value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  >
-                    <option value={10}>10</option>
-                    <option value={20}>20</option>
-                    <option value={40}>40</option>
-                    <option value={80}>80</option>
-                  </select>
-                </div>
+                <details className="display-options">
+                  <summary>View: {sortLabel} · {directionLabel} · {itemsPerPage} per page</summary>
+                  <div className="display-options-fields">
+                    <div className="sort-control">
+                      <label htmlFor="sortBy">Sort</label>
+                      <select
+                        id="sortBy"
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                      >
+                        <option value="date">Date saved</option>
+                        <option value="lastUpdated">Last updated</option>
+                        <option value="alpha">Title</option>
+                        <option value="url">URL</option>
+                      </select>
+                      <select
+                        id="sortDirection"
+                        aria-label="Sort direction"
+                        value={sortDirection}
+                        onChange={(e) => setSortDirection(e.target.value)}
+                      >
+                        <option value="desc">{sortBy === 'alpha' || sortBy === 'url' ? 'Z to A' : 'Newest first'}</option>
+                        <option value="asc">{sortBy === 'alpha' || sortBy === 'url' ? 'A to Z' : 'Oldest first'}</option>
+                      </select>
+                    </div>
+                    <div className="pagination-page-size">
+                      <label htmlFor="itemsPerPage">Per page</label>
+                      <select
+                        id="itemsPerPage"
+                        value={itemsPerPage}
+                        onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={40}>40</option>
+                        <option value={80}>80</option>
+                      </select>
+                    </div>
+                  </div>
+                </details>
                 {totalPages > 1 && (
                   <Pager currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
                 )}
@@ -577,142 +731,6 @@ function BookmarkBrowser({
           )}
         </div>
       </div>
-
-      <aside className="sidebar">
-        {(domainActive || monthActive || selectedTags.length > 0) && (
-          <div className="active-tag-filter">
-            <div className="active-tag-filter-head">
-              <span>Filtering by</span>
-              <button
-                type="button"
-                className="text-button"
-                onClick={() => {
-                  setSelectedTags([])
-                  handleClearDomainFilter()
-                  setMonthFilter('')
-                }}
-              >
-                Clear
-              </button>
-            </div>
-            <div className="active-tag-filter-list">
-              {domainActive && (
-                <span className="active-domain-filter">
-                  <span>Domain: {domainActive}</span>
-                  <button type="button" onClick={handleClearDomainFilter} aria-label="Clear domain filter">
-                    <X size={13} />
-                  </button>
-                </span>
-              )}
-              {monthActive && (
-                <span className="active-domain-filter">
-                  <span>Saved: {formatCreatedMonth(monthActive)}</span>
-                  <button type="button" onClick={() => setMonthFilter('')} aria-label="Clear month filter">
-                    <X size={13} />
-                  </button>
-                </span>
-              )}
-              {selectedTags.map((tag) => (
-                <span key={tag} className="tag-stock tag-stock--active">
-                  <span>{tag}</span>
-                  <button type="button" className="tag-stock-remove" onClick={() => handleTagRemove(tag)} aria-label={`Remove ${tag} from filter`}>
-                    <X size={12} />
-                  </button>
-                </span>
-              ))}
-            </div>
-            {selectedTags.length > 1 && (
-              <p className="active-tag-filter-hint">Showing bookmarks that have all of these tags.</p>
-            )}
-          </div>
-        )}
-        {(showDomainFilter || showDateFilter) && (
-          <div className="library-filters">
-            {showDomainFilter && (
-              <div className="library-filter-control">
-                <label htmlFor="bookmark-domain">Domain</label>
-                <select id="bookmark-domain" value={domainActive || ''} onChange={(e) => {
-                  if (focusBookmarkId) onClearFocus?.()
-                  setDomainFilter(e.target.value || null)
-                }}>
-                  <option value="">All domains</option>
-                  {domainActive && !domains.some(([domain]) => domain === domainActive) && (
-                    <option value={domainActive}>{domainActive} (0)</option>
-                  )}
-                  {domains.map(([domain, count]) => <option key={domain} value={domain}>{domain} ({count})</option>)}
-                </select>
-              </div>
-            )}
-            {showDateFilter && (
-              <div className="library-filter-control">
-                <label htmlFor="bookmark-month">Month saved</label>
-                <select id="bookmark-month" value={monthActive} aria-describedby="bookmark-month-hint" onChange={(e) => {
-                  if (focusBookmarkId) onClearFocus?.()
-                  setMonthFilter(e.target.value)
-                }}>
-                  <option value="">All months</option>
-                  {monthActive && !months.some(({ value }) => value === monthActive) && (
-                    <option value={monthActive}>{formatCreatedMonth(monthActive)} (0)</option>
-                  )}
-                  {months.map(({ value, label, count }) => <option key={value} value={value}>{label} ({count})</option>)}
-                </select>
-              </div>
-            )}
-            {showDateFilter && (
-              <p id="bookmark-month-hint" className="library-filters-hint">Months use your local time zone. Counts reflect your whole library.</p>
-            )}
-          </div>
-        )}
-        {showAttributeFilters && (
-          <div className="attribute-filters" role="group" aria-labelledby="attribute-filters-heading">
-            <p id="attribute-filters-heading" className="attribute-filters-heading">Show only</p>
-            {sidebarFavorites && (
-              <button
-                type="button"
-                className={`untagged-filter-btn ${showFavoritesOnly ? 'active' : ''}`}
-                onClick={handleToggleFavorites}
-                aria-pressed={showFavoritesOnly}
-                title="Show only your favorite bookmarks"
-              >
-                <span>Favorites</span>
-                {!loading && <span className="untagged-filter-count">{favoriteCount}</span>}
-              </button>
-            )}
-            {showNoteFilter && (
-              <button
-                type="button"
-                className={`untagged-filter-btn ${noteActive ? 'active' : ''}`}
-                onClick={handleToggleNote}
-                aria-pressed={noteActive}
-                title="Show only bookmarks that have a note"
-              >
-                <span>Has note</span>
-                {!loading && <span className="untagged-filter-count">{noteCount}</span>}
-              </button>
-            )}
-            {showUntaggedFilter && (
-              <button
-                type="button"
-                className={`untagged-filter-btn ${untaggedActive ? 'active' : ''}`}
-                onClick={handleToggleUntagged}
-                aria-pressed={untaggedActive}
-                title="Show only bookmarks that have no tags"
-              >
-                <span>Without tags</span>
-                {!loading && <span className="untagged-filter-count">{untaggedCount}</span>}
-              </button>
-            )}
-          </div>
-        )}
-        <TagCloud
-          tags={tags}
-          selectedTags={selectedTags}
-          onTagSelect={handleTagSelect}
-          onTagAdd={handleTagAdd}
-          onTagFavoriteToggle={onTagFavoriteToggle}
-          refreshKey={tagsRefreshKey}
-        />
-      </aside>
     </>
   )
 }
