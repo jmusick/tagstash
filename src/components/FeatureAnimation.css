@@ -1,6 +1,6 @@
 .feature-animation { grid-column: 1 / -1; width: 100%; margin: 0; min-width: 0; border: 1px solid var(--color-border-strong); border-radius: 12px; overflow: hidden; background: var(--color-surface); }
 .feature-animation-choices { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; border-bottom: 1px solid var(--color-border); }
-.feature-animation button { font: inherit; font-size: var(--text-ui); border: 1px solid var(--color-border-strong); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--color-text-soft); background: var(--color-surface); cursor: pointer; }
+.feature-animation button { font: inherit; font-size: var(--text-ui); border: 1px solid var(--color-border-strong); border-radius: 7px; padding: 0.5rem 0.75rem; color: var(--color-text-soft); background: var(--color-surface); cursor: pointer; }
 .feature-animation button:hover { background: var(--color-surface-soft-hover); }
 .feature-animation-choices button[aria-pressed='true'] { background: var(--color-primary-soft); color: var(--color-link); border-color: var(--color-primary-strong); }
 .feature-animation video { width: 100%; height: auto; display: block; aspect-ratio: 1120 / 704; background: var(--color-panel); }

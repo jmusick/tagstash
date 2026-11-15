@@ -319,7 +319,7 @@ dd {
   left: 0.5rem;
   z-index: 10000;
   padding: 0.65rem 1rem;
-  border-radius: 0.4rem;
+  border-radius: 7px;
   background: var(--color-panel);
   color: var(--color-text);
   transform: translateY(-200%);

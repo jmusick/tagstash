@@ -296,7 +296,7 @@ The system is flat at rest. Depth comes from tone and hairlines: a darker ground
 
 ## Shapes
 
-Corners are gently rounded and grow with the size of the container: 4px on favicons, 7px on icon buttons, 8px on buttons and inputs, 10px on the search field, 12px on small cards, and 14px on the main panels (the bookmark index and the tag rack). Segmented controls, filter chips and the theme selector are full pills (999px). Borders are always 1px hairlines.
+Corners are gently rounded and grow with the size of the container: 4px on favicons, 7px on icon buttons, 8px on buttons and inputs, 10px on the search field, 12px on small cards, and 14px on the main panels (the bookmark index and the tag rack). Segmented controls, filter chips and the theme selector are full pills (999px). Borders are always 1px hairlines. Features asides and expanded bookmark notes use a full neutral border rather than a decorative accent stripe; Markdown blockquotes keep their left border to identify quoted text.
 
 The one non-rectangular form is the tag: a pill-height label (1.9em) with a square left side, 0.3em rounded right corners, a 0.6em triangular point clipped onto the left, and a punched eyelet painted as a radial gradient in the color of the surface beneath (`--tag-eyelet`, the panel color by default).
 

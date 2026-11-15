@@ -9,7 +9,7 @@
 .auth-card {
   background-color: var(--color-panel);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 3rem;
   width: 100%;
   max-width: 450px;
@@ -17,7 +17,7 @@
 }
 
 .auth-title {
-  font-size: 2.5rem;
+  font-size: var(--text-page-title);
   display: flex;
   justify-content: center;
   text-align: center;

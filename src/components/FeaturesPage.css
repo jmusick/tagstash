@@ -24,7 +24,7 @@
 .features-inline-tag { --tag-eyelet: var(--color-bg); font-size: var(--text-meta); vertical-align: baseline; margin-inline: 0.2rem; }
 .features-demo { min-width: 0; }
 .features-demo-caption { font-size: var(--text-sm); color: var(--color-text-muted); padding-top: 0.8rem; }
-.features-aside { padding: 1.75rem 2rem; border-left: 3px solid var(--color-tag-edge); background: var(--color-surface); }
+.features-aside { padding: 1.75rem 2rem; border: 1px solid var(--color-border); border-radius: 14px; background: var(--color-surface); }
 .features-aside h3 { color: var(--color-text); font-size: var(--text-title); margin: 0 0 0.75rem; }
 .features-aside p { font-size: var(--text-ui); }
 .features-extension { display: flex; align-items: center; gap: 0.75rem; color: var(--color-link); padding: 0.8rem 0; text-decoration: none; }

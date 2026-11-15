@@ -17,7 +17,7 @@
 .settings-panel {
   background-color: var(--color-panel-strong);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 2rem;
   width: 100%;
   max-width: 500px;

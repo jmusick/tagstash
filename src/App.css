@@ -68,7 +68,7 @@
   cursor: pointer;
   display: block;
   line-height: 0;
-  border-radius: 6px;
+  border-radius: 7px;
 }
 
 .app-header-logo {
@@ -322,7 +322,7 @@
 .tags-page-section {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 1.75rem;
 }
 
@@ -1179,7 +1179,7 @@
 .add-bookmark-form {
   background: var(--color-panel);
   border: 1px solid rgba(var(--color-accent-rgb), 0.5);
-  border-radius: 16px;
+  border-radius: 14px;
   padding: 1.15rem 1.25rem;
   margin-bottom: 1.25rem;
   box-shadow: var(--shadow-sm);
@@ -1232,7 +1232,7 @@
   background: transparent;
   border: 1px solid var(--color-border-strong);
   color: var(--color-primary-strong);
-  border-radius: 6px;
+  border-radius: 7px;
   padding: 0.2rem 0.55rem;
   font-size: var(--text-xs);
   cursor: pointer;
@@ -2093,7 +2093,7 @@ a.btn-field-action,
   background: none;
   color: inherit;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: 7px;
 }
 
 .bulk-panel {
@@ -2279,7 +2279,7 @@ a.btn-field-action,
   min-height: 24px;
   padding: 0.15rem 0.5rem;
   border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--color-primary-strong);
   font: inherit;
@@ -2305,8 +2305,8 @@ a.btn-field-action,
   max-width: 75ch;
   margin-top: 0.4rem;
   padding: 0.6rem 0.8rem;
-  border-left: 3px solid var(--color-primary-soft-strong);
-  border-radius: 0 8px 8px 0;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
   background: var(--color-surface-soft);
   color: var(--color-text);
   font-size: var(--text-ui);
@@ -2362,7 +2362,7 @@ a.btn-field-action,
 /* Wrapped, not scrolled: a scrolling block would need its own keyboard focus. */
 .note-markdown .note-code-block {
   padding: 0.5rem 0.6rem;
-  border-radius: 6px;
+  border-radius: 7px;
   background: var(--color-panel);
   white-space: pre-wrap;
 }
