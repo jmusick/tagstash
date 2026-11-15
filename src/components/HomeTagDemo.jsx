@@ -42,12 +42,14 @@ function HomeTagDemo() {
             </button>
           );
         })}
+        <button type="button" className="tag-demo-clear" disabled={!selected.length} onClick={() => setSelected([])}>Clear tags</button>
       </div>
-      <ul className="tag-demo-list" aria-live="polite">
+      <ul className="tag-demo-list" aria-live="polite" aria-label="Sample bookmarks" tabIndex={0}>
         {visible.map((b) => (
           <li key={b.title} className="tag-demo-item">
             <span className="tag-demo-title">{b.title}</span>
             <span className="tag-demo-domain">{b.domain}</span>
+            <span className="tag-demo-tags">{b.tags.map(tag => <span key={tag} className="tag-stock">{tag}</span>)}</span>
           </li>
         ))}
         {visible.length === 0 && (

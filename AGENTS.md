@@ -399,6 +399,14 @@ Contrast: text on the tinted banners (`.auth-error`, `.settings-error`, `.settin
 
 `App.jsx` owns the state: `theme` (`useState`, initialized from `localStorage['tagstash-theme']` or `prefers-color-scheme`), applied via `document.documentElement.dataset.theme` in a `useEffect`. `selectTheme(nextTheme)` sets it directly (no cycling) and, when logged in, fires `authAPI.updateTheme(nextTheme)` (`PUT /api/auth/theme`, guarded by `usersTableHasColumn(db, 'theme')` per the migration pattern above) to persist to `users.theme`. A separate effect applies `user.theme` over the local value whenever `user` loads/changes — so a logged-in account's saved theme wins over `localStorage` on that browser, while logged-out visitors still get `localStorage`/system-preference behavior.
 
+## Design polish (issue #209)
+
+`/tags` opens on Rename or delete; the Tag action buttons switch to Merge tags. Only the selected action's searchable tag list is mounted. Singular/plural suggestions are in a collapsed disclosure below the work area. The page uses flat sections rather than nested cards.
+
+Add and edit bookmark fields share URL → Title → Tags → Description → Note order. Search no-results states quote the current query and link to the Search tips disclosure, opening it and focusing its summary. `RouteLoading.jsx` keeps public page chrome and static placeholders visible during session restoration and lazy route loading. The homepage's sample rows show tags and reserve the list height while filtering; Clear tags resets the demo. Public-profile heading links mirror the unfiltered RSS and signup links in the server snapshot; React updates RSS with the selected tags.
+
+After a build, `node scripts/check-polish-layout.mjs` verifies these flows, empty pages, privacy headings, Pricing actions and delayed public route chunks with fixture responses in all three themes. It honors the same Chromium/screenshot environment variables as the other layout checkers, refuses all API writes, and does not run the paused accessibility suite.
+
 ## Settings navigation (issue #205)
 
 `Settings.jsx` opens on Preferences, with sections grouped by Library, Account, Sharing & API, Billing, optional Administration (super admin only), and a separate Danger zone. `src/content/settingsNavigation.js` owns the labels and stable section IDs. Navigation uses ordinary links and Tab/Enter, with `aria-current` on the selected link; below 800px the groups live in a collapsed disclosure. Selecting a section closes that menu and focuses the visible section heading. Section state is keyed by ID, so leaving a section clears its forms, notices and revealed API key.

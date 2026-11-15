@@ -9,6 +9,7 @@ import TagEditSection from './TagEditSection'
 function TagsPage() {
   useDocumentMeta({ title: 'Manage Tags - Tagstash', path: '/tags', noindex: true })
 
+  const [mode, setMode] = useState('edit')
   const [tags, setTags] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -114,7 +115,11 @@ function TagsPage() {
 
   return (
     <div className="tags-page">
-      <h1 className="sr-only">Manage tags</h1>
+      <h1>Manage tags</h1>
+      <div className="tag-management-modes" role="group" aria-label="Tag action">
+        <button type="button" className="btn-secondary" aria-pressed={mode === 'edit'} onClick={() => setMode('edit')}>Rename or delete</button>
+        <button type="button" className="btn-secondary" aria-pressed={mode === 'merge'} onClick={() => setMode('merge')}>Merge tags</button>
+      </div>
       <div role="alert" className="live-region">
         {error && (
           <div className="error-message">
@@ -129,8 +134,107 @@ function TagsPage() {
         {success && <div className="tags-page-success">{success}</div>}
       </div>
 
-      <section className="tags-page-section">
-        <h2>Singular &amp; Plural Tags</h2>
+      {mode === 'merge' && (
+        <section className="tags-page-section">
+          <h2>Merge Tags</h2>
+          <p className="tags-page-description">
+            Combine two tags into one. Click a tag below to select it as the tag to remove, then click a
+            second tag to select it as the tag to keep. Every bookmark using the first tag will be
+            re-tagged with the second, and the first tag will be deleted.
+          </p>
+
+          <div className="tag-merge-picker">
+            <div className="tag-merge-slot">
+              <span className="tag-merge-slot-label">1. Merge this tag&hellip;</span>
+              {sourceTag ? (
+                <span className="tag-stock tag-merge-chip tag-merge-chip-source">
+                  {sourceTag.name}
+                  <button type="button" onClick={() => setSourceTagId(null)} aria-label="Clear source tag selection">
+                    <X size={13} />
+                  </button>
+                </span>
+              ) : (
+                <span className="tag-merge-slot-empty">Select a tag below</span>
+              )}
+            </div>
+
+            <GitMerge size={20} className="tag-merge-arrow" aria-hidden="true" />
+
+            <div className="tag-merge-slot">
+              <span className="tag-merge-slot-label">2. &hellip;into this tag</span>
+              {targetTag ? (
+                <span className="tag-stock tag-merge-chip tag-merge-chip-target">
+                  {targetTag.name}
+                  <button type="button" onClick={() => setTargetTagId(null)} aria-label="Clear target tag selection">
+                    <X size={13} />
+                  </button>
+                </span>
+              ) : (
+                <span className="tag-merge-slot-empty">
+                  {sourceTag ? 'Select a different tag below' : 'Select a tag below first'}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {sourceTag && targetTag && (
+            <div className="tag-merge-preview">
+              <AlertTriangle size={16} aria-hidden="true" />
+              <span>
+                {sourceTag.count} bookmark{sourceTag.count === 1 ? '' : 's'} will move from{' '}
+                <strong>{sourceTag.name}</strong> to <strong>{targetTag.name}</strong>, and{' '}
+                <strong>{sourceTag.name}</strong> will be deleted. This cannot be undone.
+              </span>
+            </div>
+          )}
+
+          <div className="tag-merge-actions">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={handleMerge}
+              disabled={!sourceTag || !targetTag || merging}
+            >
+              {merging ? 'Merging...' : 'Merge Tags'}
+            </button>
+            {(sourceTag || targetTag) && (
+              <button type="button" className="btn-secondary" onClick={clearSelection} disabled={merging}>
+                Clear Selection
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="loading-message">Loading tags...</div>
+          ) : (
+            <TagCloud
+              tags={tags}
+              selectedTags={selectedTagNames}
+              onTagSelect={handleTagSelect}
+              showActions={false}
+            />
+          )}
+        </section>
+      )}
+
+      {mode === 'edit' && (
+        <TagEditSection
+          tags={tags}
+          loading={loading}
+          onDone={async (message) => {
+            setError('')
+            setSuccess(message)
+            await fetchTags()
+          }}
+          onError={(message) => {
+            setSuccess('')
+            setError(message)
+          }}
+        />
+      )}
+
+      <details className="tags-plural-report">
+        <summary>Singular &amp; plural tags{!loading && ` (${pluralPairs.length} pairs)`}</summary>
         <p className="tags-page-description">
           Tags that look like the same word in singular and plural form. Pick which spelling to keep —
           the other one is merged into it and deleted.
@@ -182,102 +286,7 @@ function TagsPage() {
             })}
           </ul>
         )}
-      </section>
-
-      <section className="tags-page-section">
-        <h2>Merge Tags</h2>
-        <p className="tags-page-description">
-          Combine two tags into one. Click a tag below to select it as the tag to remove, then click a
-          second tag to select it as the tag to keep. Every bookmark using the first tag will be
-          re-tagged with the second, and the first tag will be deleted.
-        </p>
-
-        <div className="tag-merge-picker">
-          <div className="tag-merge-slot">
-            <span className="tag-merge-slot-label">1. Merge this tag&hellip;</span>
-            {sourceTag ? (
-              <span className="tag-stock tag-merge-chip tag-merge-chip-source">
-                {sourceTag.name}
-                <button type="button" onClick={() => setSourceTagId(null)} aria-label="Clear source tag selection">
-                  <X size={13} />
-                </button>
-              </span>
-            ) : (
-              <span className="tag-merge-slot-empty">Select a tag below</span>
-            )}
-          </div>
-
-          <GitMerge size={20} className="tag-merge-arrow" aria-hidden="true" />
-
-          <div className="tag-merge-slot">
-            <span className="tag-merge-slot-label">2. &hellip;into this tag</span>
-            {targetTag ? (
-              <span className="tag-stock tag-merge-chip tag-merge-chip-target">
-                {targetTag.name}
-                <button type="button" onClick={() => setTargetTagId(null)} aria-label="Clear target tag selection">
-                  <X size={13} />
-                </button>
-              </span>
-            ) : (
-              <span className="tag-merge-slot-empty">
-                {sourceTag ? 'Select a different tag below' : 'Select a tag below first'}
-              </span>
-            )}
-          </div>
-        </div>
-
-        {sourceTag && targetTag && (
-          <div className="tag-merge-preview">
-            <AlertTriangle size={16} aria-hidden="true" />
-            <span>
-              {sourceTag.count} bookmark{sourceTag.count === 1 ? '' : 's'} will move from{' '}
-              <strong>{sourceTag.name}</strong> to <strong>{targetTag.name}</strong>, and{' '}
-              <strong>{sourceTag.name}</strong> will be deleted. This cannot be undone.
-            </span>
-          </div>
-        )}
-
-        <div className="tag-merge-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={handleMerge}
-            disabled={!sourceTag || !targetTag || merging}
-          >
-            {merging ? 'Merging...' : 'Merge Tags'}
-          </button>
-          {(sourceTag || targetTag) && (
-            <button type="button" className="btn-secondary" onClick={clearSelection} disabled={merging}>
-              Clear Selection
-            </button>
-          )}
-        </div>
-
-        {loading ? (
-          <div className="loading-message">Loading tags...</div>
-        ) : (
-          <TagCloud
-            tags={tags}
-            selectedTags={selectedTagNames}
-            onTagSelect={handleTagSelect}
-            showActions={false}
-          />
-        )}
-      </section>
-
-      <TagEditSection
-        tags={tags}
-        loading={loading}
-        onDone={async (message) => {
-          setError('')
-          setSuccess(message)
-          await fetchTags()
-        }}
-        onError={(message) => {
-          setSuccess('')
-          setError(message)
-        }}
-      />
+      </details>
     </div>
   )
 }

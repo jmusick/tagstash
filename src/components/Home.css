@@ -95,7 +95,8 @@
 }
 
 .tag-demo-list {
-  min-height: 9.6rem;
+  height: 37rem;
+  overflow-y: auto;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -104,6 +105,7 @@
 
 .tag-demo-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
@@ -540,3 +542,7 @@
   .hero-lede { font-size: var(--text-body); line-height: 1.5; margin-top: 0.75rem; }
   .hero-signup { margin-top: 1rem; }
 }
+
+.tag-demo-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; flex-basis: 100%; padding-left: 0.5em; font-size: var(--text-meta); }
+.tag-demo-clear { background: transparent; color: var(--color-link); border: 0; font: inherit; font-size: var(--text-sm); text-decoration: underline; cursor: pointer; padding: 0.35rem; }
+.tag-demo-clear:disabled { color: var(--color-text-muted); cursor: default; text-decoration: none; }

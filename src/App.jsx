@@ -8,6 +8,7 @@ import BookmarkBrowser from './components/BookmarkBrowser'
 import AppHeader from './components/AppHeader'
 import AppFooter from './components/AppFooter'
 import RouteAnnouncer from './components/RouteAnnouncer'
+import RouteLoading from './components/RouteLoading'
 import { useDocumentMeta } from './utils/useDocumentMeta'
 import { authAPI, bookmarksAPI } from './api/api'
 
@@ -886,30 +887,6 @@ function App() {
           <div className="bookmark-edit-form">
             <div className="form-group">
               <div className="field-header">
-                <label htmlFor={`edit-title-${bookmark.id}`}>Title</label>
-                <button
-                  type="button"
-                  className="btn-field-action"
-                  onClick={handleFetchEditTitle}
-                  disabled={!editFormData.url.trim() || fetchingEditTitle}
-                >
-                  <RefreshCw size={13} />
-                  <span>{fetchingEditTitle ? 'Fetching...' : 'Fetch Title'}</span>
-                  <ActionInfo text="Attempts to read page metadata and replace the title field with the page title." />
-                </button>
-              </div>
-              <input
-                id={`edit-title-${bookmark.id}`}
-                type="text"
-                name="title"
-                value={editFormData.title}
-                onChange={handleEditInputChange}
-                maxLength={INPUT_LIMITS.title}
-                required
-              />
-            </div>
-            <div className="form-group">
-              <div className="field-header">
                 <label htmlFor={`edit-url-${bookmark.id}`}>URL</label>
                 {editFormData.url && (
                   <div className="field-actions">
@@ -941,6 +918,64 @@ function App() {
                 maxLength={INPUT_LIMITS.url}
                 required
               />
+            </div>
+            <div className="form-group">
+              <div className="field-header">
+                <label htmlFor={`edit-title-${bookmark.id}`}>Title</label>
+                <button
+                  type="button"
+                  className="btn-field-action"
+                  onClick={handleFetchEditTitle}
+                  disabled={!editFormData.url.trim() || fetchingEditTitle}
+                >
+                  <RefreshCw size={13} />
+                  <span>{fetchingEditTitle ? 'Fetching...' : 'Fetch Title'}</span>
+                  <ActionInfo text="Attempts to read page metadata and replace the title field with the page title." />
+                </button>
+              </div>
+              <input
+                id={`edit-title-${bookmark.id}`}
+                type="text"
+                name="title"
+                value={editFormData.title}
+                onChange={handleEditInputChange}
+                maxLength={INPUT_LIMITS.title}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor={`edit-tags-${bookmark.id}`}>Tags</label>
+              <div className="tag-input-shell">
+                {parseTags(editFormData.tags).map((tag) => (
+                  <span key={tag} className="tag-stock tag-input-pill">
+                    <span>{tag}</span>
+                    <button
+                      type="button"
+                      className="tag-pill-remove"
+                      aria-label={`Remove tag ${tag}`}
+                      onClick={() => removeEditTag(tag)}
+                    >
+                      x
+                    </button>
+                  </span>
+                ))}
+                <input
+                  id={`edit-tags-${bookmark.id}`}
+                  type="text"
+                  value={editTagDraft}
+                  maxLength={INPUT_LIMITS.tagName}
+                  onChange={(e) => setEditTagDraft(e.target.value)}
+                  onKeyDown={handleEditTagDraftKeyDown}
+                  aria-describedby={`edit-tags-hint-${bookmark.id}`}
+                  placeholder="Type tag, press comma"
+                />
+              </div>
+              {editTagSuggestion && (
+                <div className="tag-input-suggestion" aria-live="polite">
+                  Press Tab to use <strong>{editTagSuggestion}</strong>
+                </div>
+              )}
+              <small id={`edit-tags-hint-${bookmark.id}`}>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
             </div>
             <div className="form-group">
               <div className="field-header">
@@ -976,40 +1011,6 @@ function App() {
                 aria-describedby={`edit-note-hint-${bookmark.id}`}
               />
               <small id={`edit-note-hint-${bookmark.id}`}>{NOTE_HINT}</small>
-            </div>
-            <div className="form-group">
-              <label htmlFor={`edit-tags-${bookmark.id}`}>Tags</label>
-              <div className="tag-input-shell">
-                {parseTags(editFormData.tags).map((tag) => (
-                  <span key={tag} className="tag-stock tag-input-pill">
-                    <span>{tag}</span>
-                    <button
-                      type="button"
-                      className="tag-pill-remove"
-                      aria-label={`Remove tag ${tag}`}
-                      onClick={() => removeEditTag(tag)}
-                    >
-                      x
-                    </button>
-                  </span>
-                ))}
-                <input
-                  id={`edit-tags-${bookmark.id}`}
-                  type="text"
-                  value={editTagDraft}
-                  maxLength={INPUT_LIMITS.tagName}
-                  onChange={(e) => setEditTagDraft(e.target.value)}
-                  onKeyDown={handleEditTagDraftKeyDown}
-                  aria-describedby={`edit-tags-hint-${bookmark.id}`}
-                  placeholder="Type tag, press comma"
-                />
-              </div>
-              {editTagSuggestion && (
-                <div className="tag-input-suggestion" aria-live="polite">
-                  Press Tab to use <strong>{editTagSuggestion}</strong>
-                </div>
-              )}
-              <small id={`edit-tags-hint-${bookmark.id}`}>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
             </div>
             <div className="bookmark-edit-actions">
               <button
@@ -1051,9 +1052,7 @@ function App() {
 
   if (authLoading) {
     return (
-      <div className="loading-container">
-        <p>Loading...</p>
-      </div>
+      <RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />
     )
   }
 
@@ -1098,7 +1097,7 @@ function App() {
     <>
     <a className="skip-link" href="#main">Skip to content</a>
     <RouteAnnouncer />
-    <Suspense fallback={<div className="loading-container"><p>Loading...</p></div>}>
+    <Suspense fallback={<RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />}>
       <Routes>
         <Route
           path={SHARE_TARGET_PATH}
@@ -1393,7 +1392,7 @@ function App() {
                     value={formData.title}
                     onChange={handleInputChange}
                     maxLength={INPUT_LIMITS.title}
-                    placeholder="My Awesome Bookmark"
+                    placeholder="Page title"
                     required
                   />
                 </div>

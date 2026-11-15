@@ -80,6 +80,7 @@ function BookmarkBrowser({
   const [monthFilter, setMonthFilter] = useState('')
   const [pageAnnouncement, setPageAnnouncement] = useState('')
   const resultsHeadingRef = useRef(null)
+  const searchTipsRef = useRef(null)
 
   // Multi-select (the owner's library only: it is on when the parent passes `bulkActions`).
   // The selection is a set of ids that survives paging and sorting but is cleared whenever a
@@ -433,7 +434,7 @@ function BookmarkBrowser({
             )}
             {toolbarExtra}
           </div>
-          <details className="search-tips">
+          <details className="search-tips" id="search-tips" ref={searchTipsRef}>
             <summary>Search tips</summary>
             <ul>
               <li>Several words find bookmarks that contain all of them.</li>
@@ -672,14 +673,14 @@ function BookmarkBrowser({
             <div className="loading-message">Loading bookmarks…</div>
           ) : filteredBookmarks.length === 0 ? (
             <div className="empty-state">
-              {untaggedActive && untaggedCount === 0 ? (
+              {untaggedActive && untaggedCount === 0 && !searchTerm.trim() ? (
                 <>
                   <p>Every bookmark has at least one tag.</p>
                   <button type="button" className="btn-secondary" onClick={handleClearAllFilters}>
                     Clear filters
                   </button>
                 </>
-              ) : noteActive && noteCount === 0 ? (
+              ) : noteActive && noteCount === 0 && !searchTerm.trim() ? (
                 <>
                   <p>None of your bookmarks has a note yet. Add one from a bookmark&apos;s edit form.</p>
                   <button type="button" className="btn-secondary" onClick={handleClearAllFilters}>
@@ -688,7 +689,12 @@ function BookmarkBrowser({
                 </>
               ) : hasActiveFilters ? (
                 <>
-                  <p>No bookmarks match these filters.</p>
+                  <p>{searchTerm.trim() ? <>No bookmarks match “{searchTerm.trim()}” with the current filters.</> : 'No bookmarks match these filters.'}</p>
+                  <a href="#search-tips" onClick={(event) => {
+                    event.preventDefault()
+                    searchTipsRef.current.open = true
+                    searchTipsRef.current.querySelector('summary').focus()
+                  }}>Search tips</a>
                   <button type="button" className="btn-secondary" onClick={handleClearAllFilters}>
                     Clear filters
                   </button>

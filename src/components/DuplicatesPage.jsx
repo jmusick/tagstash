@@ -103,7 +103,7 @@ export default function DuplicatesPage({ bookmarks, loading, loadError, onRefres
       {loading ? <p className="loading-message">Loading duplicates…</p> : loadError ? (
         <div className="empty-state" role="alert"><p>Could not load your bookmarks. Refresh to try again.</p></div>
       ) : groups.length === 0 ? (
-        <div className="empty-state"><p>No duplicates found in your live bookmarks.</p><Link to="/">Back to your bookmarks</Link></div>
+        <div className="empty-state"><h2>No duplicates found</h2><p>When you save the same page at different addresses, review the matches here and keep the copy you want. Your live bookmarks have no matching URLs right now.</p><Link to="/">Back to your bookmarks</Link></div>
       ) : (
         <>
           <p className="results-count" role="status">{groups.length} duplicate group{groups.length === 1 ? '' : 's'}. Choose a bookmark to keep before moving any others.</p>

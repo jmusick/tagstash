@@ -239,9 +239,10 @@ export default function TrashPage({ onLibraryChange }) {
         </div>
       ) : items.length === 0 ? (
         <div className="empty-state">
+          <h2>{available ? 'Your trash is empty' : 'Trash unavailable'}</h2>
           <p>
             {available
-              ? `The trash is empty. Bookmarks you delete wait here for ${TRASH_RETENTION_DAYS} days before they are removed for good.`
+              ? `The trash is empty. Bookmarks you delete wait here for ${TRASH_RETENTION_DAYS} days before they are removed for good. You can restore them here if you change your mind.`
               : 'The trash is not available yet, so deleted bookmarks are removed right away. Please try again later.'}
           </p>
           <Link className="btn-secondary trash-back" to="/">Back to your bookmarks</Link>

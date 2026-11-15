@@ -37,7 +37,7 @@ export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSel
             <h2 className="pricing-plan-name">Pro</h2>
             <p className="pricing-amount">$3<span className="pricing-period">/month</span></p>
             <p className="pricing-description">Unlimited bookmarks. Pay monthly and cancel any time, or pay $36 once a year. Same rate either way.</p>
-            <a className="pricing-plan-link" href={signedIn ? '/settings' : startHref}>
+            <a className="features-button" href={signedIn ? '/settings?tab=billing' : startHref}>
               {isPro ? 'Manage billing in Settings' : signedIn ? 'Upgrade in Settings' : 'Start free, upgrade from Settings'}
             </a>
           </div>

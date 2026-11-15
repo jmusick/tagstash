@@ -320,10 +320,8 @@
 }
 
 .tags-page-section {
-  background: var(--color-panel);
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  padding: 1.75rem;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 1.75rem;
 }
 
 .tags-page-section h2 {
@@ -2562,3 +2560,31 @@ a.btn-field-action,
   .public-header > .theme-selector { margin-left: auto; }
   .public-header-nav { order: 1; flex-basis: 100%; justify-content: flex-start; gap: 0.25rem 1rem; }
 }
+
+/* Page polish: one work area for tags, stable route chrome and useful recovery. */
+.tags-page > h1 { font-size: var(--text-page-title); margin: 0; }
+.tag-management-modes { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.tag-management-modes [aria-pressed='true'] { border-color: var(--color-primary-strong); background: var(--color-primary-soft); }
+.tags-page .tag-cloud { padding: 0; border: 0; border-radius: 0; background: transparent; --tag-eyelet: var(--color-bg); }
+.tags-page .tag-cloud-header { display: none; }
+.tags-plural-report > summary { cursor: pointer; color: var(--color-text); padding-block: 0.75rem; font-weight: 600; }
+.tags-page .tag-edit-panel, .tags-page .tag-merge-picker { border: 0; border-radius: 0; padding: 0; background: transparent; --tag-eyelet: var(--color-bg); }
+.tags-page-section .tag-stock { --tag-eyelet: var(--color-bg); }
+.empty-state h2 { font-size: var(--text-title); margin: 0; }
+.empty-state p { max-width: 60ch; }
+.public-profile-links { display: flex; flex-wrap: wrap; gap: 0.75rem 1.5rem; font-size: var(--text-sm); }
+.public-profile-links a { color: var(--color-link); }
+.public-profile-header h1 { margin-bottom: 0.5rem; }
+.not-found-main { display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; min-height: 60vh; }
+.not-found-content { width: 100%; max-width: 60ch; text-align: center; padding: 3rem 1rem; }
+.not-found-content h1 { font-size: var(--text-page-title); }
+.not-found-content p { color: var(--color-text-muted); }
+.not-found-content .not-found-code { font-size: var(--text-display); font-weight: 800; margin: 0 0 1rem; }
+.not-found-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; margin-top: 2rem; }
+.not-found-actions a { text-decoration: none; }
+.route-loading-main { width: 100%; padding-block: 3rem; flex: 1; }
+.route-loading-main h1 { font-size: var(--text-display); max-width: 18ch; }
+.route-loading-line, .route-loading-panel { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; }
+.route-loading-line { max-width: 45rem; height: 1.25rem; margin-block: 1rem; }
+.route-loading-line--short { max-width: 30rem; }
+.route-loading-panel { height: 16rem; margin-top: 3rem; border-radius: 14px; }

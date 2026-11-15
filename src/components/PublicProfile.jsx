@@ -142,6 +142,10 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget, signedIn = f
         >
           <div className="public-profile-header">
             <h1>@{profile?.username}&apos;s bookmarks</h1>
+            <div className="public-profile-links">
+              <a href={feedHref} type="application/rss+xml">{feedTags.length ? 'RSS feed for these tags' : 'RSS feed'}</a>
+              {!signedIn && <Link to="/?signup=1#account">Make your own</Link>}
+            </div>
           </div>
         </BookmarkBrowser>
       </main>
