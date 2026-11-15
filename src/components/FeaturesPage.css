@@ -3,34 +3,34 @@
 .features-nav-link[aria-current] { color: var(--color-link); }
 .features-page .user-info { gap: 1rem; }
 .features-main { padding: 0 0 2rem; }
-.features-breadcrumbs { font-size: 0.9rem; color: var(--color-text-muted); }
+.features-breadcrumbs { font-size: var(--text-ui); color: var(--color-text-muted); }
 .features-breadcrumbs a { color: var(--color-link); }
 .features-questions { padding: 3rem 0; border-bottom: 1px solid var(--color-border); }
-.features-questions h2 { color: var(--color-text); font-stretch: var(--stretch-display); font-size: 1.75rem; }
+.features-questions h2 { color: var(--color-text); font-size: var(--text-headline); line-height: 1.2; letter-spacing: -0.02em; }
 .features-questions dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 3rem; }
 .features-questions dt { font-weight: 600; color: var(--color-text); margin-bottom: 0.75rem; }
 .features-questions dd { margin: 0; line-height: 1.75; max-width: 62ch; }
-.features-updated { color: var(--color-text-muted); font-size: 0.85rem; margin-top: 2rem; }
+.features-updated { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: 2rem; }
 .features-intro { padding: 4.5rem 0 3rem; max-width: 860px; }
-.features-intro h1 { font-size: clamp(2.15rem, 4.7vw, 3.9rem); font-stretch: var(--stretch-display); line-height: 1.12; letter-spacing: -0.035em; color: var(--color-text); margin: 0 0 1.5rem; }
-.features-intro > p { max-width: 58ch; font-size: 1.18rem; margin: 0 0 2rem; }
+.features-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; color: var(--color-text); margin: 0 0 1.5rem; }
+.features-intro > p { max-width: 58ch; font-size: var(--text-lede); margin: 0 0 2rem; }
 .features-button { display: inline-flex; align-items: center; justify-content: center; background: var(--color-primary); color: #fff; border-radius: 8px; padding: 0.85rem 1.25rem; font-weight: 600; text-decoration: none; text-align: center; }
 .features-button:hover { background: var(--color-primary-hover); color: #fff; }
-.features-button--small { padding: 0.6rem 1rem; font-size: 0.9rem; }
-.features-free-note { display: block; margin-top: 0.85rem; font-size: 0.9rem; color: var(--color-text-muted); }
+.features-button--small { padding: 0.6rem 1rem; font-size: var(--text-ui); }
+.features-free-note { display: block; margin-top: 0.85rem; font-size: var(--text-ui); color: var(--color-text-muted); }
 .features-jump-links { display: flex; flex-wrap: wrap; gap: 1rem 2rem; padding: 1.25rem 0; border-block: 1px solid var(--color-border-strong); }
 .features-jump-links a { color: var(--color-link); text-decoration: none; }
 .features-jump-links a:hover, .features-nav-link:hover { text-decoration: underline; }
 .features-story { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: center; gap: 4rem; padding: 4rem 0; border-bottom: 1px solid var(--color-border); scroll-margin-top: 1.5rem; }
-.features-story h2, .features-closing h2 { font-stretch: var(--stretch-display); font-size: clamp(1.65rem, 2.5vw, 2.2rem); line-height: 1.2; color: var(--color-text); letter-spacing: -0.02em; margin: 0 0 1.25rem; max-width: 27ch; }
+.features-story h2, .features-closing h2 { font-size: var(--text-headline); line-height: 1.2; color: var(--color-text); letter-spacing: -0.02em; margin: 0 0 1.25rem; max-width: 27ch; }
 .features-story p, .features-closing p { max-width: 62ch; line-height: 1.75; margin: 0 0 1rem; }
 .features-story p:last-child { margin-bottom: 0; }
-.features-inline-tag { --tag-eyelet: var(--color-bg); font-size: 0.82rem; vertical-align: baseline; margin-inline: 0.2rem; }
+.features-inline-tag { --tag-eyelet: var(--color-bg); font-size: var(--text-meta); vertical-align: baseline; margin-inline: 0.2rem; }
 .features-demo { min-width: 0; }
-.features-demo-caption { font-size: 0.85rem; color: var(--color-text-muted); padding-top: 0.8rem; }
+.features-demo-caption { font-size: var(--text-sm); color: var(--color-text-muted); padding-top: 0.8rem; }
 .features-aside { padding: 1.75rem 2rem; border-left: 3px solid var(--color-tag-edge); background: var(--color-surface); }
-.features-aside h3 { color: var(--color-text); font-size: 1.15rem; margin: 0 0 0.75rem; }
-.features-aside p { font-size: 0.95rem; }
+.features-aside h3 { color: var(--color-text); font-size: var(--text-title); margin: 0 0 0.75rem; }
+.features-aside p { font-size: var(--text-ui); }
 .features-extension { display: flex; align-items: center; gap: 0.75rem; color: var(--color-link); padding: 0.8rem 0; text-decoration: none; }
 .features-extension:hover { text-decoration: underline; }
 .features-formats dl { margin: 0; }

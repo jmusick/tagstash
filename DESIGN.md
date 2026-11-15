@@ -29,52 +29,70 @@ colors:
   danger-solid-hover: "#a82147"
 typography:
   display:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "clamp(2.5rem, 4.8vw, 3.9rem)"
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "clamp(2.25rem, 4.8vw, 3.75rem)"
     fontWeight: 800
-    lineHeight: 1
+    lineHeight: 1.05
     letterSpacing: "-0.03em"
-    fontVariation: "'wdth' 118"
   headline:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "clamp(1.65rem, 2.5vw, 2.2rem)"
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "clamp(1.625rem, 2.5vw, 2rem)"
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "-0.02em"
-    fontVariation: "'wdth' 118"
-  title:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "1.15rem"
-    fontWeight: 750
+  page-title:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "1.625rem"
+    fontWeight: 700
     lineHeight: 1.15
-    fontVariation: "'wdth' 118"
+    letterSpacing: "-0.01em"
+  title:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 700
+    lineHeight: 1.15
+    letterSpacing: "-0.01em"
+  lede:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "1.125rem"
+    fontWeight: 400
+    lineHeight: 1.55
   row-title:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "1.02rem"
-    fontWeight: 650
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "1.0625rem"
+    fontWeight: 600
     lineHeight: 1.3
-    letterSpacing: "0"
   body:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.5
-  body-small:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "0.9rem"
+  ui:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "0.9375rem"
     fontWeight: 400
     lineHeight: 1.45
   label:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "0.85rem"
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "0.875rem"
     fontWeight: 600
     lineHeight: 1
-  caption:
-    fontFamily: "Archivo, 'Segoe UI', system-ui, -apple-system, sans-serif"
-    fontSize: "0.8rem"
+  meta:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "0.8125rem"
     fontWeight: 400
     lineHeight: 1.5
     fontFeature: "'tnum' 1"
+  micro:
+    fontFamily: "'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif"
+    fontSize: "0.75rem"
+    fontWeight: 600
+    lineHeight: 1.3
+  code:
+    fontFamily: "ui-monospace, 'Cascadia Mono', 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace"
+    fontSize: "0.9em"
+    fontWeight: 400
+    lineHeight: 1.5
 rounded:
   xs: "4px"
   sm: "7px"
@@ -95,7 +113,7 @@ components:
   button-primary:
     backgroundColor: "{colors.stash-violet}"
     textColor: "#ffffff"
-    typography: "{typography.label}"
+    typography: "{typography.ui}"
     rounded: "{rounded.md}"
     padding: "0.7rem 1.25rem"
   button-primary-hover:
@@ -186,7 +204,7 @@ The system ships in three themes that share one structure: **Slate** (neutral gr
 - Flat, hairline-bordered panels on a quiet ground.
 - One saturated accent, Stash Violet, reserved for action and selection.
 - The shipping-tag shape is the signature and appears wherever a tag does.
-- One typeface (Archivo), widened for headings and normal width for everything else.
+- One typeface (Public Sans) on one role scale: plain, open and legible at the small sizes a library lives at.
 - Three themes, one structure, all values through variables.
 
 ## Colors
@@ -222,25 +240,31 @@ One saturated violet over quiet graphite (or indigo, or cool paper), with marigo
 
 ## Typography
 
-**Display Font:** Archivo at 118% width (with Segoe UI, system-ui, -apple-system, sans-serif)
-**Body Font:** Archivo at 100% width (same fallbacks)
+**Font:** Public Sans, self-hosted variable (wght 400 to 800), with a metric-matched Arial fallback (`Public Sans Fallback`) and then system-ui, -apple-system, Segoe UI, sans-serif.
+**Code:** the platform monospace (`--font-mono`: ui-monospace, Cascadia Mono, SF Mono, Menlo, Consolas), at 0.9em of the surrounding text, for API keys, IDs and code samples only.
 
-**Character:** One self-hosted variable family doing two jobs. Widened and heavy, Archivo gives headings a sturdy, stamped quality; at normal width it is a plain, legible workhorse for dense lists. Weights run 400 to 800 and widths 100% to 118%; anything outside those ranges needs a re-instanced font file.
+**Character:** One plain, open grotesque doing every job. Public Sans has wide apertures and even spacing, so dates, domains and 13px tags stay readable on the dark themes, and its matter-of-fact voice suits copy that states exact limits. Hierarchy comes from size steps and weight (800 display, 700 headings, 600 titles and labels, 400 text), not from a second family or a width axis.
 
 ### Hierarchy
-- **Display** (800, clamp(2.5rem, 4.8vw, 3.9rem), line-height 1, -0.03em, 118% width): marketing heroes only (homepage, Features, Developers), capped at about 18ch.
-- **Headline** (700, clamp(1.65rem, 2.5vw, 2.2rem), 1.2, -0.02em, 118% width): section headings on public pages; 1.75rem fixed on Pricing and Developers.
-- **Title** (750, 1.15rem, 1.15, 118% width): panel headings in the app, such as "Tags" on the rack, and auth card titles (800, 1.6rem).
-- **Row Title** (650, 1.02rem, 1.3, normal width): bookmark titles. They break anywhere rather than overflow.
-- **Body** (400, 1rem, 1.5): default copy, inputs and search.
-- **Body Small** (400, 0.9rem, 1.45): bookmark descriptions (max 75ch) and helper copy (max 60ch).
-- **Label** (600, 0.85rem, line-height 1): tags, theme options, button text at 0.95rem.
-- **Caption** (400, 0.8rem, tabular figures): dates, counts, footer, form hints.
+Every size is a role token in `src/index.css` (`--text-*`); components use the token, never a literal.
+- **Display** (`--text-display`, 800, clamp(2.25rem, 4.8vw, 3.75rem), 1.05, -0.03em): public page heroes (homepage, Features, Developers), capped at about 18ch.
+- **Headline** (`--text-headline`, 700, clamp(1.625rem, 2.5vw, 2rem), 1.2, -0.02em): section headings on every public page.
+- **Page Title** (`--text-page-title`, 700, 1.625rem): page titles in the app (Settings, Trash, Duplicates, Privacy, Support, public profiles) and the auth card.
+- **Title** (`--text-title`, 700, 1.25rem): panel and section headings in the app, such as "Tags" on the rack.
+- **Lede** (`--text-lede`, 400, 1.125rem, 1.55): intro paragraphs and subtitles.
+- **Row Title** (`--text-row-title`, 600, 1.0625rem, 1.3): bookmark titles, card and FAQ headings. Bookmark titles break anywhere rather than overflow.
+- **Body** (`--text-body`, 400, 1rem, 1.5): default copy, inputs and search.
+- **UI** (`--text-ui`, 0.9375rem): buttons (600 primary, 500 ghost), nav links (500), form labels, bookmark descriptions (max 75ch) and helper copy.
+- **Label** (`--text-sm`, 600, 0.875rem, line-height 1): tags, chips, filter labels, pagination and secondary controls.
+- **Meta** (`--text-meta`, 400, 0.8125rem, tabular figures): dates, counts, domains, hints, footer. Tags inside bookmark rows also use this size; it is the floor for tag labels.
+- **Micro** (`--text-xs`, 0.75rem): tooltips and tiny badges only.
+
+Three sizes are deliberately outside the role scale: the rack's usage scale (`.tag-size-1` to `-5`: 13, 14, 16, 18 and 20px, a data encoding that tops out at the Title size), the pricing figure (2.75rem) and the dialog close glyph.
 
 ### Named Rules
-**The Two Widths Rule.** Width is the hierarchy tool: headings and panel titles use the 118% display width, while everything a user scans (rows, tags, inputs, buttons) stays at normal width. Tags are never widened.
+**The One Scale Rule.** A size comes from a `--text-*` role, so a repeated role is identical on every screen. A new size means a new role with a job no existing role does, added to `src/index.css` and here, never a one-off literal a hair away from an existing step.
 
-**The Tabular Count Rule.** Counts, dates, pagination and version numbers use tabular figures so columns of numbers don't jitter.
+**The Tabular Count Rule.** Public Sans's default figures are proportional, which suits prose. Counts, dates, pagination, usage meters and version numbers switch to tabular figures so columns of numbers don't jitter.
 
 ## Layout
 
@@ -276,19 +300,19 @@ The one non-rectangular form is the tag: a pill-height label (1.9em) with a squa
 ### Buttons
 Calm and exact; color changes, nothing moves.
 - **Shape:** gently rounded (8px), with an inline icon and label 0.45rem apart.
-- **Primary:** Stash Violet fill, white 600 text at 0.95rem, 0.7rem × 1.25rem padding. Hover steps to Stash Violet Hover. Disabled drops to 50% opacity with a not-allowed cursor. One per view.
+- **Primary:** Stash Violet fill, white 600 text at the UI size (0.9375rem), 0.7rem × 1.25rem padding. Hover steps to Stash Violet Hover. Disabled drops to 50% opacity with a not-allowed cursor. One per view.
 - **Secondary:** transparent with a Hairline Strong border and Ink text (500). Hover adds a faint surface wash and turns the border Stash Violet Bright.
 - **Ghost:** borderless, Ink Soft text, 2.85rem tall to sit level with the search field; hover adds the surface wash and full Ink. Used for toolbar actions (Select, Random, Refresh) and nav.
 - **Icon:** 2rem square, 7px corners, Ink Muted at rest. Row actions (open, edit, favorite, private, delete) fade in on row hover or focus on pointer devices, stay visible while a row is edited or an action is active, and are always shown on touch. The favorite action turns marigold on a Marigold Wash.
 - **Danger:** Danger Solid fill with white text, used only behind a confirmation. Accept and Decline in the cookie banner are deliberately identical in weight.
 
 ### Tags (signature component)
-- **Style:** the shipping-tag shape (see Shapes) in Tag Stock with Tag Ink, 600 weight at 0.85rem, and a 1px Tag Stock Edge under it.
+- **Style:** the shipping-tag shape (see Shapes) in Tag Stock with Tag Ink, 600 weight at the Label size (0.875rem; Meta, 0.8125rem, inside bookmark rows), and a 1px Tag Stock Edge under it.
 - **State:** hover deepens to Tag Stock Hover. Selected (`.tag-stock--active`) turns solid Stash Violet with white ink and a white eyelet ring. In the sidebar rack, tag size scales with usage, and each rack tag carries sibling "+" (add to query) and star (favorite tag, marigold when on) buttons.
 - **Rule:** wherever a tag appears (rows, rack, filters, tag inputs, the Tags page, the homepage demo) it uses this one component.
 
 ### Chips
-- **Filter chip:** a Stash Violet Wash pill with Stash Violet Bright text (600, 0.8rem) showing the active filter inside the search field, truncated at 180px.
+- **Filter chip:** a Stash Violet Wash pill with Stash Violet Bright text (600, Meta size) showing the active filter inside the search field, truncated at 180px.
 - **Show-only toggles:** bordered buttons (7px corners, 44px minimum height, Hairline Strong border) with a label and a tabular count ("Favorites 4", "Has note 0"). When active they take a Stash Violet Wash fill with Stash Violet Bright border and text.
 
 ### Cards / Containers
@@ -317,7 +341,7 @@ The header row has the logo (3.1rem tall, a light and a dark variant) and primar
 - **Do** keep Stash Violet for primary actions, selection and focus, with at most one primary button per view.
 - **Do** use the shared tag component for every tag, and set `--tag-eyelet` to the surface color when a tag sits on something other than a panel.
 - **Do** separate surfaces with 1px hairlines and tone, and keep shadows for floating layers.
-- **Do** use Archivo at 118% width for headings and panel titles, and at normal width for rows, tags, inputs and buttons.
+- **Do** take every font size from a `--text-*` role token and every family from `--font-sans` / `--font-mono`; use tabular figures for counts and dates.
 - **Do** keep a visible 3px Stash Violet Bright focus outline on every interactive element, and honor reduced motion (transitions collapse to short opacity fades).
 - **Do** keep transitions short and functional (0.15s to 0.25s ease, color and border only).
 

@@ -1,15 +1,15 @@
 .feature-animation { grid-column: 1 / -1; width: 100%; margin: 0; min-width: 0; border: 1px solid var(--color-border-strong); border-radius: 12px; overflow: hidden; background: var(--color-surface); }
 .feature-animation-choices { display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 1rem; border-bottom: 1px solid var(--color-border); }
-.feature-animation button { font: inherit; font-size: 0.9rem; border: 1px solid var(--color-border-strong); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--color-text-soft); background: var(--color-surface); cursor: pointer; }
+.feature-animation button { font: inherit; font-size: var(--text-ui); border: 1px solid var(--color-border-strong); border-radius: 6px; padding: 0.5rem 0.75rem; color: var(--color-text-soft); background: var(--color-surface); cursor: pointer; }
 .feature-animation button:hover { background: var(--color-surface-soft-hover); }
 .feature-animation-choices button[aria-pressed='true'] { background: var(--color-primary-soft); color: var(--color-link); border-color: var(--color-primary-strong); }
 .feature-animation video { width: 100%; height: auto; display: block; aspect-ratio: 1120 / 704; background: var(--color-panel); }
 .feature-animation figcaption { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; padding: 1.25rem; border-top: 1px solid var(--color-border); }
 .feature-animation figcaption strong { color: var(--color-text); }
-.feature-animation figcaption p { margin: 0.4rem 0 0; font-size: 0.9rem; }
+.feature-animation figcaption p { margin: 0.4rem 0 0; font-size: var(--text-ui); }
 .feature-animation-actions { display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
-.feature-animation-actions a { color: var(--color-link); font-size: 0.9rem; }
-.feature-animation details { padding: 0 1.25rem 1.25rem; font-size: 0.9rem; }
+.feature-animation-actions a { color: var(--color-link); font-size: var(--text-ui); }
+.feature-animation details { padding: 0 1.25rem 1.25rem; font-size: var(--text-ui); }
 .feature-animation summary { cursor: pointer; color: var(--color-link); }
 .feature-animation ol { padding-left: 1.25rem; line-height: 1.7; }
 @media (max-width: 760px) { .feature-animation figcaption { flex-direction: column; } }

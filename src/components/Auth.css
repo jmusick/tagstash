@@ -35,7 +35,7 @@
   text-align: center;
   opacity: 0.8;
   margin-bottom: 2rem;
-  font-size: 1.1rem;
+  font-size: var(--text-lede);
   color: var(--color-text-soft);
 }
 
@@ -53,14 +53,14 @@
 
 .form-field label {
   font-weight: 500;
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
 }
 
 .form-field input {
   padding: 0.875rem;
   border: 1px solid var(--color-border-strong);
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: var(--text-body);
   font-family: inherit;
   background-color: var(--color-surface-soft);
   color: inherit;
@@ -78,7 +78,7 @@
   border: 1px solid var(--color-danger-border);
   border-radius: 8px;
   color: var(--color-danger);
-  font-size: 0.9rem;
+  font-size: var(--text-ui);
 }
 
 .auth-button {
@@ -87,7 +87,7 @@
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1.05rem;
+  font-size: var(--text-body);
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.25s;
@@ -115,7 +115,7 @@
 }
 
 .auth-description {
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
   color: var(--color-text-muted, var(--color-text));
   text-align: center;
   margin-bottom: 1rem;
@@ -125,7 +125,7 @@
 .auth-toggle {
   text-align: center;
   margin-top: 1.5rem;
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
 }
 
 .auth-toggle-button {
@@ -134,7 +134,7 @@
   color: var(--color-primary-strong);
   font-weight: 600;
   cursor: pointer;
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
   text-decoration: underline;
   padding: 0;
 }

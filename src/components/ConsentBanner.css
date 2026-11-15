@@ -25,14 +25,14 @@
 }
 
 .cc-title {
-  font-size: 0.9rem;
+  font-size: var(--text-ui);
   font-weight: 700;
   color: var(--color-text);
   margin: 0 0 0.25rem 0;
 }
 
 .cc-body {
-  font-size: 0.8rem;
+  font-size: var(--text-meta);
   line-height: 1.5;
   color: var(--color-text-muted);
   margin: 0;
@@ -59,7 +59,7 @@
   min-height: 2.75rem;
   padding: 0.7rem 1.5rem;
   font: inherit;
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
   font-weight: 600;
   color: var(--color-text);
   background-color: transparent;

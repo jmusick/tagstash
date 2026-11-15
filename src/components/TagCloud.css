@@ -16,21 +16,20 @@
 
 .tag-cloud-header h3 {
   margin: 0;
-  font-size: 1.15rem;
-  font-stretch: var(--stretch-display);
-  font-weight: 750;
+  font-size: var(--text-title);
+  font-weight: 700;
 }
 
 .tag-count {
   color: var(--color-text-muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
 .tag-cloud-loading {
   padding: 1.5rem 0;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
+  font-size: var(--text-ui);
 }
 
 .tag-cloud-search {
@@ -59,7 +58,7 @@
   background: transparent;
   color: inherit;
   width: 100%;
-  font-size: 0.9rem;
+  font-size: var(--text-ui);
   font-family: inherit;
 }
 
@@ -96,7 +95,7 @@
 
 .tag-cloud-empty p {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-ui);
   line-height: 1.45;
 }
 
@@ -108,27 +107,28 @@
   gap: 0.55rem 0.4rem;
 }
 
-/* Usage scale, least used (1) to most used (5). Step 1 stays at the
-   readable minimum for tag labels. */
+/* Usage scale, least used (1) to most used (5). A data encoding, not a type
+   role, so it keeps its own steps; step 1 stays at the tag-label minimum
+   (--text-meta) and the top step stops at the panel title size (--text-title). */
 .tag-size-1 {
-  font-size: 0.82rem;
+  font-size: var(--text-meta);
 }
 
 .tag-size-2 {
-  font-size: 0.92rem;
+  font-size: var(--text-sm);
 }
 
 .tag-size-3 {
-  font-size: 1.05rem;
+  font-size: 1rem;
 }
 
 .tag-size-4 {
-  font-size: 1.22rem;
-  font-weight: 650;
+  font-size: 1.125rem;
+  font-weight: 600;
 }
 
 .tag-size-5 {
-  font-size: 1.45rem;
+  font-size: 1.25rem;
   font-weight: 700;
 }
 

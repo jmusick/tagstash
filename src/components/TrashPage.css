@@ -7,7 +7,7 @@
 
 .trash-title {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: var(--text-page-title);
 }
 
 .trash-intro {
@@ -18,7 +18,7 @@
 
 .trash-status {
   margin: 0;
-  font-size: 0.95rem;
+  font-size: var(--text-ui);
   color: var(--color-text-soft);
 }
 
@@ -55,7 +55,7 @@
   height: auto;
   min-height: 2rem;
   padding: 0.3rem 0.65rem;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   gap: 0.35rem;
 }
 
@@ -68,7 +68,7 @@
 }
 
 .trash-expiry strong {
-  font-weight: 650;
+  font-weight: 600;
   color: var(--color-text-soft);
 }
 
