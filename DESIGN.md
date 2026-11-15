@@ -339,6 +339,8 @@ The library is one panel holding one row per bookmark, like an index, with 1px H
 ### Navigation
 The header row has the logo (3.1rem tall, a light and a dark variant) and primary nav as ghost-style links with icons (Bookmarks, Tags, Duplicates, Trash, Settings): 2.4rem tall, 8px corners, Ink Soft at 500. The active link gets the surface wash, full Ink at 600 and a Stash Violet Bright icon. On the right are the theme selector and the account name with "Log out". A hairline sits under the header. The theme selector is a pill that shows the current theme's icon and expands on hover or focus to all three options in a fixed order. At 1024px and below, nav moves behind a bordered 2.5rem menu toggle.
 
+Settings uses a grouped sidebar with Library, Account, Sharing & API, Billing and a separated Danger zone; super admins also see Administration. Preferences opens by default. Section links use a tinted current state and ordinary keyboard navigation. At 800px and below, a disclosure shows the current section and opens the grouped links above the content; choosing a link closes it and focuses the section heading.
+
 ## Do's and Don'ts
 
 ### Do:

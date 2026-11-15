@@ -483,10 +483,12 @@ async function interceptJson(page, pattern, answer) {
   return (next) => { state.answer = next }
 }
 
-async function settingsTab(page, name) {
-  await page.getByRole('tab', { name, exact: true }).click()
-  await page.locator('#settings-tabpanel h2.sr-only', { hasText: name }).waitFor()
-  await page.waitForLoadState('networkidle').catch(() => {})
+async function settingsTab(page, name, { waitForNetwork = true } = {}) {
+  const menu = page.locator('.settings-navigation-toggle')
+  if (await menu.isVisible() && await menu.getAttribute('aria-expanded') === 'false') await menu.click()
+  await page.getByRole('navigation', { name: 'Settings sections', exact: true }).getByRole('link', { name, exact: true }).click()
+  await page.locator('#settings-section-heading', { hasText: name }).waitFor()
+  if (waitForNetwork) await page.waitForLoadState('networkidle').catch(() => {})
 }
 
 async function apiKeyStates(page, scan) {
@@ -517,7 +519,7 @@ async function apiKeyStates(page, scan) {
     keys = [{ ...key, revoked_at: '2026-10-23 12:02:00' }]
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ message: 'API key revoked' }) })
   })
-  await page.getByRole('tab', { name: 'API Keys', exact: true }).click()
+  await settingsTab(page, 'API Keys', { waitForNetwork: false })
   await page.getByText('Loading API keys...', { exact: true }).waitFor()
   await scan('/settings -> API Keys (loading)')
   releaseList()
@@ -872,19 +874,19 @@ async function owner(browser, theme) {
   await setBulk({ status: 500, body: { error: 'Blocked by the accessibility audit' } })
 
   await page.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: 'Settings' }).click()
-  await page.getByRole('tab').first().waitFor()
-  const tabNames = (await page.getByRole('tab').allTextContents()).filter((n) => n !== 'Admin')
+  await page.locator('#settings-section-heading').waitFor()
+  const tabNames = (await page.locator('.settings-section-link').allTextContents()).filter((n) => n !== 'Admin')
   for (const name of tabNames) {
     await settingsTab(page, name)
     await scan(`/settings -> ${name}`)
   }
 
   // Error banner (client-side validation, nothing is sent).
-  await settingsTab(page, tabNames[0])
+  await settingsTab(page, 'Username')
   await page.locator('#settings-tabpanel form').first().evaluate((f) => { f.noValidate = true })
   await page.locator('#settings-tabpanel form').first().locator('button[type="submit"]').click()
   await page.locator('.settings-error').waitFor()
-  await scan(`/settings -> ${tabNames[0]} (error banner)`)
+  await scan('/settings -> Username (error banner)')
 
   // Success banner: toggle the public profile off and back on.
   const profileTab = tabNames.find((n) => /public profile/i.test(n))

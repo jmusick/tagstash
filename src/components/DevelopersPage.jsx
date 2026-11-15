@@ -43,7 +43,7 @@ export function DevelopersView({ logoSrc = '/logo-dark.png', theme = 'slate', on
             <section id="authentication">
               <h2>Get started with a personal key</h2>
               <ol>
-                <li>Sign in and open <a href="/settings">Settings</a> → API Keys.</li>
+                <li>Sign in and open <a href="/settings?tab=apiKeys">Settings → API Keys</a>.</li>
                 <li>Optionally name the key, then select Generate API Key. You can have up to {API_DOC_POLICY.activeKeys} active keys.</li>
                 <li>Copy the full key immediately. It is shown once; Tagstash stores only a SHA-256 hash and a short display hint. If you lose it, revoke it and generate another.</li>
               </ol>

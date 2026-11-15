@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
 import { X, KeyRound, Copy, Ban, EyeOff, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
@@ -13,9 +13,22 @@ import { USERNAME_HINT, newUsernameError } from '../utils/usernamePolicy';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../utils/accountDeletion';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../utils/accountReset';
 import { profileFeedUrl } from '../utils/profileFeed';
+import { SETTINGS_GROUPS, settingsSection } from '../content/settingsNavigation';
 import './Settings.css';
 
-function Settings({
+function Settings(props) {
+  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { hash } = useLocation();
+  const section = settingsSection(searchParams.get('tab') || hash.slice(1), user?.role === 'super_admin');
+  const focusSectionRef = useRef(false);
+  // A section change starts fresh forms and clears notices and any revealed key.
+  return <SettingsContent key={section.id} {...props} section={section} focusSectionRef={focusSectionRef} />;
+}
+
+function SettingsContent({
+  section,
+  focusSectionRef,
   onClose,
   pageMode = false,
   onImportComplete,
@@ -27,10 +40,14 @@ function Settings({
   const { user, updateUser, refreshCurrentUser } = useAuth();
   const isSuperAdmin = user?.role === 'super_admin';
   const currentMembershipTier = user?.membership_tier || user?.membershipTier || 'free';
-  const [activeTab, setActiveTab] = useState('username');
+  const [searchParams] = useSearchParams();
+  const activeTab = section.id;
+  const [navigationExpanded, setNavigationExpanded] = useState(false);
+  const sectionHeadingRef = useRef(null);
+  const initializedSectionRef = useRef(null);
   const [loading, setLoading] = useState(false);
-  const [loadingKeys, setLoadingKeys] = useState(false);
-  const [loadingAdminUsers, setLoadingAdminUsers] = useState(false);
+  const [loadingKeys, setLoadingKeys] = useState(activeTab === 'apiKeys');
+  const [loadingAdminUsers, setLoadingAdminUsers] = useState(activeTab === 'admin');
   const [adminUserQuery, setAdminUserQuery] = useState('');
   const [savingAdminUserId, setSavingAdminUserId] = useState(null);
   const [deletingAdminUserId, setDeletingAdminUserId] = useState(null);
@@ -41,7 +58,7 @@ function Settings({
   const [apiKeys, setApiKeys] = useState([]);
   const [adminUsers, setAdminUsers] = useState([]);
   const [authEvents, setAuthEvents] = useState([]);
-  const [loadingAuthEvents, setLoadingAuthEvents] = useState(false);
+  const [loadingAuthEvents, setLoadingAuthEvents] = useState(activeTab === 'admin');
   const [newKeyName, setNewKeyName] = useState('');
   const [generatedApiKey, setGeneratedApiKey] = useState('');
   const [showRevokedKeys, setShowRevokedKeys] = useState(false);
@@ -75,26 +92,18 @@ function Settings({
   const [billingLoading, setBillingLoading] = useState(false);
   const [subscriptionStatus, setSubscriptionStatus] = useState(null);
 
-  const fetchPlans = useCallback(async () => {
-    try {
-      const res = await billingAPI.getPlans();
-      setPlans(res.data.plans);
-    } catch {
-      // Stripe not configured — leave plans empty
-    }
-  }, []);
+  const fetchPlans = useCallback(() => billingAPI.getPlans()
+    .then((response) => setPlans(response.data.plans || []))
+    .catch(() => {
+      // Stripe not configured — leave plans empty.
+    }), []);
 
-  const syncBillingStatus = useCallback(async () => {
-    try {
-      const res = await billingAPI.getStatus();
-      setSubscriptionStatus(res?.data?.subscription || null);
-      if (res?.data?.user) {
-        updateUser({ ...user, ...res.data.user });
-      }
-    } catch {
-      // If status sync fails, keep current UI state and let normal billing actions continue.
-    }
-  }, [updateUser, user]);
+  const syncBillingStatus = useCallback(() => billingAPI.getStatus().then((response) => {
+    setSubscriptionStatus(response?.data?.subscription || null);
+    if (response?.data?.user) updateUser({ ...user, ...response.data.user });
+  }).catch(() => {
+    // Keep current account state if billing sync fails.
+  }), [updateUser, user]);
 
   const cancellationTs = subscriptionStatus?.cancel_at || subscriptionStatus?.current_period_end || null;
   const cancellationDateLabel = cancellationTs
@@ -301,50 +310,27 @@ function Settings({
     setError('');
   };
 
-  const fetchApiKeys = async () => {
-    try {
-      setLoadingKeys(true);
-      const response = await authAPI.getApiKeys();
-      setApiKeys(response.data.apiKeys || []);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch API keys');
-    } finally {
-      setLoadingKeys(false);
-    }
-  };
+  const fetchApiKeys = useCallback(() => authAPI.getApiKeys()
+    .then((response) => setApiKeys(response.data.apiKeys || []))
+    .catch((err) => setError(err.response?.data?.error || 'Failed to fetch API keys'))
+    .finally(() => setLoadingKeys(false)), []);
 
-  const fetchAdminUsers = async () => {
-    if (!isSuperAdmin) {
-      return;
-    }
-
-    try {
-      setLoadingAdminUsers(true);
-      const response = await authAPI.adminListUsers();
+  const fetchAdminUsers = useCallback(() => {
+    if (!isSuperAdmin) return;
+    return authAPI.adminListUsers().then((response) => {
       setAdminUsers(response.data.users || []);
       setModerationAvailable(response.data.moderationAvailable !== false);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch users');
-    } finally {
-      setLoadingAdminUsers(false);
-    }
-  };
+    }).catch((err) => setError(err.response?.data?.error || 'Failed to fetch users'))
+      .finally(() => setLoadingAdminUsers(false));
+  }, [isSuperAdmin]);
 
-  const fetchAuthEvents = async () => {
-    if (!isSuperAdmin) {
-      return;
-    }
-
-    try {
-      setLoadingAuthEvents(true);
-      const response = await authAPI.adminListAuthEvents();
-      setAuthEvents(response.data.events || []);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to fetch security events');
-    } finally {
-      setLoadingAuthEvents(false);
-    }
-  };
+  const fetchAuthEvents = useCallback(() => {
+    if (!isSuperAdmin) return;
+    return authAPI.adminListAuthEvents()
+      .then((response) => setAuthEvents(response.data.events || []))
+      .catch((err) => setError(err.response?.data?.error || 'Failed to fetch security events'))
+      .finally(() => setLoadingAuthEvents(false));
+  }, [isSuperAdmin]);
 
   const handleAdminFieldChange = (id, field, value) => {
     setAdminUsers((prev) =>
@@ -647,7 +633,7 @@ function Settings({
   };
 
   // The login response doesn't carry the moderation state, so re-read /auth/me when the
-  // Public Profile tab opens; a suspension then shows its notice without a reload.
+  // Public Profile section opens; a suspension then shows its notice without a reload.
   const isPublicProfileTab = activeTab === 'publicProfile';
   useEffect(() => {
     if (!isPublicProfileTab) return;
@@ -673,70 +659,37 @@ function Settings({
     }
   };
 
-  const settingsTabs = [
-    { id: 'username', label: 'Username', onSelect: () => setGeneratedApiKey('') },
-    { id: 'email', label: 'Email', onSelect: () => setGeneratedApiKey('') },
-    { id: 'password', label: 'Password', onSelect: () => setGeneratedApiKey('') },
-    { id: 'signOut', label: 'Sessions', onSelect: () => setConfirmSignOut(false) },
-    { id: 'publicProfile', label: 'Public Profile' },
-    { id: 'preferences', label: 'Preferences' },
-    { id: 'apiKeys', label: 'API Keys', onSelect: fetchApiKeys },
-    {
-      id: 'billing',
-      label: 'Billing',
-      onSelect: () => {
-        fetchPlans();
-        syncBillingStatus();
-      },
-    },
-    { id: 'extensions', label: 'Extensions' },
-    { id: 'import', label: 'Import / Export' },
-    { id: 'resetLibrary', label: 'Reset Library', onSelect: () => setResetForm({ password: '', confirmation: '' }) },
-    { id: 'deleteAccount', label: 'Delete Account', onSelect: () => setDeleteForm({ password: '', confirmation: '' }) },
-    ...(isSuperAdmin
-      ? [{
-          id: 'admin',
-          label: 'Admin',
-          onSelect: () => {
-            fetchAdminUsers();
-            fetchAuthEvents();
-          },
-        }]
-      : []),
-  ];
-  const activeTabLabel = settingsTabs.find((tab) => tab.id === activeTab)?.label;
+  // Section entry also runs for deep links and browser Back/Forward. The guard
+  // prevents a billing user refresh from reloading the same section indefinitely.
+  useEffect(() => {
+    if (initializedSectionRef.current === activeTab) return;
+    initializedSectionRef.current = activeTab;
+    if (activeTab === 'apiKeys') fetchApiKeys();
+    if (activeTab === 'billing') {
+      fetchPlans();
+      syncBillingStatus();
+    }
+    if (activeTab === 'admin') {
+      fetchAdminUsers();
+      fetchAuthEvents();
+    }
+    if (focusSectionRef.current) {
+      sectionHeadingRef.current?.focus();
+      focusSectionRef.current = false;
+    }
+  }, [activeTab, fetchApiKeys, fetchPlans, syncBillingStatus, fetchAdminUsers, fetchAuthEvents, focusSectionRef]);
 
-  const selectTab = (tab) => {
-    setActiveTab(tab.id);
-    setError('');
-    setSuccess('');
-    tab.onSelect?.();
-  };
-
-  // WAI-ARIA tabs pattern: arrow keys / Home / End move between tabs (automatic
-  // activation, so the panel always matches the focused tab). Only the selected
-  // tab is in the Tab order (roving tabindex), so Tab moves on into the panel.
-  const handleTabKeyDown = (e) => {
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-    const tabEls = Array.from(e.currentTarget.querySelectorAll('[role="tab"]'));
-    const current = tabEls.indexOf(document.activeElement);
-    if (current === -1) return;
-
-    e.preventDefault();
-    let next = current;
-    if (e.key === 'ArrowRight') next = (current + 1) % tabEls.length;
-    else if (e.key === 'ArrowLeft') next = (current - 1 + tabEls.length) % tabEls.length;
-    else if (e.key === 'Home') next = 0;
-    else next = tabEls.length - 1;
-    tabEls[next].focus();
-    tabEls[next].click();
+  const sectionUrl = (id) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', id);
+    return { search: `?${params}`, hash: '' };
   };
 
   return (
     <div className={pageMode ? 'settings-page' : 'settings-container'}>
       <div className={`settings-panel${pageMode ? ' settings-panel-page' : ''}`}>
         <div className="settings-header">
-          <h1>Account Settings</h1>
+          <h1>Settings</h1>
           {!pageMode && (
             <button onClick={onClose} className="close-btn" title="Close settings">
               <X size={18} />
@@ -744,32 +697,37 @@ function Settings({
           )}
         </div>
 
-        <div
-          className="settings-tabs"
-          role="tablist"
-          aria-label="Settings sections"
-          onKeyDown={handleTabKeyDown}
-        >
-          {settingsTabs.map((tab) => {
-            const selected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                id={`settings-tab-${tab.id}`}
-                aria-selected={selected}
-                aria-controls="settings-tabpanel"
-                tabIndex={selected ? 0 : -1}
-                className={`tab-btn ${selected ? 'active' : ''}`}
-                onClick={() => selectTab(tab)}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+        <div className="settings-layout">
+        <div className={`settings-navigation${navigationExpanded ? ' is-expanded' : ''}`}>
+          <button type="button" className="settings-navigation-toggle"
+            aria-expanded={navigationExpanded} aria-controls="settings-sections"
+            onClick={() => setNavigationExpanded((expanded) => !expanded)}>
+            <span>Settings sections · {section.label}</span>
+            <span aria-hidden="true">{navigationExpanded ? '−' : '+'}</span>
+          </button>
+          <nav id="settings-sections" aria-label="Settings sections">
+            {SETTINGS_GROUPS.filter((group) => group.id !== 'admin' || isSuperAdmin).map((group) => (
+              <section key={group.id} className={`settings-nav-group${group.id === 'danger' ? ' settings-nav-danger' : ''}`}
+                aria-labelledby={`settings-group-${group.id}`}>
+                <h2 id={`settings-group-${group.id}`}>{group.label}</h2>
+                {group.sections.map((item) => (
+                  <Link key={item.id} to={sectionUrl(item.id)}
+                    aria-current={activeTab === item.id ? 'page' : undefined}
+                    className="settings-section-link"
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                      setNavigationExpanded(false);
+                      if (activeTab === item.id) sectionHeadingRef.current?.focus();
+                      else focusSectionRef.current = true;
+                    }}>
+                    {item.label}
+                  </Link>
+                ))}
+              </section>
+            ))}
+          </nav>
         </div>
-
+        <div className="settings-detail">
         <div role="alert" className="live-region">
           {error && <div className="settings-error">{error}</div>}
         </div>
@@ -777,8 +735,8 @@ function Settings({
           {success && <div className="settings-success">{success}</div>}
         </div>
 
-        <div role="tabpanel" id="settings-tabpanel" aria-labelledby={`settings-tab-${activeTab}`}>
-        <h2 className="sr-only">{activeTabLabel}</h2>
+        <section id="settings-tabpanel" aria-labelledby="settings-section-heading">
+        <h2 id="settings-section-heading" className="settings-section-heading" ref={sectionHeadingRef} tabIndex={-1}>{section.label}</h2>
         {activeTab === 'username' && (
           <form onSubmit={handleUsernameSubmit} className="settings-form">
             <div className="form-field">
@@ -1308,8 +1266,8 @@ function Settings({
               <li>Your API keys, theme, link-opening choice and public profile setting.</li>
             </ul>
             <p className="settings-reset-lead">
-              The removed bookmarks cannot be restored. Want a copy first? Export them from the Import / Export tab.
-              To remove your whole account instead, use the Delete Account tab.
+              The removed bookmarks cannot be restored. Want a copy first? Export them from the Import / Export section.
+              To remove your whole account instead, use the Delete Account section.
             </p>
 
             <form onSubmit={handleResetLibrarySubmit} className="settings-form" aria-busy={resetting}>
@@ -1366,7 +1324,7 @@ function Settings({
               <li>Your bookmarks, tags, favorites, API keys and account details are permanently deleted. This cannot be undone.</li>
               <li>Any Pro subscription is canceled immediately, not at the end of the billing period.</li>
               <li>Your public profile stops working, and you are signed out everywhere.</li>
-              <li>Want a copy first? Export your bookmarks from the Import / Export tab.</li>
+              <li>Want a copy first? Export your bookmarks from the Import / Export section.</li>
               <li>If something goes wrong part-way, the account stays locked. Log in with your password to finish deleting it, or contact support.</li>
             </ul>
 
@@ -1657,6 +1615,8 @@ function Settings({
             )}
           </div>
         )}
+        </section>
+        </div>
         </div>
       </div>
     </div>
