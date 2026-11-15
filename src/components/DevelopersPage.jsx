@@ -1,4 +1,4 @@
-import AppHeader from './AppHeader'
+import PublicHeader from './PublicHeader'
 import AppFooter from './AppFooter'
 import { version } from '../../package.json'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
@@ -20,14 +20,10 @@ function CodeBlock({ children, label }) {
 
 // Shared by the public route and the build-time prerender. No router or auth is
 // needed to render the reference, including when JavaScript is unavailable.
-export function DevelopersView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {} }) {
+export function DevelopersView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {}, signedIn = false }) {
   return (
-    <div className="developers-page">
-      <AppHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme}>
-        <a href="/">Home</a>
-        <a href="/features">Features</a>
-        <a href="/settings">Settings</a>
-      </AppHeader>
+    <div className="developers-page public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} signedIn={signedIn} currentPath="/developers" />
       <main id="main" tabIndex={-1} className="developers-main">
         <header className="developers-intro">
           <h1>Tagstash REST API</h1>

@@ -6,6 +6,7 @@
 // snapshot of the *same* copy that ships in src/components/Home.jsx, not bot-only
 // content. Keep the two in sync if either changes.
 
+import { renderPublicHeader } from './_lib/publicHeader.js';
 import { HOME_FAQS as FAQS, HOME_FEATURES as FEATURES } from '../src/content/homeMarketing.js';
 import { getHomeStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js';
 
@@ -39,12 +40,14 @@ export async function onRequestGet({ request, next }) {
   ).join('');
 
   const rootHtml = `
-<div class="home-container">
+<div class="home-container public-page">
+  ${renderPublicHeader()}
   <main id="main" tabindex="-1">
   <section class="hero-section">
     <div class="hero-content">
       <h1 class="hero-headline">Tag-first bookmarking for people who outgrow folders fast.</h1>
       <p class="hero-lede">Save links in a bookmark manager built around tags. Give each link every tag that fits, and find it again from any of them. Free for your first 50 bookmarks.</p>
+      <a class="public-header-action hero-signup" href="/?signup=1#account">Create free account</a>
     </div>
   </section>
   <section class="features-section">

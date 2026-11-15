@@ -1,6 +1,4 @@
-.developers-page { max-width: 1160px; margin-inline: auto; }
-.developers-page a { color: var(--color-link); }
-.developers-page .user-info { gap: 1.25rem; }
+.developers-main a, .developers-page .app-footer a { color: var(--color-link); }
 .developers-main { padding-bottom: 3rem; line-height: 1.6; }
 .developers-intro { padding-block: 2.5rem; max-width: 70ch; }
 .developers-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 1.25rem; }

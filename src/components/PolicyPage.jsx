@@ -1,26 +1,17 @@
-import Logo from './Logo'
+import PublicHeader from './PublicHeader'
 import { useDocumentMeta } from '../utils/useDocumentMeta';
 import { PRIVACY_META } from '../utils/pageMeta';
 import './PolicyPage.css';
 
-function PolicyPage({ logoSrc, onBack }) {
+function PolicyPage({ logoSrc, theme, onSelectTheme, signedIn = false, onBack }) {
   useDocumentMeta(PRIVACY_META);
 
   return (
-    <div className="privacy-page">
-      <header className="privacy-header">
-        {logoSrc && (
-          <button type="button" className="privacy-logo-btn" onClick={onBack} title="Back to Tagstash">
-            <Logo src={logoSrc} className="privacy-logo" />
-          </button>
-        )}
-        <h1>Privacy Policy</h1>
-        <button type="button" className="privacy-header-back" onClick={onBack}>
-          &larr; Back to Tagstash
-        </button>
-      </header>
+    <div className="privacy-page public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} signedIn={signedIn} />
 
       <main id="main" tabIndex={-1} className="privacy-content">
+        <h1>Privacy Policy</h1>
         <p className="privacy-effective">Effective date: November 5, 2026</p>
 
         <section>

@@ -1,8 +1,5 @@
 .home-container {
-  width: 100%;
-  max-width: 1240px;
   min-height: 100vh;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
 }
@@ -18,27 +15,6 @@
   padding: 2rem 0 4rem;
 }
 
-.home-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding-top: 0.25rem;
-}
-
-.home-logo {
-  height: 3rem;
-  width: auto;
-  display: block;
-}
-
-.home-theme-toggle {
-  margin-left: auto;
-}
-
-.home-topnav { display: flex; gap: 1.25rem; margin-left: auto; margin-right: 1.5rem; }
-.home-features-link { color: var(--color-link); text-decoration: none; }
-.home-topnav + .home-theme-toggle { margin-left: 0; }
 .home-features-detail-link { display: inline-block; margin-top: 1.5rem; color: var(--color-link); }
 
 /* ---------- Hero ----------
@@ -533,10 +509,6 @@
 }
 
 @media (max-width: 640px) {
-  .home-logo {
-    height: 2.5rem;
-  }
-
   .auth-card {
     padding: 1.5rem 1.25rem;
   }
@@ -559,4 +531,12 @@
   .home-footer-copyright {
     flex-basis: 100%;
   }
+}
+
+.hero-signup { display: inline-flex; margin-top: 1.5rem; }
+@media (max-width: 640px) {
+  .hero-section { padding-top: 0; gap: 1.5rem; }
+  .hero-headline { font-size: var(--text-headline); max-width: 22ch; }
+  .hero-lede { font-size: var(--text-body); line-height: 1.5; margin-top: 0.75rem; }
+  .hero-signup { margin-top: 1rem; }
 }

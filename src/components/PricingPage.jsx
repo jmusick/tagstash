@@ -1,4 +1,4 @@
-import AppHeader from './AppHeader'
+import PublicHeader from './PublicHeader'
 import AppFooter from './AppFooter'
 import { version } from '../../package.json'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
@@ -14,15 +14,8 @@ import './PricingPage.css'
 export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {}, signedIn = false, isPro = false }) {
   const startHref = signedIn ? '/' : '/?signup=1#account'
   return (
-    <div className="features-page pricing-page">
-      <AppHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme}>
-        <a className="features-nav-link" href="/">Home</a>
-        <a className="features-nav-link" href="/features">Features</a>
-        <a className="features-nav-link" href="/pricing" aria-current="page">Pricing</a>
-        <a className="features-button features-button--small" href={startHref}>
-          {signedIn ? 'Your bookmarks' : 'Start free'}
-        </a>
-      </AppHeader>
+    <div className="features-page pricing-page public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} signedIn={signedIn} currentPath="/pricing" />
 
       <main id="main" tabIndex={-1} className="features-main">
         <nav className="features-breadcrumbs" aria-label="Breadcrumb">

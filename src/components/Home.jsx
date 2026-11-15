@@ -1,12 +1,11 @@
 import { HOME_FAQS as faqs, HOME_FEATURES as features } from '../content/homeMarketing'
 import { getHomeStructuredData } from '../content/marketingSchema'
 import { usePageStructuredData } from '../utils/usePageStructuredData'
-import Logo from './Logo'
+import PublicHeader from './PublicHeader'
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/api';
-import ThemeSelector from './ThemeSelector';
 import HomeTagDemo from './HomeTagDemo';
 import { version } from '../../package.json';
 import { useDocumentMeta } from '../utils/useDocumentMeta';
@@ -193,11 +192,8 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
 
   if (view === 'deleted') {
     return (
-      <div className="home-container home-container--centered">
-        <header className="home-topbar">
-          <Logo src={logoSrc} className="home-logo" />
-          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </header>
+      <div className="home-container home-container--centered public-page">
+        <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
             <h1 className="auth-card-title" tabIndex={-1} ref={viewHeadingRef}>Your account has been deleted</h1>
@@ -219,11 +215,8 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
 
   if (view === 'finishDeletion') {
     return (
-      <div className="home-container home-container--centered">
-        <header className="home-topbar">
-          <Logo src={logoSrc} className="home-logo" />
-          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </header>
+      <div className="home-container home-container--centered public-page">
+        <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
             <h1 className="auth-card-title" tabIndex={-1} ref={viewHeadingRef}>Finish deleting your account</h1>
@@ -297,11 +290,8 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
 
   if (forgotMode) {
     return (
-      <div className="home-container home-container--centered">
-        <header className="home-topbar">
-          <Logo src={logoSrc} className="home-logo" />
-          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </header>
+      <div className="home-container home-container--centered public-page">
+        <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
             {forgotStatus === 'sent' ? (
@@ -364,11 +354,8 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
 
   if (pendingEmail) {
     return (
-      <div className="home-container home-container--centered">
-        <header className="home-topbar">
-          <Logo src={logoSrc} className="home-logo" />
-          <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-        </header>
+      <div className="home-container home-container--centered public-page">
+        <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="home-centered-content">
           <div className="auth-card">
             <h1 className="auth-card-title">Check your email</h1>
@@ -398,15 +385,8 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
   }
 
   return (
-    <div className="home-container">
-      <header className="home-topbar">
-        <Logo src={logoSrc} className="home-logo" />
-        <nav className="home-topnav" aria-label="Main">
-          <Link className="home-features-link" to="/features">Features</Link>
-          <Link className="home-features-link" to="/pricing">Pricing</Link>
-        </nav>
-        <ThemeSelector theme={theme} onSelectTheme={onSelectTheme} className="home-theme-toggle" size={18} />
-      </header>
+    <div className="home-container public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
 
       <main id="main" tabIndex={-1}>
       <section className="hero-section">
@@ -416,6 +396,7 @@ function Home({ logoSrc, theme, onSelectTheme, shareNotice = false }) {
             Save links in a bookmark manager built around tags. Give each link every tag that fits, and find it again from any of them.
             Free for your first 50 bookmarks.
           </p>
+          <a className="public-header-action hero-signup" href="/?signup=1#account">Create free account</a>
         </div>
 
         <div className="auth-card" id="account">

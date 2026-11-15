@@ -1129,14 +1129,14 @@ function App() {
         />
         <Route path="/verify-email" element={<VerifyEmail logoSrc={logoSrc} />} />
         <Route path="/reset-password" element={<ResetPassword logoSrc={logoSrc} />} />
-        <Route path="/u/:username" element={<PublicProfile logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} linkTarget={linkTarget} />} />
-        <Route path="/privacy" element={<PolicyPage logoSrc={logoSrc} onBack={() => navigate('/')} />} />
+        <Route path="/u/:username" element={<PublicProfile signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} linkTarget={linkTarget} />} />
+        <Route path="/privacy" element={<PolicyPage theme={theme} onSelectTheme={selectTheme} signedIn={!!user} logoSrc={logoSrc} onBack={() => navigate('/')} />} />
         <Route path="/features" element={<FeaturesPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />} />
         <Route path="/pricing" element={<PricingPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} isPro={isPaidMember} />} />
-        <Route path="/developers" element={<DevelopersPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
+        <Route path="/developers" element={<DevelopersPage signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
         <Route
           path="/support"
-          element={<SupportPage logoSrc={logoSrc} prefillEmail={user?.email || ''} onBack={() => navigate('/')} />}
+          element={<SupportPage theme={theme} onSelectTheme={selectTheme} signedIn={!!user} logoSrc={logoSrc} prefillEmail={user?.email || ''} onBack={() => navigate('/')} />}
         />
         <Route
           path="/settings"
@@ -1568,7 +1568,7 @@ function App() {
             ) : homeElement
           }
         />
-        <Route path="*" element={<NotFound logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
+        <Route path="*" element={<NotFound signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
       </Routes>
     </Suspense>
     <Suspense fallback={null}>

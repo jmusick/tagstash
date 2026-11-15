@@ -1,53 +1,7 @@
-.privacy-page {
+.privacy-content,
+.privacy-footer {
   max-width: 760px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-}
-
-.privacy-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 2rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--color-border-strong);
-}
-
-.privacy-logo-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  line-height: 0;
-}
-
-.privacy-logo {
-  height: 36px;
-  width: auto;
-}
-
-.privacy-header h1 {
-  font-size: var(--text-page-title);
-  color: var(--color-text);
-  margin: 0;
-  flex: 1;
-}
-
-.privacy-header-back {
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--color-text-muted);
-  font-size: var(--text-meta);
-  white-space: nowrap;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.privacy-header-back:hover {
-  opacity: 1;
-  color: var(--color-primary-strong);
+  margin-inline: auto;
 }
 
 .privacy-content {
@@ -114,3 +68,5 @@
 .privacy-copyright a:hover {
   text-decoration: underline;
 }
+
+.privacy-content h1 { margin: 0 0 1.5rem; color: var(--color-text); font-size: var(--text-page-title); }

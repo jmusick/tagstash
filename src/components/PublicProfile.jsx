@@ -1,14 +1,14 @@
 import { useState, useEffect, useLayoutEffect, useCallback } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { profileAPI } from '../api/api'
-import AppHeader from './AppHeader'
+import PublicHeader from './PublicHeader'
 import AppFooter from './AppFooter'
 import BookmarkBrowser from './BookmarkBrowser'
 import { useDocumentMeta } from '../utils/useDocumentMeta'
 import { removeProfileSnapshot } from '../utils/profileSnapshot'
 import { normalizeTagFilters, profileFeedUrl } from '../utils/profileFeed'
 
-function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
+function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget, signedIn = false }) {
   const { username } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const [profile, setProfile] = useState(null)
@@ -99,8 +99,8 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
 
   if (loading || notFound || error) {
     return (
-      <div className="app">
-        <AppHeader logoSrc={logoSrc} tagline="Public bookmarks" theme={theme} onSelectTheme={onSelectTheme} />
+      <div className="app public-page">
+        <PublicHeader signedIn={signedIn} logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
         <main id="main" tabIndex={-1} className="app-main">
           <div className="main-content">
             <h1 className="sr-only">
@@ -127,8 +127,8 @@ function PublicProfile({ logoSrc, theme, onSelectTheme, linkTarget }) {
   }
 
   return (
-    <div className="app">
-      <AppHeader logoSrc={logoSrc} tagline="Public bookmarks" theme={theme} onSelectTheme={onSelectTheme} />
+    <div className="app public-page">
+      <PublicHeader signedIn={signedIn} logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} />
       <main id="main" tabIndex={-1} className="app-main">
         <BookmarkBrowser
           bookmarks={bookmarks}

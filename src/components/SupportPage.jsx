@@ -1,4 +1,4 @@
-import Logo from './Logo'
+import PublicHeader from './PublicHeader'
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supportAPI } from '../api/api';
@@ -16,7 +16,7 @@ const reportMessageFor = (reported) => {
   return `I'd like to report this profile: ${window.location.origin}/u/${encodeURIComponent(username)}\n\nReason: `;
 };
 
-function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
+function SupportPage({ logoSrc, theme, onSelectTheme, signedIn = false, onBack, prefillEmail = '' }) {
   useDocumentMeta(SUPPORT_META);
 
   const [email, setEmail] = useState(prefillEmail || '');
@@ -127,13 +127,11 @@ function SupportPage({ logoSrc, onBack, prefillEmail = '' }) {
   };
 
   return (
-    <div className="support-page">
-      <header className="support-header">
-        {logoSrc && <Logo src={logoSrc} className="support-logo" />}
-        <h1>Contact Support</h1>
-      </header>
+    <div className="support-page public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} signedIn={signedIn} />
 
       <main id="main" tabIndex={-1} className="support-content">
+        <h1>Contact Support</h1>
         <p className="support-intro">
           Use this form to reach the Tagstash support team.
         </p>

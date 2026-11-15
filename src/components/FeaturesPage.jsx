@@ -1,4 +1,4 @@
-import AppHeader from './AppHeader'
+import PublicHeader from './PublicHeader'
 import AppFooter from './AppFooter'
 import HomeTagDemo from './HomeTagDemo'
 import FeatureAnimation from './FeatureAnimation'
@@ -15,15 +15,8 @@ import './FeaturesPage.css'
 // Also rendered at build time: the initial HTML and React page share one source.
 export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSelectTheme = () => {}, signedIn = false }) {
   return (
-    <div className="features-page">
-      <AppHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme}>
-        <a className="features-nav-link" href="/">Home</a>
-        <a className="features-nav-link" href="/features" aria-current="page">Features</a>
-        <a className="features-nav-link" href="/pricing">Pricing</a>
-        <a className="features-button features-button--small" href={signedIn ? '/' : '/?signup=1#account'}>
-          {signedIn ? 'Your bookmarks' : 'Start free'}
-        </a>
-      </AppHeader>
+    <div className="features-page public-page">
+      <PublicHeader logoSrc={logoSrc} theme={theme} onSelectTheme={onSelectTheme} signedIn={signedIn} currentPath="/features" />
 
       <main id="main" tabIndex={-1} className="features-main">
         <nav className="features-breadcrumbs" aria-label="Breadcrumb">

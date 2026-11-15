@@ -1,27 +1,7 @@
-.support-page {
+.support-content,
+.support-footer {
   max-width: 760px;
-  margin: 0 auto;
-  padding: 2rem 1.5rem 3rem;
-}
-
-.support-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 2px solid var(--color-border-strong);
-}
-
-.support-logo {
-  height: 36px;
-  width: auto;
-}
-
-.support-header h1 {
-  margin: 0;
-  color: var(--color-text);
-  font-size: var(--text-page-title);
+  margin-inline: auto;
 }
 
 .support-content {
@@ -65,7 +45,8 @@
 }
 
 .support-field input:focus,
-.support-field textarea:focus {  border-color: var(--color-primary-strong);
+.support-field textarea:focus {
+  border-color: var(--color-primary-strong);
   box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.18);
 }
 
@@ -121,3 +102,5 @@
 .support-copyright a:hover {
   text-decoration: underline;
 }
+
+.support-content h1 { margin: 0 0 1.5rem; color: var(--color-text); font-size: var(--text-page-title); }

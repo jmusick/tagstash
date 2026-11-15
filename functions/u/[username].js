@@ -11,6 +11,7 @@
 // Visibility (public, not suspended) and the indexing bar come from the shared helper, so
 // this page, GET /api/profiles/:username and the sitemap always agree.
 import { findVisibleProfile, getProfileSchema, publicBookmarkCondition } from '../_lib/profileVisibility.js';
+import { renderPublicHeader } from '../_lib/publicHeader.js';
 import { profileFeedPath } from '../_lib/profileFeed.js';
 
 const escapeHtml = (value) =>
@@ -73,9 +74,7 @@ const parseTagNames = (value) => {
   }
 };
 
-const logoPicture = (variant) => `<picture class="logo-picture ssr-logo--${variant}"><source srcset="/logo-${variant}.webp 255w, /logo-${variant}-large.webp 560w" sizes="80px" type="image/webp" /><img src="/logo-${variant}-small.png" alt="Tagstash" width="560" height="440" class="app-header-logo" /></picture>`;
-
-// Mirrors the PublicProfile page shell (AppHeader, .app-main, BookmarkBrowser's toolbar
+// Mirrors the PublicProfile page shell (PublicHeader, .app-main, BookmarkBrowser's toolbar
 // height, list and DefaultCard, AppFooter) with the global App.css/index.css classes, so
 // the snapshot looks like the page that replaces it. Every user-controlled value is escaped.
 export function renderProfileBookmarks(username, bookmarks, totalPublic, now = new Date()) {
@@ -99,7 +98,7 @@ export function renderProfileBookmarks(username, bookmarks, totalPublic, now = n
   const safeUsername = escapeHtml(username);
   // The logo follows the theme App.jsx applies to <html data-theme> on mount; the empty
   // toolbar spacer keeps the heading where it sits once the real search box renders.
-  return `<div id="ssr-profile"><div class="app"><header class="app-header"><div class="app-header-brand"><a href="/" class="app-header-logo-btn" title="Back to Tagstash">${logoPicture('dark')}${logoPicture('light')}</a><p class="app-header-tagline">Public bookmarks</p></div></header>`
+  return `<div id="ssr-profile"><div class="app public-page">${renderPublicHeader()}`
     + `<main class="app-main"><div class="main-content"><div class="toolbar" aria-hidden="true"><div class="toolbar-row"><div class="search-control ssr-toolbar-spacer"></div></div></div><div class="public-profile-header"><h1>@${safeUsername}&#39;s bookmarks</h1></div>`
     + `<div class="bookmarks-section"><div class="results-bar"><p class="results-count">${count}</p></div><div class="bookmarks-grid">${items.join('')}</div></div></div></main>`
     + `<footer class="app-footer"><span class="footer-copyright">&copy; ${now.getUTCFullYear()} Stone Dragon Media LLC</span><a class="footer-privacy-link" href="/">Create your own Tagstash</a><a class="footer-privacy-link" href="/support?report=${encodeURIComponent(username)}" rel="nofollow">Report this profile</a><a class="footer-privacy-link" href="${escapeHtml(profileFeedPath(username))}" type="application/rss+xml">RSS feed</a><a class="footer-privacy-link" href="/developers">Developers</a></footer></div></div>`;

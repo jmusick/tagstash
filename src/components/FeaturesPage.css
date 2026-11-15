@@ -1,7 +1,3 @@
-.features-page { max-width: 1240px; margin: 0 auto; }
-.features-nav-link { color: var(--color-text-soft); text-decoration: none; }
-.features-nav-link[aria-current] { color: var(--color-link); }
-.features-page .user-info { gap: 1rem; }
 .features-main { padding: 0 0 2rem; }
 .features-breadcrumbs { font-size: var(--text-ui); color: var(--color-text-muted); }
 .features-breadcrumbs a { color: var(--color-link); }

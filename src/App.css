@@ -1482,12 +1482,12 @@ a.btn-field-action,
   background: none;
 }
 
-#ssr-profile .ssr-logo--light,
-:root[data-theme='light'] #ssr-profile .ssr-logo--dark {
+.public-header .ssr-logo--light,
+:root[data-theme='light'] .public-header .ssr-logo--dark {
   display: none;
 }
 
-:root[data-theme='light'] #ssr-profile .ssr-logo--light {
+:root[data-theme='light'] .public-header .ssr-logo--light {
   display: contents;
 }
 
@@ -2537,4 +2537,36 @@ a.btn-field-action,
   .browser-filters .tag-cloud-chip-name { min-width: 0; }
   .browser-filters .tag-name { overflow: hidden; text-overflow: ellipsis; }
   .browser-filters .tag-chip-actions { flex-shrink: 0; }
+}
+
+/* Public pages share a fixed outer alignment; narrower reading columns live inside. */
+.public-page { width: 100%; max-width: 1240px; margin-inline: auto; }
+.public-header {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  width: 100%;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.public-header-nav { display: flex; align-items: center; justify-content: flex-end; flex: 1; flex-wrap: wrap; gap: 0.5rem 1.25rem; }
+.public-header-nav a { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-text-soft); font-size: var(--text-ui); text-decoration: none; }
+.public-header-nav a:hover, .public-header-nav a[aria-current] { color: var(--color-link); text-decoration: underline; text-underline-offset: 3px; }
+.public-header-action, .public-header-nav .public-header-action {
+  padding: 0.65rem 1rem;
+  border-radius: 8px;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+}
+.public-header-action:hover, .public-header-nav .public-header-action:hover { background: var(--color-primary-hover); color: #fff; text-decoration: none; }
+.public-header > .theme-selector { flex-shrink: 0; }
+@media (max-width: 800px) {
+  .public-header { flex-wrap: wrap; gap: 0.5rem 1rem; margin-bottom: 1.25rem; padding-bottom: 0.75rem; }
+  .public-header > .theme-selector { margin-left: auto; }
+  .public-header-nav { order: 1; flex-basis: 100%; justify-content: flex-start; gap: 0.25rem 1rem; }
 }
