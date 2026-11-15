@@ -9,7 +9,7 @@ import AppHeader from './components/AppHeader'
 import AppFooter from './components/AppFooter'
 import RouteAnnouncer from './components/RouteAnnouncer'
 import { useDocumentMeta } from './utils/useDocumentMeta'
-import { authAPI, bookmarksAPI, billingAPI } from './api/api'
+import { authAPI, bookmarksAPI } from './api/api'
 
 // Lazy + catch rather than a static import: if a content blocker ever blocks this
 // module's request (see the note in ConsentBanner.jsx), a static import would take
@@ -41,6 +41,7 @@ import { canUseDuplicateFinder } from './utils/duplicates'
 import { downloadBookmarks } from './utils/downloadBookmarks'
 import { BookmarkTagList } from './components/BookmarkParts'
 import BookmarkNote from './components/BookmarkNote'
+import LibraryPlanMeter from './components/LibraryPlanMeter'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
 import { SHARE_TARGET_PATH, peekSharedLink, clearSharedLink } from './utils/shareTarget'
@@ -147,9 +148,6 @@ function App() {
   const addFormHeadingRef = useRef(null)
   const [editTagDraft, setEditTagDraft] = useState('')
   const [tagsRefreshKey, setTagsRefreshKey] = useState(0)
-  const [mobileUsageExpanded, setMobileUsageExpanded] = useState(false)
-  const [usageUpgradePlan, setUsageUpgradePlan] = useState('monthly')
-  const [startingUpgrade, setStartingUpgrade] = useState(false)
   const [billingMessage, setBillingMessage] = useState(() => {
     const params = new URLSearchParams(window.location.search)
     return params.get('billing') || ''
@@ -166,8 +164,6 @@ function App() {
 
   const membershipTier = user?.membership_tier || 'free'
   const isPaidMember = membershipTier === 'paid'
-  const bookmarkUsageCount = bookmarks.length
-  const freeUsagePercent = Math.min(100, Math.round((bookmarkUsageCount / FREE_BOOKMARK_LIMIT) * 100))
   const isFreeLimitReached = !isPaidMember && bookmarks.length >= FREE_BOOKMARK_LIMIT
   const logoSrc = theme === 'light' ? '/logo-light.png' : '/logo-dark.png'
 
@@ -260,23 +256,6 @@ function App() {
       setTagsRefreshKey((prev) => prev + 1)
     } finally {
       setRefreshing(false)
-    }
-  }
-
-  const handleUpgradeFromUsageCard = async () => {
-    try {
-      setStartingUpgrade(true)
-      const response = await billingAPI.createCheckoutSession(usageUpgradePlan)
-      const checkoutUrl = response?.data?.url
-
-      if (!checkoutUrl) {
-        throw new Error('Missing checkout URL')
-      }
-
-      window.location.assign(checkoutUrl)
-    } catch (err) {
-      setError(err?.response?.data?.error || 'Failed to start checkout. Please try again.')
-      setStartingUpgrade(false)
     }
   }
 
@@ -545,7 +524,7 @@ function App() {
     setError('')
 
     if (isFreeLimitReached) {
-      setError(`Free users can save up to ${FREE_BOOKMARK_LIMIT} bookmarks. Upgrade to paid for unlimited bookmarks.`)
+      setError(`The free plan includes ${FREE_BOOKMARK_LIMIT} bookmarks. Move a bookmark to Trash to make room for another.`)
       return
     }
 
@@ -1373,7 +1352,7 @@ function App() {
               <h2 ref={addFormHeadingRef} tabIndex={-1}>Add a bookmark</h2>
               {isFreeLimitReached && (
                 <p className="usage-limit-warning">
-                  Free plan limit reached ({FREE_BOOKMARK_LIMIT} bookmarks). Upgrade to paid to continue adding bookmarks.
+                  Free plan limit reached ({FREE_BOOKMARK_LIMIT} bookmarks). Move a bookmark to Trash to make room for another.
                 </p>
               )}
               <form onSubmit={handleSubmit}>
@@ -1507,56 +1486,7 @@ function App() {
           )}
 
           {!isPaidMember && (
-            <section className={`membership-summary membership-summary-free ${mobileUsageExpanded ? 'is-expanded' : ''}`}>
-              <button type="button" className="membership-mobile-toggle"
-                aria-expanded={mobileUsageExpanded} aria-controls="library-plan-details"
-                onClick={() => setMobileUsageExpanded((expanded) => !expanded)}>
-                <span>Free · {bookmarkUsageCount}/{FREE_BOOKMARK_LIMIT} bookmarks</span>
-                <span>{mobileUsageExpanded ? 'Hide plans' : 'Plans'}</span>
-              </button>
-              <div id="library-plan-details" className="membership-plan-details">
-                <div className="membership-summary-head">
-                  <strong>Free Plan</strong>
-                  <span>{bookmarkUsageCount} / {FREE_BOOKMARK_LIMIT} bookmarks used</span>
-                </div>
-                <div className="usage-meter" aria-hidden="true">
-                  <div className="usage-meter-bar" style={{ width: `${freeUsagePercent}%` }} />
-                </div>
-                <div className="membership-summary-actions">
-                  <div className="upgrade-plan-toggle" role="group" aria-label="Choose billing plan">
-                    <button
-                      type="button"
-                      className={`upgrade-plan-btn ${usageUpgradePlan === 'monthly' ? 'active' : ''}`}
-                      aria-pressed={usageUpgradePlan === 'monthly'}
-                      onClick={() => setUsageUpgradePlan('monthly')}
-                      disabled={startingUpgrade}
-                    >
-                      Monthly
-                    </button>
-                    <button
-                      type="button"
-                      className={`upgrade-plan-btn ${usageUpgradePlan === 'annual' ? 'active' : ''}`}
-                      aria-pressed={usageUpgradePlan === 'annual'}
-                      onClick={() => setUsageUpgradePlan('annual')}
-                      disabled={startingUpgrade}
-                    >
-                      Annual
-                    </button>
-                  </div>
-                  <button
-                    type="button"
-                    className="upgrade-placeholder-link"
-                    onClick={handleUpgradeFromUsageCard}
-                    disabled={startingUpgrade}
-                  >
-                    {startingUpgrade ? 'Opening checkout...' : `Upgrade (${usageUpgradePlan === 'monthly' ? 'Monthly' : 'Annual'})`}
-                  </button>
-                </div>
-                {isFreeLimitReached && (
-                  <p className="usage-limit-warning">You reached the free limit. Upgrade to paid to keep adding bookmarks.</p>
-                )}
-              </div>
-            </section>
+            <LibraryPlanMeter key={user.id} count={bookmarks.length} limit={FREE_BOOKMARK_LIMIT} onError={setError} />
           )}
                   </BookmarkBrowser>
                 </main>

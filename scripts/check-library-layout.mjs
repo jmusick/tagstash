@@ -31,16 +31,29 @@ try {
   for (const theme of ['slate', 'midnight', 'light']) {
     const context = await browser.newContext({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true })
     const page = await context.newPage()
+    let fixtureCount = 21
+    let fixtureTier = 'free'
+    let fixturePlans = []
+    let plansFail = false
+    let checkoutPlan = null
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url())
       if (url.origin !== new URL(origin).origin) return route.abort()
       if (!url.pathname.startsWith('/api/')) return route.continue()
+      if (url.pathname === '/api/billing/checkout-session') {
+        assert.equal(route.request().method(), 'POST')
+        checkoutPlan = route.request().postDataJSON().plan
+        return route.fulfill({ status: 502, json: { error: 'Fixture checkout failure' } })
+      }
       assert.equal(route.request().method(), 'GET', 'Layout checks must never write data')
+      if (url.pathname === '/api/billing/plans') {
+        return route.fulfill({ status: plansFail ? 503 : 200, json: { plans: fixturePlans } })
+      }
       const data = url.pathname === '/api/auth/me'
-        ? { user: { id: 1, username: 'layoutfixture', membership_tier: 'free', theme } }
-        : url.pathname === '/api/bookmarks' ? { bookmarks }
+        ? { user: { id: 1, username: 'layoutfixture', membership_tier: fixtureTier, theme } }
+        : url.pathname === '/api/bookmarks' ? { bookmarks: Array.from({ length: fixtureCount }, (_, i) => ({ ...bookmarks[i % bookmarks.length], id: i + 1 })) }
           : url.pathname === '/api/bookmarks/tags/all' ? { tags }
             : url.pathname.startsWith('/api/profiles/') ? { profile: { username: 'layoutfixture' }, bookmarks, tags } : {}
       return route.fulfill({ json: data })
@@ -76,9 +89,9 @@ try {
     await page.locator('.display-options summary').click()
     await page.getByRole('button', { name: 'Next page', exact: true }).first().click()
     await page.waitForFunction(() => document.querySelector('.bookmark-title')?.textContent === 'Bookmark 11')
-    await page.locator('.membership-mobile-toggle').click()
+    await page.locator('.membership-usage-toggle').click()
     assert.equal(await page.locator('#library-plan-details').isVisible(), true)
-    await page.locator('.membership-mobile-toggle').click()
+    await page.locator('.membership-usage-toggle').click()
     await filters.click()
     await page.getByRole('button', { name: 'Without tags', exact: false }).click()
     await page.waitForFunction(() => document.querySelectorAll('.bookmark-card').length === 1)
@@ -102,6 +115,63 @@ try {
     const results = await page.locator('.bookmarks-section').boundingBox()
     assert.ok(rack.x > results.x + results.width, 'Desktop keeps the two-column layout')
     if (screenshotDir) await page.screenshot({ path: join(screenshotDir, `${theme}-desktop.png`) })
+    // Compact at every width; auto-expand at 80%, including over-limit legacy accounts.
+    for (const width of [320, 1440]) {
+      await page.setViewportSize({ width, height: 1000 })
+      for (const count of [0, 39, 40, 50, 51]) {
+        fixtureCount = count
+        await page.goto(origin)
+        await page.locator('.membership-usage-toggle').waitFor()
+        if (count) await page.locator('.bookmark-card').first().waitFor()
+        const toggle = page.locator('.membership-usage-toggle')
+        await page.waitForFunction((count) => document.querySelector('.membership-usage-toggle')?.textContent.includes(`Free · ${count} / 50`), count)
+        assert.equal(await toggle.getAttribute('aria-expanded'), String(count >= 40))
+        if (count < 40) {
+          assert.ok((await page.locator('.membership-summary').boundingBox()).height <= 48, 'Low usage stays on one line')
+          await toggle.focus()
+          await page.keyboard.press('Enter')
+        }
+        await page.getByText('Paid plans are not available on this instance.', { exact: true }).waitFor()
+        assert.equal(await page.locator('.membership-summary-actions').count(), 0)
+        if (count >= 50) assert.match(await page.locator('#library-plan-details').innerText(), /still browse and edit/)
+        await toggle.focus()
+        await page.keyboard.press('Space')
+        assert.equal(await page.locator('#library-plan-details').isVisible(), false)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    fixtureCount = 40
+    for (const ids of [['annual'], ['monthly'], ['monthly', 'annual']]) {
+      await page.setViewportSize({ width: ids.length === 2 ? 320 : 1440, height: 1000 })
+      fixturePlans = ids.map((id) => ({ id, available: true }))
+      await page.goto(origin)
+      await page.locator('.upgrade-placeholder-link').waitFor()
+      assert.equal(await page.locator('.upgrade-plan-btn').count(), ids.length)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'Expanded plans fit on screen')
+      if (screenshotDir) await page.screenshot({ path: join(screenshotDir, `${theme}-plans-${ids.join('-')}.png`) })
+      const expectedPlan = ids.includes('monthly') ? 'monthly' : 'annual'
+      await page.locator('.upgrade-placeholder-link').click()
+      await page.getByText('Fixture checkout failure', { exact: true }).waitFor()
+      assert.equal(checkoutPlan, expectedPlan, 'Checkout uses an available billing period')
+      if (ids.length === 2) {
+        await page.getByRole('button', { name: 'Annual', exact: true }).click()
+        await page.locator('.upgrade-placeholder-link').click()
+        await page.waitForFunction(() => !document.querySelector('.upgrade-placeholder-link')?.disabled)
+        assert.equal(checkoutPlan, 'annual', 'The chosen billing period reaches checkout')
+      }
+    }
+    plansFail = true
+    await page.reload()
+    await page.getByText('Could not load paid plans. Try again from Settings → Billing.', { exact: true }).waitFor()
+    assert.equal(await page.locator('.upgrade-placeholder-link').count(), 0)
+    plansFail = false
+    fixtureTier = 'paid'
+    await page.reload()
+    await page.locator('.bookmark-card').first().waitFor()
+    assert.equal(await page.locator('.membership-summary').count(), 0)
+    fixtureTier = 'free'
+    fixtureCount = 21
+    fixturePlans = []
     await page.goto(new URL('/u/layoutfixture', origin).href)
     await page.locator('.bookmark-card').first().waitFor()
     await page.setViewportSize({ width: 375, height: 812 })

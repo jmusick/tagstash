@@ -5740,8 +5740,8 @@ async function handleBilling(request, env, segments) {
   if (request.method === 'GET' && segments[1] === 'plans') {
     return jsonResponse({
       plans: [
-        { id: 'monthly', available: !!env.STRIPE_MONTHLY_PRICE_ID },
-        { id: 'annual', available: !!env.STRIPE_ANNUAL_PRICE_ID },
+        { id: 'monthly', available: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_MONTHLY_PRICE_ID },
+        { id: 'annual', available: !!env.STRIPE_SECRET_KEY && !!env.STRIPE_ANNUAL_PRICE_ID },
       ],
     });
   }

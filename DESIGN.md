@@ -273,7 +273,7 @@ Three sizes are deliberately outside the role scale: the rack's usage scale (`.t
 
 ## Layout
 
-The app is a centered page up to 1440px wide with 1.5rem / 2rem padding. Under a header row (logo, primary nav, theme selector, account) sits a two-column grid: the main column takes 2fr and the sidebar takes 1fr with a 300px minimum, separated by a 2rem gap. The main column holds the toolbar (search first, then Select / Random / Refresh and the primary "Add bookmark"), the plan meter and the bookmark index. The sidebar holds filter blocks (Domain, Month saved, Show only) and the tag rack, and stays sticky 1.5rem from the top.
+The app is a centered page up to 1440px wide with 1.5rem / 2rem padding. Under a header row (logo, primary nav, theme selector, account) sits a two-column grid: the main column takes 2fr and the sidebar takes 1fr with a 300px minimum, separated by a 2rem gap. The main column holds the toolbar (search first, then Select / Random / Refresh and the primary "Add bookmark"), the compact plan meter and the bookmark index. The meter is one line with a thin bar; its details expand at 80% of the free limit or on request, with upgrade options only when paid plans are available. The sidebar holds filter blocks (Domain, Month saved, Show only) and the tag rack, and stays sticky 1.5rem from the top.
 
 Search is the primary control. Below 1280px, secondary toolbar buttons drop their text labels before the search field gets squeezed. At 1024px and below, the grid collapses to one column (sidebar after the list, no longer sticky), page padding tightens to 1rem, the logo shrinks and the nav moves into a menu toggle. At 640px rows, the trash and the consent banner restack.
 

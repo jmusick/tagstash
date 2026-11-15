@@ -298,7 +298,6 @@ dd {
 /* Tabular Count Rule: Public Sans's default figures are proportional, which suits
    prose. Counts, dates and usage figures switch to tabular so columns don't jitter
    (other count classes set it beside their own styles). */
-.membership-summary-head span,
 .tag-pair-count,
 .tag-edit-count,
 .bulk-tag-count,

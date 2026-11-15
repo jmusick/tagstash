@@ -3,6 +3,28 @@ import assert from 'node:assert/strict';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 import { call, loginHeaders } from './helpers/api.mjs';
 
+test('plan availability requires a Stripe key and the matching price', async (t) => {
+  const env = await createAuthEnv();
+  t.after(() => env.sqlite.close());
+  const plans = async () => {
+    const response = await call(env, 'billing/plans');
+    assert.equal(response.status, 200);
+    return (await response.json()).plans;
+  };
+  assert.deepEqual(await plans(), [
+    { id: 'monthly', available: false }, { id: 'annual', available: false },
+  ]);
+  env.STRIPE_MONTHLY_PRICE_ID = 'price_monthly_isolated';
+  env.STRIPE_ANNUAL_PRICE_ID = 'price_annual_isolated';
+  assert.ok((await plans()).every((plan) => !plan.available), 'Prices alone cannot enable checkout');
+  env.STRIPE_SECRET_KEY = 'sk_test_isolated';
+  assert.ok((await plans()).every((plan) => plan.available));
+  delete env.STRIPE_MONTHLY_PRICE_ID;
+  assert.deepEqual(await plans(), [
+    { id: 'monthly', available: false }, { id: 'annual', available: true },
+  ]);
+});
+
 async function setup(t, { existingCustomer = false } = {}) {
   const env = await createAuthEnv();
   t.after(() => env.sqlite.close());
