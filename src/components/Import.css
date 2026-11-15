@@ -43,7 +43,7 @@
   max-width: 320px;
   padding: 0.65rem 0.75rem;
   border-radius: 8px;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   background-color: var(--color-surface-soft);
   color: var(--color-text);
   font-family: inherit;

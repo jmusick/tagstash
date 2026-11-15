@@ -42,7 +42,6 @@
 
 .app-footer .version {
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
 }
 
 /* ---------- Header ---------- */
@@ -452,7 +451,7 @@
 .tag-pair-count {
   font-size: 0.85em;
   font-weight: 500;
-  opacity: 0.62;
+  color: var(--tag-ink-muted);
 }
 
 .tag-pair-divider {
@@ -607,7 +606,7 @@
   height: 2.85rem;
   padding: 0 0.45rem 0 0.9rem;
   margin-right: 0.4rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 10px;
   background: var(--color-panel);
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -793,7 +792,7 @@
   min-width: 0;
   min-height: 44px;
   padding: 0.5rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 7px;
   background: var(--color-panel);
   color: var(--color-text);
@@ -959,7 +958,7 @@
   min-width: 0;
   max-width: 100%;
   padding: 0 0.5rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 7px;
   background: var(--color-panel);
   color: var(--color-text);
@@ -1082,8 +1081,11 @@
   border-color: var(--color-primary-strong);
 }
 
+/* Disabled stays legible: muted ink and a hairline border instead of fading the
+   whole button, so it still reads as present (Real Contrast Rule). */
 .btn-secondary:disabled {
-  opacity: 0.5;
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
   cursor: not-allowed;
 }
 
@@ -1297,7 +1299,7 @@ a.btn-field-action,
 .form-group textarea {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   font-size: var(--text-body);
   font-family: inherit;
@@ -1315,7 +1317,7 @@ a.btn-field-action,
 .form-group small {
   display: block;
   margin-top: 0.25rem;
-  opacity: 0.7;
+  color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
@@ -1323,7 +1325,7 @@ a.btn-field-action,
   width: 100%;
   min-height: 44px;
   padding: 0.38rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   background-color: var(--color-surface-soft);
   display: flex;

@@ -135,7 +135,7 @@
 
 .form-field input {
   padding: 0.75rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   font-size: var(--text-ui);
   font-family: inherit;
@@ -191,7 +191,7 @@
 .public-profile-link input {
   flex: 1;
   padding: 0.75rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   font-size: var(--text-ui);
   font-family: inherit;
@@ -473,7 +473,7 @@
   flex: 1;
   min-width: 220px;
   padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   background-color: var(--color-surface-soft);
   color: var(--color-text);
@@ -492,7 +492,7 @@
 
 .admin-users-search-count {
   font-size: var(--text-meta);
-  opacity: 0.75;
+  color: var(--color-text-muted);
 }
 
 .admin-users-list {
@@ -549,7 +549,7 @@
 }
 
 .admin-user-controls select {
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 7px;
   font-family: inherit;
   background-color: var(--color-surface-soft);

@@ -16,6 +16,8 @@
         "--color-link": { "slate": "#b3a3ff", "midnight": "#b9aaff", "light": "#5a2ff0" },
         "--color-tag-bg": { "slate": "#33295a", "midnight": "#2d236b", "light": "#ebe6fd" },
         "--color-tag-ink": { "slate": "#d4c8ff", "midnight": "#d8cdff", "light": "#4320c9" },
+        "--color-tag-ink-muted": { "slate": "#b3a8e0", "midnight": "#b4a8ea", "light": "#5a3fc4" },
+        "--color-border-field": { "slate": "#7b7983", "midnight": "#7570ae", "light": "#83808f" },
         "--color-tag-edge": { "slate": "#4a3d85", "midnight": "#4334a0", "light": "#cfc3fa" },
         "--color-marigold": { "slate": "#f0b13a", "midnight": "#f3b843", "light": "#b97c06" },
         "--color-success": { "slate": "#6fd6a4", "midnight": "#6fd6a4", "light": "#0d704a" },
@@ -32,6 +34,7 @@
       "tag-stock-hover": { "role": "secondary", "displayName": "Tag Stock Hover", "canonical": "#3d3170", "cssVar": "--color-tag-bg-hover" },
       "tag-stock-edge": { "role": "secondary", "displayName": "Tag Stock Edge", "canonical": "#4a3d85", "cssVar": "--color-tag-edge" },
       "tag-ink": { "role": "secondary", "displayName": "Tag Ink", "canonical": "#d4c8ff", "cssVar": "--color-tag-ink" },
+      "tag-ink-muted": { "role": "secondary", "displayName": "Tag Ink Muted", "canonical": "#b3a8e0", "cssVar": "--color-tag-ink-muted" },
       "favorite-marigold": { "role": "tertiary", "displayName": "Favorite Marigold", "canonical": "#f0b13a", "cssVar": "--color-marigold", "tonalRamp": ["oklch(15% 0.03 75)", "oklch(25% 0.06 75)", "oklch(35% 0.08 75)", "oklch(48% 0.1 75)", "oklch(62% 0.13 75)", "oklch(80% 0.15 75)", "oklch(88% 0.1 75)", "oklch(96% 0.03 75)"] },
       "favorite-marigold-wash": { "role": "tertiary", "displayName": "Marigold Wash", "canonical": "rgba(240, 177, 58, 0.15)", "cssVar": "--color-marigold-soft" },
       "graphite-ground": { "role": "neutral", "displayName": "Graphite Ground", "canonical": "#1b1a20", "cssVar": "--color-bg", "tonalRamp": ["oklch(15% 0.008 290)", "oklch(21% 0.01 290)", "oklch(25% 0.012 290)", "oklch(35% 0.012 290)", "oklch(50% 0.01 290)", "oklch(65% 0.008 290)", "oklch(85% 0.005 290)", "oklch(96% 0.004 290)"] },
@@ -40,6 +43,7 @@
       "graphite-panel-raised": { "role": "neutral", "displayName": "Graphite Panel Raised", "canonical": "#2a2932", "cssVar": "--color-panel-strong" },
       "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "rgba(255, 255, 255, 0.08)", "cssVar": "--color-border" },
       "hairline-strong": { "role": "neutral", "displayName": "Hairline Strong", "canonical": "rgba(255, 255, 255, 0.17)", "cssVar": "--color-border-strong" },
+      "field-edge": { "role": "neutral", "displayName": "Field Edge", "canonical": "#7b7983", "cssVar": "--color-border-field" },
       "ink": { "role": "neutral", "displayName": "Ink", "canonical": "#f2f1f5", "cssVar": "--color-text" },
       "ink-soft": { "role": "neutral", "displayName": "Ink Soft", "canonical": "rgba(242, 241, 245, 0.78)", "cssVar": "--color-text-soft" },
       "ink-muted": { "role": "neutral", "displayName": "Ink Muted", "canonical": "rgba(242, 241, 245, 0.56)", "cssVar": "--color-text-muted" },
@@ -110,7 +114,7 @@
       "refersTo": "search-field",
       "description": "The primary control: library search with an icon and the active filter chip inside the field.",
       "html": "<label class=\"ds-search\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-3.5-3.5\"/></svg><input type=\"search\" placeholder=\"Search titles, links, notes and tags\" aria-label=\"Search bookmarks\"><span class=\"ds-filter-chip\">#reading</span></label>",
-      "css": ".ds-search { display: flex; align-items: center; gap: 0.5rem; height: 2.85rem; padding: 0 0.45rem 0 0.9rem; border: 1px solid var(--color-border-strong, rgba(255,255,255,0.17)); border-radius: 10px; background: var(--color-panel, #222128); color: var(--color-text-muted, rgba(242,241,245,0.56)); transition: border-color 0.15s ease, box-shadow 0.15s ease; } .ds-search:focus-within { border-color: var(--color-primary-strong, #a48fff); box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb, 109, 69, 255), 0.18); } .ds-search input { flex: 1 1 auto; min-width: 0; border: none; outline: none; background: transparent; color: var(--color-text, #f2f1f5); font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 1rem; } .ds-search input::placeholder { color: var(--color-placeholder, rgba(242,241,245,0.6)); } .ds-filter-chip { flex-shrink: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-primary-soft, rgba(109,69,255,0.16)); color: var(--color-primary-strong, #a48fff); font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 0.8rem; font-weight: 600; }"
+      "css": ".ds-search { display: flex; align-items: center; gap: 0.5rem; height: 2.85rem; padding: 0 0.45rem 0 0.9rem; border: 1px solid var(--color-border-field, #7b7983); border-radius: 10px; background: var(--color-panel, #222128); color: var(--color-text-muted, rgba(242,241,245,0.56)); transition: border-color 0.15s ease, box-shadow 0.15s ease; } .ds-search:focus-within { border-color: var(--color-primary-strong, #a48fff); box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb, 109, 69, 255), 0.18); } .ds-search input { flex: 1 1 auto; min-width: 0; border: none; outline: none; background: transparent; color: var(--color-text, #f2f1f5); font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 1rem; } .ds-search input::placeholder { color: var(--color-placeholder, rgba(242,241,245,0.6)); } .ds-filter-chip { flex-shrink: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-primary-soft, rgba(109,69,255,0.16)); color: var(--color-primary-strong, #a48fff); font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 0.8rem; font-weight: 600; }"
     },
     {
       "name": "Form Field",
@@ -118,7 +122,7 @@
       "refersTo": "input-field",
       "description": "Labelled text field used in the add/edit form, Settings and auth.",
       "html": "<div class=\"ds-field\"><label for=\"ds-title\">Title</label><input id=\"ds-title\" value=\"Internet Archive Books\"></div>",
-      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.4rem; font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-field label { color: var(--color-text, #f2f1f5); font-size: 0.9rem; font-weight: 600; } .ds-field input { width: 100%; padding: 0.75rem; border: 1px solid var(--color-border-strong, rgba(255,255,255,0.17)); border-radius: 8px; background-color: var(--color-surface-soft, rgba(255,255,255,0.045)); color: var(--color-text, #f2f1f5); font: inherit; font-size: 1rem; outline: none; } .ds-field input:focus { border-color: var(--color-primary-strong, #a48fff); box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb, 109, 69, 255), 0.18); }"
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 0.4rem; font-family: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; } .ds-field label { color: var(--color-text, #f2f1f5); font-size: 0.9rem; font-weight: 600; } .ds-field input { width: 100%; padding: 0.75rem; border: 1px solid var(--color-border-field, #7b7983); border-radius: 8px; background-color: var(--color-surface-soft, rgba(255,255,255,0.045)); color: var(--color-text, #f2f1f5); font: inherit; font-size: 1rem; outline: none; } .ds-field input:focus { border-color: var(--color-primary-strong, #a48fff); box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb, 109, 69, 255), 0.18); }"
     },
     {
       "name": "Tag",

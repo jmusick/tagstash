@@ -211,7 +211,7 @@
 .form-field input {
   height: 2.85rem;
   padding: 0 0.85rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   background-color: var(--color-surface-soft);
   color: var(--color-text);

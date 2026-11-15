@@ -36,7 +36,7 @@
   display: flex;
   align-items: center;
   gap: 0.45rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   padding: 0.42rem 0.6rem;
   background: var(--color-surface-soft);
@@ -177,7 +177,7 @@
   font-size: 0.82em;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  opacity: 0.62;
+  color: var(--tag-ink-muted);
 }
 
 /* Per-tag actions (add to filter, favorite) are always visible inline, with

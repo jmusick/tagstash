@@ -58,7 +58,7 @@
 
 .form-field input {
   padding: 0.875rem;
-  border: 1px solid var(--color-border-strong);
+  border: 1px solid var(--color-border-field);
   border-radius: 8px;
   font-size: var(--text-body);
   font-family: inherit;

@@ -72,6 +72,9 @@
   --color-panel-muted: #26252d;
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.17);
+  /* Field outlines: opaque so the boundary clears 3:1 (WCAG 1.4.11) on every
+     surface a field sits on, without thickening panel hairlines. */
+  --color-border-field: #7b7983;
   --color-text: #f2f1f5;
   --color-text-soft: rgba(242, 241, 245, 0.78);
   --color-text-muted: rgba(242, 241, 245, 0.56);
@@ -106,6 +109,7 @@
   --color-tag-bg-hover: #3d3170;
   --color-tag-edge: #4a3d85;
   --color-tag-ink: #d4c8ff;
+  --color-tag-ink-muted: #b3a8e0;
   --color-tag-ring: rgba(212, 200, 255, 0.4);
   --color-marigold: #f0b13a;
   --color-marigold-soft: rgba(240, 177, 58, 0.15);
@@ -133,6 +137,7 @@
   --color-panel-muted: #1d1c45;
   --color-border: rgba(190, 180, 255, 0.11);
   --color-border-strong: rgba(190, 180, 255, 0.24);
+  --color-border-field: #7570ae;
   --color-text: #efedff;
   --color-text-soft: rgba(239, 237, 255, 0.78);
   --color-text-muted: rgba(239, 237, 255, 0.56);
@@ -166,6 +171,7 @@
   --color-tag-bg-hover: #372b82;
   --color-tag-edge: #4334a0;
   --color-tag-ink: #d8cdff;
+  --color-tag-ink-muted: #b4a8ea;
   --color-tag-ring: rgba(216, 205, 255, 0.4);
   --color-marigold: #f3b843;
   --color-marigold-soft: rgba(243, 184, 67, 0.15);
@@ -186,6 +192,7 @@
   --color-panel-muted: #f7f7fa;
   --color-border: rgba(28, 24, 48, 0.1);
   --color-border-strong: rgba(28, 24, 48, 0.2);
+  --color-border-field: #83808f;
   --color-text: #1c1830;
   --color-text-soft: rgba(28, 24, 48, 0.78);
   --color-text-muted: rgba(28, 24, 48, 0.66);
@@ -219,6 +226,7 @@
   --color-tag-bg-hover: #ded6fc;
   --color-tag-edge: #cfc3fa;
   --color-tag-ink: #4320c9;
+  --color-tag-ink-muted: #5a3fc4;
   --color-tag-ring: rgba(67, 32, 201, 0.35);
   --color-marigold: #b97c06;
   --color-marigold-soft: rgba(201, 138, 11, 0.13);
@@ -352,6 +360,8 @@ main[tabindex='-1']:focus {
 .tag-stock {
   --tag-bg: var(--color-tag-bg);
   --tag-ink-color: var(--color-tag-ink);
+  /* Secondary text on a tag (counts): dimmed by color, not opacity. */
+  --tag-ink-muted: var(--color-tag-ink-muted);
   --tag-ring-color: var(--color-tag-ring);
   --tag-eyelet: var(--color-panel);
   --tag-point: 0.6em;
@@ -390,6 +400,7 @@ main[tabindex='-1']:focus {
 .tag-stock--active {
   --tag-bg: var(--color-primary);
   --tag-ink-color: #fff;
+  --tag-ink-muted: rgba(255, 255, 255, 0.9);
   --tag-ring-color: rgba(255, 255, 255, 0.55);
   filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
 }

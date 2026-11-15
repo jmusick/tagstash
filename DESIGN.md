@@ -11,6 +11,7 @@ colors:
   tag-stock-hover: "#3d3170"
   tag-stock-edge: "#4a3d85"
   tag-ink: "#d4c8ff"
+  tag-ink-muted: "#b3a8e0"
   favorite-marigold: "#f0b13a"
   favorite-marigold-wash: "rgba(240, 177, 58, 0.15)"
   graphite-ground: "#1b1a20"
@@ -19,6 +20,7 @@ colors:
   graphite-panel-raised: "#2a2932"
   hairline: "rgba(255, 255, 255, 0.08)"
   hairline-strong: "rgba(255, 255, 255, 0.17)"
+  field-edge: "#7b7983"
   ink: "#f2f1f5"
   ink-soft: "rgba(242, 241, 245, 0.78)"
   ink-muted: "rgba(242, 241, 245, 0.56)"
@@ -146,6 +148,7 @@ components:
     textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.field}"
+    borderColor: "{colors.field-edge}"
     height: "2.85rem"
     padding: "0 0.45rem 0 0.9rem"
   input-field:
@@ -153,6 +156,7 @@ components:
     textColor: "{colors.ink}"
     typography: "{typography.body}"
     rounded: "{rounded.md}"
+    borderColor: "{colors.field-edge}"
     padding: "0.75rem"
   panel:
     backgroundColor: "{colors.graphite-panel}"
@@ -216,7 +220,7 @@ One saturated violet over quiet graphite (or indigo, or cool paper), with marigo
 - **Link Lilac** (#b3a3ff; #b9aaff in Midnight, #5a2ff0 in Light): bookmark titles on hover and in-copy links. Titles rest in full ink and only turn lilac with an underline when pointed at.
 
 ### Secondary
-- **Tag Stock** (#33295a): the soft violet fill of every unselected tag, with **Tag Ink** (#d4c8ff) text and a one-pixel **Tag Stock Edge** (#4a3d85) underline drawn as a drop shadow. Midnight uses #2d236b / #d8cdff / #4334a0; Light uses #ebe6fd / #4320c9 / #cfc3fa. The fill must be opaque because the pointed end is a separate shape.
+- **Tag Stock** (#33295a): the soft violet fill of every unselected tag, with **Tag Ink** (#d4c8ff) text and a one-pixel **Tag Stock Edge** (#4a3d85) underline drawn as a drop shadow. Midnight uses #2d236b / #d8cdff / #4334a0; Light uses #ebe6fd / #4320c9 / #cfc3fa. The fill must be opaque because the pointed end is a separate shape. Counts on a tag use **Tag Ink Muted** (#b3a8e0; #b4a8ea in Midnight, #5a3fc4 in Light; 90% white on a selected tag), which clears 4.5:1 on the fill.
 
 ### Tertiary
 - **Favorite Marigold** (#f0b13a; #f3b843 in Midnight, #b97c06 in Light): favorites only, meaning the star on a row, the favorite-tag star and the Favorites filter, on a **Marigold Wash** when active. It never appears as decoration.
@@ -225,7 +229,8 @@ One saturated violet over quiet graphite (or indigo, or cool paper), with marigo
 - **Graphite Ground** (#1b1a20): the page background in Slate. Midnight: #11102a. Light: #f1f1f5.
 - **Graphite Panel** (#222128) and **Graphite Surface** (#23222a): the bordered panels (bookmark index, tag rack, filter blocks) and form surfaces. Light: #ffffff.
 - **Graphite Panel Raised** (#2a2932): the row being edited and other "lifted by tone" surfaces.
-- **Hairline** (8% white) and **Hairline Strong** (17% white): panel borders and row dividers, then field and secondary-button borders. Light uses 10% / 20% of ink #1c1830.
+- **Hairline** (8% white) and **Hairline Strong** (17% white): panel borders and row dividers, then secondary-button borders. Light uses 10% / 20% of ink #1c1830.
+- **Field Edge** (#7b7983; #7570ae in Midnight, #83808f in Light): the outline of every search, text, select and textarea field. It is opaque and strong enough to clear 3:1 (WCAG 1.4.11) against the field and whatever surface it sits on, so control boundaries stay visible without thickening panel hairlines.
 - **Ink** (#f2f1f5; #efedff in Midnight, #1c1830 in Light): headings and titles. **Ink Soft** (78%) is body copy and descriptions. **Ink Muted** (56% in the dark themes, 66% in Light so it clears 4.5:1) is meta text, counts, hints and resting icons.
 
 ### Status
@@ -301,7 +306,7 @@ The one non-rectangular form is the tag: a pill-height label (1.9em) with a squa
 Calm and exact; color changes, nothing moves.
 - **Shape:** gently rounded (8px), with an inline icon and label 0.45rem apart.
 - **Primary:** Stash Violet fill, white 600 text at the UI size (0.9375rem), 0.7rem × 1.25rem padding. Hover steps to Stash Violet Hover. Disabled drops to 50% opacity with a not-allowed cursor. One per view.
-- **Secondary:** transparent with a Hairline Strong border and Ink text (500). Hover adds a faint surface wash and turns the border Stash Violet Bright.
+- **Secondary:** transparent with a Hairline Strong border and Ink text (500). Hover adds a faint surface wash and turns the border Stash Violet Bright. Disabled keeps full opacity but drops to Ink Muted text and a Hairline border, so it still reads as present.
 - **Ghost:** borderless, Ink Soft text, 2.85rem tall to sit level with the search field; hover adds the surface wash and full Ink. Used for toolbar actions (Select, Random, Refresh) and nav.
 - **Icon:** 2rem square, 7px corners, Ink Muted at rest. Row actions (open, edit, favorite, private, delete) fade in on row hover or focus on pointer devices, stay visible while a row is edited or an action is active, and are always shown on touch. The favorite action turns marigold on a Marigold Wash.
 - **Danger:** Danger Solid fill with white text, used only behind a confirmation. Accept and Decline in the cookie banner are deliberately identical in weight.
@@ -326,8 +331,8 @@ Calm and exact; color changes, nothing moves.
 The library is one panel holding one row per bookmark, like an index, with 1px Hairline dividers between rows. A row shows the favicon (18px, 4px corners), the Row Title, the date on the right in Caption, then the domain, the description in Body Small and the tags. All of these indent under the title. A row being edited takes the raised tone and a 3px inset Stash Violet bar on its left edge. Select mode adds a checkbox column.
 
 ### Inputs / Fields
-- **Search:** 2.85rem tall, 10px corners, Graphite Panel fill, Hairline Strong border, a leading search icon, and a favorites star and filter chip inside the field.
-- **Form fields:** 0.75rem padding, 8px corners, a faint surface-wash fill, Hairline Strong border, 1rem text.
+- **Search:** 2.85rem tall, 10px corners, Graphite Panel fill, Field Edge border, a leading search icon, and a favorites star and filter chip inside the field.
+- **Form fields:** 0.75rem padding, 8px corners, a faint surface-wash fill, Field Edge border, 1rem text.
 - **Focus:** the border turns Stash Violet Bright and a 3px violet halo appears.
 - **Error:** inline Danger Rose text on a Danger wash banner. Hints use Caption in Ink Muted, linked with `aria-describedby`.
 
