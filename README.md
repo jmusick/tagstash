@@ -45,6 +45,7 @@ Current status at a glance:
 - Super admin controls for managing users, roles, and tiers, plus moderation (suspend an account, force a profile private)
 - Three theme options (Slate, Midnight, Light), with your pick synced to your account when logged in
 - Preference for opening bookmark links in a new tab or the same tab (Settings → Preferences), synced to your account
+- Keyboard shortcuts in your signed-in library: `/` focuses search, `n` opens Add bookmark, and `?` shows shortcut help. The list is also beside Search tips and in Settings → Preferences, where shortcuts can be disabled for this browser. Shortcuts leave typing, native controls, modifier keys and text composition alone; they do not run on public profiles or other pages.
 - Responsive UI for desktop and mobile
 - Firefox/browser extension companion for saving the current tab quickly
 - Share target for the installed web app: on Android Chrome (and other browsers that support Web Share Target), installing Tagstash adds it to the system share sheet; sharing a link opens the add form with its URL and title filled in, plus the page's metadata for any missing title or description. Signed-out users are asked to log in first. iOS Safari does not support share targets

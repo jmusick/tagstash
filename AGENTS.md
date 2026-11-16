@@ -408,6 +408,10 @@ Add and edit bookmark fields share URL → Title → Tags → Description → No
 
 After a build, `node scripts/check-polish-layout.mjs` verifies these flows, empty pages, privacy headings, Pricing actions and delayed public route chunks with fixture responses in all three themes. It honors the same Chromium/screenshot environment variables as the other layout checkers, refuses all API writes, and does not run the paused accessibility suite.
 
+## Keyboard shortcuts (issue #53)
+
+Library keyboard shortcuts (issue #53) are opt-out per browser through Settings → Preferences (`tagstash-keyboard-shortcuts` in localStorage). `src/utils/keyboardShortcuts.js` owns the key/action catalog, storage helpers and event guards; `KeyboardShortcutList` shares the visible list between Preferences and the library's help disclosure. Only the owner's `BookmarkBrowser` receives the `keyboardShortcuts` prop: `/` focuses search, `n` opens the existing add form without toggling or clearing it, and `?` opens and focuses help. Ignore editable/interactive targets, modifiers (except Shift for `?`), repeat, prevented events and IME composition. Keep the add action behind the same free-limit guard as the button. After building, `node scripts/check-keyboard-shortcuts.mjs` checks real key behavior, preference persistence, route scope and the plan limit with fixture responses in all themes; it does not run the paused accessibility audit.
+
 ## Settings navigation (issue #205)
 
 `Settings.jsx` opens on Preferences, with sections grouped by Library, Account, Sharing & API, Billing, optional Administration (super admin only), and a separate Danger zone. `src/content/settingsNavigation.js` owns the labels and stable section IDs. Navigation uses ordinary links and Tab/Enter, with `aria-current` on the selected link; below 800px the groups live in a collapsed disclosure. Selecting a section closes that menu and focuses the visible section heading. Section state is keyed by ID, so leaving a section clears its forms, notices and revealed API key.

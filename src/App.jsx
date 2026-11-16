@@ -5,6 +5,7 @@ import './App.css'
 import { useAuth } from './context/AuthContext'
 import Home from './components/Home'
 import BookmarkBrowser from './components/BookmarkBrowser'
+import { readShortcutsEnabled, saveShortcutsEnabled } from './utils/keyboardShortcuts'
 import AppHeader from './components/AppHeader'
 import AppFooter from './components/AppFooter'
 import RouteAnnouncer from './components/RouteAnnouncer'
@@ -104,6 +105,11 @@ function App() {
   const { user, loading: authLoading, logout } = useAuth()
   const [theme, setTheme] = useState(getInitialTheme)
   const [linkTarget, setLinkTarget] = useState(getInitialLinkTarget)
+  const [shortcutsEnabled, setShortcutsEnabled] = useState(readShortcutsEnabled)
+  const selectShortcutsEnabled = (enabled) => {
+    setShortcutsEnabled(enabled)
+    saveShortcutsEnabled(enabled)
+  }
   // Links inside a note open the way bookmark links do (BookmarkNote adds its own rel).
   const noteLinkProps = useMemo(() => linkTargetProps(linkTarget), [linkTarget])
   const [bookmarks, setBookmarks] = useState([])
@@ -1145,6 +1151,8 @@ function App() {
                       onImportComplete={fetchBookmarks}
                       linkTarget={linkTarget}
                       onSelectLinkTarget={selectLinkTarget}
+                      shortcutsEnabled={shortcutsEnabled}
+                      onSelectShortcutsEnabled={selectShortcutsEnabled}
                     />
                   </div>
                 </main>
@@ -1268,6 +1276,14 @@ function App() {
                     focusBookmarkId={focusBookmarkId}
                     onClearFocus={handleCancelEdit}
                     bulkActions={bulkActions}
+                    keyboardShortcuts={{
+                      enabled: shortcutsEnabled,
+                      addDisabled: isFreeLimitReached && !showAddForm,
+                      onAdd: () => {
+                        setShowAddForm(true)
+                        setTimeout(() => addFormHeadingRef.current?.focus(), 0)
+                      },
+                    }}
                     toolbarExtra={(
             <>
               <button
@@ -1298,6 +1314,7 @@ function App() {
                 disabled={isFreeLimitReached && !showAddForm}
                 aria-expanded={showAddForm}
                 aria-controls="add-bookmark-form"
+                aria-keyshortcuts={shortcutsEnabled ? 'n' : undefined}
               >
                 {!showAddForm && <Plus size={16} className="btn-icon" />}
                 <span>{showAddForm ? 'Cancel' : 'Add bookmark'}</span>

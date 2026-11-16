@@ -15,6 +15,7 @@ import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../utils
 import { profileFeedUrl } from '../utils/profileFeed';
 import { SETTINGS_GROUPS, settingsSection } from '../content/settingsNavigation';
 import './Settings.css';
+import KeyboardShortcutList from './KeyboardShortcutList';
 
 function Settings(props) {
   const { user } = useAuth();
@@ -34,6 +35,8 @@ function SettingsContent({
   onImportComplete,
   linkTarget = DEFAULT_LINK_TARGET,
   onSelectLinkTarget,
+  shortcutsEnabled = true,
+  onSelectShortcutsEnabled,
 }) {
   useDocumentMeta({ title: 'Settings - Tagstash', path: '/settings', noindex: true, enabled: pageMode });
 
@@ -997,6 +1000,15 @@ function SettingsContent({
                   <span>{LINK_TARGET_LABELS[option]}</span>
                 </label>
               ))}
+            </div>
+            <div>
+              <strong>Keyboard shortcuts</strong>
+              <p>Available in your library when you are not typing or using a control. This preference is saved in this browser.</p>
+              <label className="toggle-row">
+                <input type="checkbox" checked={shortcutsEnabled} onChange={(event) => onSelectShortcutsEnabled?.(event.target.checked)} />
+                <span>Enable keyboard shortcuts</span>
+              </label>
+              <KeyboardShortcutList />
             </div>
           </div>
         )}

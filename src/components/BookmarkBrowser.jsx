@@ -8,6 +8,9 @@ import { BookmarkTagList } from './BookmarkParts'
 import { displayUrl, formatSavedDate } from '../utils/bookmarkDisplay'
 import { hasNoTags, countUntagged, hasNote, countWithNotes, isFavoriteBookmark, countFavorites, getBookmarkDomain, countDomains, getCreatedMonth, countCreatedMonths, formatCreatedMonth } from '../utils/bookmarkFilters'
 import { parseSearchQuery, matchesSearchQuery } from '../utils/searchQuery'
+import { libraryShortcutAction } from '../utils/keyboardShortcuts'
+import KeyboardShortcutList from './KeyboardShortcutList'
+import { Link } from 'react-router-dom'
 
 // Honor the OS "reduce motion" setting for script-driven scrolling; CSS
 // scroll-behavior is already neutralised in index.css, but an explicit
@@ -57,6 +60,7 @@ function BookmarkBrowser({
   showDomainFilter = false,
   showDateFilter = false,
   toolbarExtra,
+  keyboardShortcuts,
   renderCard,
   emptyStateMessage = 'No bookmarks yet. Add your first one to get started!',
   initialSelectedTags,
@@ -68,6 +72,24 @@ function BookmarkBrowser({
 }) {
   const [filtersExpanded, setFiltersExpanded] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const searchInputRef = useRef(null)
+  const shortcutsHelpRef = useRef(null)
+
+  useEffect(() => {
+    if (!keyboardShortcuts?.enabled) return
+    const handleKeyDown = (event) => {
+      const action = libraryShortcutAction(event)
+      if (action === 'search') searchInputRef.current?.focus()
+      else if (action === 'help') {
+        shortcutsHelpRef.current.open = true
+        shortcutsHelpRef.current.querySelector('summary').focus()
+      } else if (action === 'add' && !keyboardShortcuts.addDisabled) keyboardShortcuts.onAdd()
+      else return
+      event.preventDefault()
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [keyboardShortcuts])
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [showUntaggedOnly, setShowUntaggedOnly] = useState(false)
   const [showNoteOnly, setShowNoteOnly] = useState(false)
@@ -385,6 +407,7 @@ function BookmarkBrowser({
                 <span className="search-filter-chip">{activeFilterChipLabel}</span>
               )}
               <input
+                ref={searchInputRef}
                 type="text"
                 value={searchTerm}
                 onChange={(e) => {
@@ -393,6 +416,7 @@ function BookmarkBrowser({
                 }}
                 placeholder={activeFilterChipLabel ? '' : 'Search titles, links, notes and tags'}
                 aria-label="Search bookmarks"
+                aria-keyshortcuts={keyboardShortcuts?.enabled ? '/' : undefined}
               />
               {showFavoritesFilter && (
                 <button
@@ -452,6 +476,13 @@ function BookmarkBrowser({
               <li><code>match:OR</code> finds bookmarks with any of the terms instead of all.</li>
             </ul>
           </details>
+          {keyboardShortcuts && (
+            <details className="search-tips" ref={shortcutsHelpRef}>
+              <summary>Keyboard shortcuts{!keyboardShortcuts.enabled && ' (disabled)'}</summary>
+              <KeyboardShortcutList />
+              <p>Available in your library when you are not typing or using a control. <Link to="/settings?tab=preferences">Enable or disable shortcuts in Preferences</Link>.</p>
+            </details>
+          )}
         </div>
 
         <aside className={`sidebar browser-filters ${filtersExpanded ? 'is-expanded' : ''}`} aria-label="Bookmark filters">

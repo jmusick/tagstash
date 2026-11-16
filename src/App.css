@@ -747,6 +747,12 @@
   overflow-wrap: anywhere;
 }
 
+.keyboard-shortcut-list kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
 .search-tips code {
   padding: 0.05rem 0.3rem;
   border-radius: 4px;
