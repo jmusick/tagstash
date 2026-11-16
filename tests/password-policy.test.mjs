@@ -153,9 +153,85 @@ test('grandfathered passwords of any length still sign in and still confirm sens
   } finally { env.sqlite.close(); }
 });
 
+test('proved over-72-byte logins recommend a password change for web and bearer sessions', async () => {
+  const env = await createAuthEnv();
+  const webHeaders = { Origin: 'https://tagsta.sh', 'X-Tagstash-Client': 'web' };
+  try {
+    for (const password of ['a'.repeat(72), 'a'.repeat(73), 'é'.repeat(36), 'é'.repeat(37), `${'a'.repeat(69)}😀`]) {
+      env.sqlite.prepare('UPDATE users SET password_hash = ? WHERE id = 1').run(await bcrypt.hash(password, 4));
+      for (const headers of [{}, webHeaders]) {
+        const response = await call(env, 'auth/login', {
+          method: 'POST', headers, body: { email: 'session@example.com', password },
+        });
+        assert.equal(response.status, 200);
+        const data = await response.json();
+        const expected = bytes(password) > 72;
+        assert.equal(data.user.password_change_recommended, expected);
+        const sessionHeaders = headers === webHeaders
+          ? { ...webHeaders, Cookie: response.headers.get('Set-Cookie').split(';')[0] }
+          : { Authorization: `Bearer ${data.token}` };
+        const restored = await call(env, 'auth/me', { headers: sessionHeaders });
+        assert.equal(restored.status, 200);
+        assert.equal((await restored.json()).user.password_change_recommended, expected, 'advisory survives session restoration');
+      }
+    }
+    const refused = await call(env, 'auth/login', {
+      method: 'POST', body: { email: 'session@example.com', password: 'wrong'.repeat(30) },
+    });
+    assert.equal(refused.status, 401);
+    assert.deepEqual(await refused.json(), { error: 'Invalid email or password' });
+
+    // A bcrypt hash cannot identify a long original password when only its 72-byte prefix
+    // is supplied. Keep this compatibility limitation explicit rather than claiming detection.
+    env.sqlite.prepare('UPDATE users SET password_hash = ? WHERE id = 1').run(await bcrypt.hash(`${'a'.repeat(72)}original ending`, 4));
+    const prefix = await call(env, 'auth/login', {
+      method: 'POST', body: { email: 'session@example.com', password: 'a'.repeat(72) },
+    });
+    assert.equal(prefix.status, 200);
+    assert.equal((await prefix.json()).user.password_change_recommended, false);
+    const changedEnding = await call(env, 'auth/login', {
+      method: 'POST', body: { email: 'session@example.com', password: `${'a'.repeat(72)}different ending` },
+    });
+    assert.equal(changedEnding.status, 200);
+    assert.equal((await changedEnding.json()).user.password_change_recommended, true);
+  } finally { env.sqlite.close(); }
+});
+
+test('password-change advisory survives session upgrade and refused changes, then clears on success', async () => {
+  const env = await createAuthEnv();
+  const password = 'legacy'.repeat(20);
+  const webHeaders = { Origin: 'https://tagsta.sh', 'X-Tagstash-Client': 'web' };
+  try {
+    env.sqlite.prepare('UPDATE users SET password_hash = ? WHERE id = 1').run(await bcrypt.hash(password, 4));
+    const login = await call(env, 'auth/login', { method: 'POST', body: { email: 'session@example.com', password } });
+    const { token } = await login.json();
+    const upgraded = await call(env, 'auth/session', {
+      method: 'POST', headers: { ...webHeaders, Authorization: `Bearer ${token}` },
+    });
+    assert.equal(upgraded.status, 200);
+    const headers = { ...webHeaders, Cookie: upgraded.headers.get('Set-Cookie').split(';')[0] };
+    const me = async (sessionHeaders) => (await (await call(env, 'auth/me', { headers: sessionHeaders })).json()).user;
+    assert.equal((await me(headers)).password_change_recommended, true);
+
+    const change = (newPassword) => call(env, 'auth/password', {
+      method: 'PUT', headers, body: { currentPassword: password, newPassword, confirmPassword: newPassword },
+    });
+    assert.equal((await change('short')).status, 400);
+    assert.equal((await me(headers)).password_change_recommended, true, 'refused change keeps advisory');
+    const changed = await change('replacement-passphrase');
+    assert.equal(changed.status, 200);
+    const replacementHeaders = { ...webHeaders, Cookie: changed.headers.get('Set-Cookie').split(';')[0] };
+    assert.equal((await me(replacementHeaders)).password_change_recommended, false, 'replacement session clears advisory');
+    const fresh = await call(env, 'auth/login', { method: 'POST', body: { email: 'session@example.com', password: 'replacement-passphrase' } });
+    assert.equal((await fresh.json()).user.password_change_recommended, false);
+    assert.equal((await call(env, 'auth/me', { headers })).status, 403, 'old web session is revoked');
+    assert.equal((await call(env, 'auth/me', { headers: { Authorization: `Bearer ${token}` } })).status, 403, 'old bearer is revoked');
+  } finally { env.sqlite.close(); }
+});
+
 test('the API enforces the same length policy module the web forms import', async () => {
   const source = await readFile(new URL('../functions/api/[[path]].js', import.meta.url), 'utf8');
-  assert.match(source, /import \{ newPasswordError \} from '\.\.\/\.\.\/src\/utils\/passwordPolicy\.js';/);
+  assert.match(source, /import \{ newPasswordError, utf8ByteLength \} from '\.\.\/\.\.\/src\/utils\/passwordPolicy\.js';/);
   assert.match(source, /const passwordPolicyError = newPasswordError;/);
   for (const setter of ['register', 'password', 'reset-password']) {
     assert.ok(source.includes(`segments[1] === '${setter}'`), setter);

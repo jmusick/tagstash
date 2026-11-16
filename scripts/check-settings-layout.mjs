@@ -28,13 +28,23 @@ try {
     let admin = false
     let keyReads = 0
     let billingReads = 0
+    let passwordChangeRecommended = false
+    let passwordAttempts = 0
     const user = () => ({ id: 1, username: 'settingsfixture', email: 'fixture@example.test', theme,
-      role: admin ? 'super_admin' : 'user', membership_tier: 'free', email_verified: 1 })
+      role: admin ? 'super_admin' : 'user', membership_tier: 'free', email_verified: 1,
+      password_change_recommended: passwordChangeRecommended })
     page.on('pageerror', (error) => errors.push(error.message))
     await page.route('**/*', async (route) => {
       const url = new URL(route.request().url())
       if (url.origin !== new URL(origin).origin) return route.abort()
       if (!url.pathname.startsWith('/api/')) return route.continue()
+      if (url.pathname === '/api/auth/password' && route.request().method() === 'PUT') {
+        // Fixture responses only: exercise refused/successful changes without touching an account.
+        passwordAttempts++
+        if (passwordAttempts === 1) return route.fulfill({ status: 401, json: { error: 'Incorrect current password' } })
+        passwordChangeRecommended = false
+        return route.fulfill({ json: { message: 'Password updated successfully' } })
+      }
       assert.equal(route.request().method(), 'GET', 'Settings navigation must never mutate account data')
       if (url.pathname === '/api/auth/api-keys') keyReads++
       if (url.pathname === '/api/billing/status') billingReads++
@@ -122,6 +132,35 @@ try {
     await heading.filter({ hasText: 'Admin' }).waitFor()
     await openMenu()
     assert.equal(await nav.getByRole('link', { name: 'Admin', exact: true }).count(), 1)
+    admin = false
+    passwordChangeRecommended = true
+    await page.goto(new URL('/', origin).href)
+    const advisory = page.locator('.password-change-notice')
+    await advisory.waitFor()
+    await page.reload()
+    await advisory.waitFor()
+    assert.match(await advisory.textContent(), /Only its first 72 bytes are checked/)
+    assert.equal(await advisory.getAttribute('role'), 'status')
+    for (const width of [320, 1440]) {
+      await page.setViewportSize({ width, height: 1000 })
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Advisory fits at ${width}px`)
+    }
+    await advisory.getByRole('link', { name: 'Choose a new password' }).click()
+    await heading.filter({ hasText: 'Password' }).waitFor()
+    if (screenshotDir) await page.screenshot({ path: join(screenshotDir, `${theme}-password-advisory.png`) })
+    await page.locator('#current-password').fill('legacy-password-fixture')
+    await page.locator('#new-password').fill('replacement-password-fixture')
+    await page.locator('#confirm-password').fill('replacement-password-fixture')
+    await page.getByRole('button', { name: 'Update Password', exact: true }).click()
+    await page.getByText('Incorrect current password', { exact: true }).waitFor()
+    assert.equal(await advisory.isVisible(), true, 'A refused change keeps the advisory')
+    await page.getByRole('button', { name: 'Update Password', exact: true }).click()
+    await page.getByText('Password updated successfully!', { exact: true }).waitFor()
+    assert.equal(await advisory.count(), 0, 'A successful change clears the advisory')
+    await page.reload()
+    await heading.filter({ hasText: 'Password' }).waitFor()
+    assert.equal(await advisory.count(), 0, 'The replacement session has no advisory')
+    assert.equal(passwordAttempts, 2)
     assert.deepEqual(errors, [])
     await context.close()
     console.log(`${theme}: settings groups, deep links, history, keyboard, mobile and admin checks passed`)

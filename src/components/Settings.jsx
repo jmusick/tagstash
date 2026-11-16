@@ -599,6 +599,7 @@ function SettingsContent({
         passwordForm.newPassword,
         passwordForm.confirmPassword
       );
+      updateUser({ ...user, password_change_recommended: false });
       setSuccess('Password updated successfully!');
       setPasswordForm({
         currentPassword: '',

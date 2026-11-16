@@ -1097,6 +1097,14 @@ function App() {
     <>
     <a className="skip-link" href="#main">Skip to content</a>
     <RouteAnnouncer />
+    {user?.password_change_recommended && (
+      <div className="password-change-notice" role="status">
+        <strong>Please update your password.</strong>{' '}
+        Your sign-in password exceeds an older security limit. Only its first 72 bytes are checked,
+        so a different ending also works.{' '}
+        <Link to="/settings?tab=password">Choose a new password</Link> to protect the whole password.
+      </div>
+    )}
     <Suspense fallback={<RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />}>
       <Routes>
         <Route

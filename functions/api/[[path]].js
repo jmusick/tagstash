@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { SignJWT, jwtVerify } from 'jose';
 import { findVisibleProfile, getProfileSchema, isProfileIndexable, publicBookmarkCondition } from '../_lib/profileVisibility.js';
 import { FEED_MAX_TAG_LENGTH, profileFeedCacheKey } from '../_lib/profileFeed.js';
-import { newPasswordError } from '../../src/utils/passwordPolicy.js';
+import { newPasswordError, utf8ByteLength } from '../../src/utils/passwordPolicy.js';
 import { newUsernameError } from '../../src/utils/usernamePolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
@@ -1175,6 +1175,7 @@ const requireAuth = async (request, env, { allowApiKey = false } = {}) => {
       username: dbUser.username,
       role: dbUser.role,
       membershipTier: dbUser.membership_tier,
+      password_change_recommended: payload?.passwordChangeRecommended === true,
     },
   };
 };
@@ -1191,6 +1192,9 @@ const signUserToken = async (user, env, request) => {
     role: user.role,
     membershipTier: user.membership_tier,
     tv: Number(versionRow?.token_version || 0),
+    // Advisory only: remember a proved over-limit login for this session, without storing
+    // password material or inferring anything about other accounts from their bcrypt hashes.
+    ...(user.password_change_recommended === true ? { passwordChangeRecommended: true } : {}),
     ...(request && isWebClient(request) ? { session: 'web' } : {}),
   })
     .setProtectedHeader({ alg: 'HS256' })
@@ -3574,6 +3578,7 @@ async function handleAuth(request, env, segments, context = {}) {
       await updateQuery.bind(user.id).run();
     }
 
+    user.password_change_recommended = utf8ByteLength(password) > INPUT_LIMITS.passwordMaxBytes;
     const token = await signUserToken(user, env, request);
 
     return sessionResponse(request, {
@@ -3589,6 +3594,7 @@ async function handleAuth(request, env, segments, context = {}) {
         profile_public: Number(user.profile_public || 0),
         theme: user.theme || null,
         link_target: user.link_target || null,
+        password_change_recommended: user.password_change_recommended,
       },
     });
   }
@@ -3855,6 +3861,7 @@ async function handleAuth(request, env, segments, context = {}) {
     user.profile_public = Number(user.profile_public || 0);
     // Lets Settings explain why the public-profile toggle is locked. False before migration 0016.
     user.suspended = await isUserSuspended(db, auth.user.id);
+    user.password_change_recommended = auth.user.password_change_recommended;
 
     await ensureUserRoleMatchesConfig(db, user, env);
     return jsonResponse({ user });
@@ -4041,7 +4048,7 @@ async function handleAuth(request, env, segments, context = {}) {
     ]);
 
     // Sign out every other session (including a stolen token), but keep this one alive.
-    const token = await signUserToken(auth.user, env, request);
+    const token = await signUserToken({ ...auth.user, password_change_recommended: false }, env, request);
 
     return sessionResponse(request, { message: 'Password updated successfully', token });
   }
