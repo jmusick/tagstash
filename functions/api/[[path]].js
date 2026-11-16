@@ -4742,6 +4742,9 @@ async function handleBookmarks(request, env, segments, context = {}) {
   // Keep this read-only route before the library's opportunistic trash purge.
   // Authentication still runs first; all recommendation input precedes library queries.
   if (request.method === 'POST' && segments.length === 2 && segments[1] === 'suggest-tags') {
+    if (!isPaidTier(auth.user.membershipTier)) {
+      return jsonResponse({ error: 'AI tag suggestions require an active Pro plan.', upgradeRequired: true }, 403);
+    }
     const body = await parseBody(request);
     const { url, title = '', description = '', selectedTags = [] } = body;
     if (Object.keys(body).some(key => !['url', 'title', 'description', 'selectedTags'].includes(key))) {

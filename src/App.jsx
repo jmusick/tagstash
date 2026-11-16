@@ -44,6 +44,7 @@ import { downloadBookmarks } from './utils/downloadBookmarks'
 import { BookmarkTagList } from './components/BookmarkParts'
 import BookmarkNote from './components/BookmarkNote'
 import LibraryPlanMeter from './components/LibraryPlanMeter'
+import TagRecommendations from './components/TagRecommendations'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
 import { SHARE_TARGET_PATH, peekSharedLink, clearSharedLink } from './utils/shareTarget'
@@ -369,6 +370,24 @@ function App() {
 
   const addTagSuggestion = getSuggestedTag(tagDraft, parseTags(formData.tags))
   const editTagSuggestion = getSuggestedTag(editTagDraft, parseTags(editFormData.tags))
+
+  const renderTagRecommendations = (data, draft, bookmarkId) => {
+    const { tags, error: validationError } = buildTagList(data.tags, draft)
+    return <TagRecommendations key={JSON.stringify([user?.id, pathname, bookmarkId])}
+      input={{ url: normalizeBookmarkUrl(data.url), title: data.title, description: data.description, selectedTags: tags }}
+      draftKey={JSON.stringify([data.url, data.tags, draft])} validationError={validationError} paid={isPaidMember}
+      onAccept={(name) => {
+        const next = buildTagList(data.tags, [draft, name].filter(Boolean).join(','))
+        if (next.error) { setError(next.error); return }
+        if (bookmarkId === 'add') {
+          setFormData(prev => ({ ...prev, tags: joinTags(next.tags) }))
+          setTagDraft('')
+        } else {
+          setEditFormData(prev => ({ ...prev, tags: joinTags(next.tags) }))
+          setEditTagDraft('')
+        }
+      }} />
+  }
 
   const handleAddTagDraftKeyDown = (e) => {
     if (e.key === 'Tab') {
@@ -982,6 +1001,7 @@ function App() {
                 </div>
               )}
               <small id={`edit-tags-hint-${bookmark.id}`}>Press Comma or Space to lock in a new tag &middot; Enter to save</small>
+              {renderTagRecommendations(editFormData, editTagDraft, bookmark.id)}
             </div>
             <div className="form-group">
               <div className="field-header">
@@ -1454,6 +1474,7 @@ function App() {
                     </div>
                   )}
                   <small id="tags-hint">Press Comma or Space to lock in a new tag &middot; Enter to save</small>
+                  {renderTagRecommendations(formData, tagDraft, 'add')}
                 </div>
                 <div className="form-group">
                   <div className="field-header">

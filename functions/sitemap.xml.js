@@ -9,8 +9,8 @@ const STATIC_PATHS = [
   { path: '/', lastmod: '2026-10-26' },
   { path: '/features', lastmod: FEATURES_UPDATED },
   { path: '/pricing', lastmod: PRICING_UPDATED },
-  { path: '/developers', lastmod: '2026-10-25' },
-  { path: '/privacy', lastmod: '2026-11-05' },
+  { path: '/developers', lastmod: '2026-11-15' },
+  { path: '/privacy', lastmod: '2026-11-15' },
   { path: '/support', lastmod: '2026-08-17' },
 ];
 

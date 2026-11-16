@@ -445,6 +445,18 @@ Never retry automatically or log provider messages, causes, prompts or tag lists
 The default evaluation and all tests are mocked; `--live` explicitly sends only
 synthetic fixtures and consumes remote account usage, including in local dev.
 
+The website add/edit forms use `TagRecommendations.jsx` (#149). Requests require an
+explicit click and Pro (`paid`); `handleBookmarks` enforces the current tier for
+cookies, bearer sessions and API keys before any library query or inference. Free
+accounts get 403 `upgradeRequired: true`. The owner chose this entitlement; manual
+tagging remains on both plans. Pricing describes suggestions as awaiting rollout.
+Keep the feature switch disabled until #150 is complete. Form results live only
+in component state, reset on input changes, and are keyed by account/route/bookmark.
+`node scripts/check-tag-recommendations.mjs` uses fixtures to check races, tag
+acceptance, failures and plan controls in all themes after building. The paused
+accessibility suite also includes mocked recommendation states; do not resume it
+without a user request.
+
 ## Dependency installs
 
 Use `npm ci` on a clean checkout. `.npmrc` sets a 7-day `min-release-age` and `strict-allow-scripts`; `package.json` `allowScripts` denies esbuild/workerd install scripts (not needed). These need npm 11.19+; Cloudflare Pages runs npm 10.9.2, which ignores them and installs from the lockfile. A new dependency with an install script fails the install until reviewed. Workflow and bypass procedure: `docs/supply-chain.md`.

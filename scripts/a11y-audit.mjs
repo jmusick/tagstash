@@ -65,6 +65,7 @@ import { API_DOC_ROUTES } from '../src/content/developersApi.js'
 import { DEVELOPERS_META, PRICING_META } from '../src/utils/pageMeta.js'
 import { duplicateStates } from './a11y-duplicates.mjs'
 import { noteStates } from './a11y-notes.mjs'
+import { tagRecommendationStates } from './a11y-tag-recommendations.mjs'
 
 const require = createRequire(import.meta.url)
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -950,6 +951,7 @@ async function owner(browser, theme) {
   await trashStates(page, scan, setBulk)
   await duplicateStates(page, scan, go)
   await noteStates(page, scan, go)
+  await tagRecommendationStates(page, scan, go)
 
   // Reset Library (its idle form is scanned with the other tabs above). The reset request is
   // intercepted, so the seeded owner's library is never wiped.

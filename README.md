@@ -70,7 +70,11 @@ That hosted service is the official paid offering run by Stone Dragon Media LLC.
 
 The tag recommendation API is documented in
 [docs/tag-recommendations.md](docs/tag-recommendations.md). Workers AI is configured
-with recommendations disabled until client controls and disclosure are ready.
+with recommendations disabled pending the controlled rollout in #150. Recommendations
+require an active Pro (`paid`) account, enforced for cookies, bearer sessions and API keys.
+The website add and edit forms offer an explicit Suggest tags action with processing
+disclosure. Review and accept suggestions individually; manual tagging and saving stay
+available on both plans. Requests never include bookmark notes, and stale results are discarded.
 `POST /api/bookmarks/suggest-tags` accepts cookie sessions (the web client header
 and trusted origin are required), extension bearer sessions and personal API keys.
 Send JSON `{ "url": "https://example.com/", "title": "Example", "selectedTags": [] }`;

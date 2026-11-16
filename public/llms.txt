@@ -6,6 +6,7 @@
 
 - Free plan: up to 50 bookmarks, no time limit.
 - Pro plan: unlimited bookmarks, $3/month or $36/year (same $3/month rate paid annually).
+- Optional AI tag suggestions are Pro-only and currently awaiting rollout. On an explicit request, Cloudflare AI selects existing tags from the owner's library using the bookmark details. Owners review and accept each suggestion; manual tagging stays available on both plans.
 - Bookmarks are private by default. Users can opt in to a public, tag-filterable profile page, and mark individual bookmarks private even when their profile is public.
 - Browser extensions are available for Chrome and Firefox to save the current tab directly into the library.
 - Import browser HTML (Firefox, Chrome, Safari) or Raindrop, Pocket, Pinboard or Instapaper export files. Export the complete library, including private bookmarks, as HTML, CSV, or JSON from Settings → Import / Export.

@@ -1,7 +1,7 @@
 // Pricing copy for /pricing and the schema.org offers on / and /pricing. Keep it in
 // step with FREE_BOOKMARK_LIMIT and the Stripe prices; it must neither promise nor
 // deny refunds until the refund policy (#115) is decided.
-export const PRICING_UPDATED = '2026-10-26'
+export const PRICING_UPDATED = '2026-11-15'
 
 export const PRICING_OFFERS = [
   { '@type': 'Offer', name: 'Free', price: '0', priceCurrency: 'USD', description: 'Up to 50 bookmarks, no time limit.' },

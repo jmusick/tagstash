@@ -163,9 +163,14 @@ and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/f
 
 `wrangler.toml` now declares `[ai] binding = "AI"` and the text variable
 `TAG_RECOMMENDATIONS_ENABLED = "false"`. The authenticated
-`POST /api/bookmarks/suggest-tags` route exists but returns 503 while disabled.
-Keep the switch false until #149 and #150 deliver client controls and
-disclosure/rollout verification. No migration is required. Burst and daily request
+`POST /api/bookmarks/suggest-tags` requires an active Pro (`paid`) account for
+cookie sessions, bearer sessions and personal API keys. Free accounts receive
+403 with `upgradeRequired: true` before candidate queries, budget events or inference;
+Pro accounts receive 503 while disabled. The website add/edit controls and processing
+disclosure are implemented (#149). Keep the switch false until #150 completes
+rollout verification, including the current Cloudflare processing terms. Pricing
+describes the Pro entitlement and pending rollout; no billing configuration changes
+are required. No migration is required. Burst and daily request
 budgets default to 10 per 10 minutes and 100 per day; override with text variables
 `TAG_RECOMMENDATIONS_BURST_LIMIT` and `TAG_RECOMMENDATIONS_DAILY_LIMIT` (positive
 integers up to 10000; invalid values return 503). Counters are per account across

@@ -125,6 +125,9 @@ export const bookmarksAPI = {
   fetchMetadata: (url) =>
     api.post('/bookmarks/meta', { url }),
 
+  suggestTags: (input) =>
+    api.post('/bookmarks/suggest-tags', input),
+
   fetchDescription: (url) =>
     api.post('/bookmarks/meta-description', { url }),
   

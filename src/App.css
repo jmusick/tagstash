@@ -1403,6 +1403,21 @@ a.btn-field-action,
   font-weight: 700;
 }
 
+.tag-recommendations {
+  margin-top: 0.75rem;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.tag-recommendations small {
+  display: block;
+  margin-top: 0.4rem;
+}
+
+.tag-recommendations p { margin: 0.4rem 0; }
+.tag-recommendations [aria-disabled='true'] { cursor: default; }
+.tag-recommendation-list { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+
 .form-actions {
   display: flex;
   gap: 1rem;

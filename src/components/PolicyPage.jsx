@@ -12,7 +12,7 @@ function PolicyPage({ logoSrc, theme, onSelectTheme, signedIn = false, onBack })
 
       <main id="main" tabIndex={-1} className="privacy-content">
         <h1>Privacy Policy</h1>
-        <p className="privacy-effective">Effective date: November 5, 2026</p>
+        <p className="privacy-effective">Effective date: November 15, 2026</p>
 
         <section>
           <h2>Overview</h2>
@@ -80,6 +80,14 @@ function PolicyPage({ logoSrc, theme, onSelectTheme, signedIn = false, onBack })
           <h2>Third-Party Services</h2>
           <p>We rely on a small number of third-party services to operate Tagstash:</p>
           <ul>
+            <li>
+              <strong>Cloudflare Workers AI</strong> processes optional Pro tag suggestions
+              only when you click Suggest tags and the feature is enabled. We send bounded
+              portions of the current bookmark URL, title and description, plus candidate
+              tag names from your library, including tags used on private bookmarks.
+              Notes and account identifiers are excluded. Suggestions do not save changes
+              or make private bookmarks public; you choose which tags to add.
+            </li>
             <li>
               <strong>Stripe</strong> processes payments and manages subscriptions for Pro
               accounts. Your email and username are shared with Stripe to associate your

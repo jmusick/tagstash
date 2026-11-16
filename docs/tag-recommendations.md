@@ -85,6 +85,10 @@ lengths are checked before projection. `selectedTags` accepts at most 50 entries
 before de-duplication, each a nonblank single-word string of at most 100 UTF-16
 units, preserving legacy casing. Cookie sessions require the web header and
 trusted origin; extension bearer sessions and personal API keys also work.
+Recommendations require an active Pro (`membership_tier = 'paid'`) account;
+all other tiers get 403 with `upgradeRequired: true`, before library queries,
+budget events or inference. This applies to cookie sessions, bearer sessions and
+personal API keys; authentication re-reads the current tier on every request.
 Authentication and the API no-store/security headers use the existing dispatcher.
 Do not pass
 notes, cookies, authorization headers, user identifiers or other fields to AI.

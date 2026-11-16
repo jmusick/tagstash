@@ -3,18 +3,20 @@ import assert from 'node:assert/strict';
 import { createAuthEnv } from './helpers/auth-env.mjs';
 import { call, loginHeaders } from './helpers/api.mjs';
 import { TAG_RECOMMENDATION_LIMITS } from '../functions/_lib/tagRecommendations.js';
+import { createHash } from 'node:crypto';
 
 const path = 'bookmarks/suggest-tags';
 const body = { url: 'https://example.test/react', title: 'React performance' };
 async function setup(t) {
   const env = await createAuthEnv();
   t.after(() => env.sqlite.close());
+  env.sqlite.exec("UPDATE users SET membership_tier = 'paid'");
   env.TAG_RECOMMENDATIONS_ENABLED = 'true';
   env.AI = { run: async () => ({ response: { suggestions: ['React', 'shared', 'foreign', 'trashed'] } }) };
   const headers = await loginHeaders(env);
   env.sqlite.exec(`
-    INSERT INTO users (id, username, email, password_hash, email_verified)
-      SELECT 2, 'other', 'other@example.test', password_hash, 1 FROM users WHERE id = 1;
+    INSERT INTO users (id, username, email, password_hash, email_verified, membership_tier)
+      SELECT 2, 'other', 'other@example.test', password_hash, 1, 'paid' FROM users WHERE id = 1;
     INSERT INTO bookmarks (id, user_id, title, url, is_private, deleted_at) VALUES
       (1, 1, 'Private', 'https://example.test/private', 1, NULL),
       (2, 1, 'Public', 'https://example.test/public', 0, NULL),
@@ -31,6 +33,33 @@ const assertHeaders = response => {
   assert.equal(response.headers.get('X-Frame-Options'), 'DENY');
   assert.match(response.headers.get('Content-Security-Policy'), /default-src 'none'/);
 };
+
+test('Pro entitlement uses the current account tier for cookies, sessions and keys', async t => {
+  const { env, request, headers } = await setup(t);
+  const key = `tsk_${'b1'.repeat(24)}`;
+  env.sqlite.prepare("INSERT INTO api_keys (user_id, name, key_hash, key_prefix, key_last4) VALUES (1, ?, ?, 'tsk_b1b1', 'b1b1')")
+    .run('Entitlement check', createHash('sha256').update(key).digest('hex'));
+  const web = { 'X-Tagstash-Client': 'web', Origin: 'https://tagsta.sh' };
+  const login = await call(env, 'auth/login', { method: 'POST', headers: web,
+    body: { email: 'session@example.com', password: env.password } });
+  const Cookie = login.headers.get('Set-Cookie').split(';')[0];
+  const credentials = [headers, { ...web, Cookie }, { Authorization: `Bearer ${key}` }];
+  for (const h of credentials) assert.equal((await request(body, h)).status, 200);
+  env.sqlite.exec("UPDATE users SET membership_tier = 'free' WHERE id = 1; DELETE FROM auth_events WHERE event_type = 'tag_suggestion'");
+  env.AI.run = () => assert.fail('Free accounts must not reach inference');
+  const prepare = env.DB.prepare;
+  env.DB.prepare = sql => {
+    assert.doesNotMatch(sql, /(?:FROM|JOIN) (?:bookmarks|tags)\b|table_info\(bookmarks\)/i);
+    return prepare(sql);
+  };
+  for (const h of credentials) {
+    const response = await request(body, h);
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).upgradeRequired, true);
+    assertHeaders(response);
+  }
+  assert.equal(env.sqlite.prepare("SELECT COUNT(*) AS n FROM auth_events WHERE event_type = 'tag_suggestion'").get().n, 0);
+});
 
 test('owner-only candidates include private tags, preserve names, and never mutate library rows', async t => {
   const { env, request } = await setup(t);

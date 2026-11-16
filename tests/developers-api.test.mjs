@@ -32,6 +32,7 @@ const key = `tsk_${'a1'.repeat(24)}`;
 const headers = { Authorization: `Bearer ${key}` };
 async function setup() {
   const env = await createAuthEnv();
+  env.sqlite.exec("UPDATE users SET membership_tier = 'paid'");
   env.TAG_RECOMMENDATIONS_ENABLED = 'true';
   env.AI = { run: async () => ({ response: { suggestions: ['reference'] } }) };
   env.sqlite.prepare(`INSERT INTO api_keys (user_id, name, key_hash, key_prefix, key_last4)
