@@ -116,7 +116,7 @@ export function FeaturesView({ logoSrc = '/logo-dark.png', theme = 'slate', onSe
               <div key={faq.question}><dt>{faq.question}</dt><dd>{faq.answer}</dd></div>
             ))}
           </dl>
-          <p className="features-updated">Feature information updated <time dateTime={FEATURES_UPDATED}>October 26, 2026</time>.</p>
+          <p className="features-updated">Feature information updated <time dateTime={FEATURES_UPDATED}>November 15, 2026</time>.</p>
         </section>
 
         <section className="features-closing" aria-labelledby="features-start-title">

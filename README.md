@@ -95,6 +95,8 @@ React and Pages Functions in `src/content/` to keep crawler and browser content 
 
 Feature demonstrations continuously capture the local interface during real
 interactions, exported as silent looping MP4s in `public/feature-demos/`.
+All 13 clips and their posters were recaptured with Public Sans on November 15,
+2026; `public/og-image.jpg` was also refreshed with the same typeface.
 An animated pointer and click highlight follow the recorded control coordinates.
 Each section loads its selected clip when visible;
 visitors can pause playback, switch clips, open a larger view, or read the text
@@ -114,8 +116,10 @@ captures frames while that tab is driven through the demonstrations. Its `start`
 `action`, `hold`, and `stop` helpers write `recordings.json` in the directory passed
 to `createDemoRecorder(tab, directory)` (use the same working directory), with
 frame timestamps, captions, and click target coordinates. Use `stop` in a `finally`
-block so failures do not leave capture running. Keep the default 1280 × 720 viewport
-and bring each target into view before recording its coordinates.
+block so failures do not leave capture running. Keep a fixed 1280 × 720 viewport
+(use the browser viewport override so opening the browser panel cannot resize it),
+wait for the self-hosted fonts to load, and bring each target into view before
+recording its coordinates.
 
 `node scripts/render-feature-demos.mjs` renders that capture manifest with FFmpeg;
 set `FFMPEG_PATH` to a local executable, or install `ffmpeg-static` in

@@ -10,7 +10,7 @@ export const FEATURE_DEMOS = {
     demo('extensions', 'Browser extensions', 'Find the official Chrome and Firefox install options.', ['Open Settings, then Extensions.', 'Choose the official store listing for your browser.']),
   ],
   find: [
-    demo('find', 'Search & sort', 'Search the details you remember, then choose a useful order.', ['Search packing to find a note about hiking essentials.', 'Search web to match titles, descriptions, and tags.', 'Sort the matching links by title.']),
+    demo('find', 'Search & sort', 'Search the details you remember, then choose a useful order.', ['Search packing to find a description about hiking essentials.', 'Search web to match titles, descriptions, and tags.', 'Open View and sort the matching links by title.']),
     demo('favorites', 'Favorites & Random', 'Return to useful links or rediscover an older bookmark.', ['Stars mark your favorite links.', 'Turn on the favorites filter.', 'Clear the filter and use Random to open a bookmark in edit mode.']),
     demo('themes', 'Three themes', 'The same collection in Slate, Midnight, and Light.', ['Browse in Slate.', 'Choose Midnight from the header.', 'Choose Light. Your selection is saved to your account.']),
     demo('preferences', 'Link preferences', 'Choose where bookmark links open.', ['Open Settings, then Preferences.', 'Select the same tab or a new tab. The extension has its own preference.']),
@@ -22,6 +22,6 @@ export const FEATURE_DEMOS = {
   ],
   move: [
     demo('import', 'Import bookmarks', 'Bring browser exports into your collection.', ['Choose Chrome or Firefox HTML as the import source.', 'Upload your file and preview the bookmarks.', 'Import them with their tags and descriptions.', 'Find the imported links in your library.']),
-    demo('export', 'Export your library', 'Download your links, including private bookmarks.', ['Open Settings, then Import / Export.', 'Download HTML, CSV, or JSON. JSON keeps dates, tags, favorites, and privacy settings.']),
+    demo('export', 'Export your library', 'Download your links, including private bookmarks and notes.', ['Open Settings, then Import / Export.', 'Choose Download JSON to keep dates, tags, favorites, privacy settings, and notes. HTML and CSV are also available.']),
   ],
 }
