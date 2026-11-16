@@ -168,7 +168,9 @@ cookie sessions, bearer sessions and personal API keys. Free accounts receive
 403 with `upgradeRequired: true` before candidate queries, budget events or inference;
 Pro accounts receive 503 while disabled. The website add/edit controls and processing
 disclosure are implemented (#149). Keep the switch false until #150 completes
-rollout verification, including the current Cloudflare processing terms. Pricing
+rollout verification, including the current Cloudflare processing terms; the
+gates, enable steps and rollback are in the staged release checklist in
+[tag-recommendations.md](tag-recommendations.md#staged-release-checklist-150). Pricing
 describes the Pro entitlement and pending rollout; no billing configuration changes
 are required. No migration is required. Burst and daily request
 budgets default to 10 per 10 minutes and 100 per day; override with text variables

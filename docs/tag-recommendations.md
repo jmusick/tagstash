@@ -1,6 +1,8 @@
 # Tag recommendation inference contract (issue #147)
 
-Status: authenticated API implemented, model evaluated November 15, 2026.
+Status: authenticated API (#148) and website controls (#149) released in v1.51.0
+with the switch off; model evaluated November 15, 2026. Rollout gates are in the
+[staged release checklist](#staged-release-checklist-150).
 `TAG_RECOMMENDATIONS_ENABLED` defaults to the
 string `false`; only the exact string `true` enables the adapter. Keep it disabled
 until #149 (explicit controls) and
@@ -212,3 +214,99 @@ before rerunning the Llama baseline after its retirement date.
 For binding setup and local usage, see [deployment.md](deployment.md).
 Cloudflare's [JSON mode guidance](https://developers.cloudflare.com/workers-ai/features/json-mode/)
 also warns that schema compliance can fail; always retain independent validation.
+
+## Staged release checklist (#150)
+
+Tick each gate with its date and evidence. Enable only after every gate before
+"Enable" is ticked. The website may ship before the extension; each extension
+surface has its own gate.
+
+### Current state, checked November 16, 2026
+
+| Item | State |
+| --- | --- |
+| Website | v1.51.0 (`462388d`), Cloudflare Pages check succeeded |
+| Production switch | `TAG_RECOMMENDATIONS_ENABLED = "false"` in `wrangler.toml`; anonymous production request returns 401 |
+| Model | `@cf/ibm-granite/granite-4.0-h-micro`, binding `AI` |
+| Budgets | 10 per 10 minutes, 100 per day (`wrangler.toml` defaults) |
+| Entitlement | Active Pro (`paid`) only, owner decision recorded in #149 |
+| Extension popup (tagstash-extension#10) | Not implemented |
+| Extension edit dialog (tagstash-extension#11) | Not implemented |
+
+### Website-side verification, November 16, 2026
+
+Run on v1.51.0 in local development. No inference was made: the switch stayed
+off, and every enabled-path check uses a fake binding.
+
+Automated, all passing: `npm run lint`; `npm test` (458 tests, including
+`tests/tag-suggestions-api.test.mjs` and `tests/tag-recommendations.test.mjs`);
+`npm run build`; `node scripts/check-tag-recommendations.mjs` (explicit requests,
+deduplication, acceptance, stale responses, errors, saves, Pro controls and narrow
+layout in all three themes); `node scripts/evaluate-tag-recommendations.mjs --mock`.
+
+| Path | Evidence | Result |
+| --- | --- | --- |
+| Cookie session | Unit test, and local `wrangler pages dev` | Pro 503 while disabled; free 403 `upgradeRequired` |
+| Extension bearer session | Unit test, and local runtime | Same as cookie |
+| Personal API key | Unit test | Pro entitlement re-read per request |
+| Untrusted origin, anonymous | Unit test, and local runtime | 403 without CORS; 401 |
+| Account isolation | Unit test (shared global tags, private and trashed bookmarks); local tag list per account | Owner's live tags only |
+| No candidate tags | Unit test | Empty result, no inference |
+| Stale responses | `check-tag-recommendations.mjs` | Discarded after input or bookmark changes |
+| Rate limits | Unit test; local runtime | 429 after budget; 12 disabled requests never spent budget |
+| Provider error, timeout, bad output | Unit test (fake binding) | Sanitized 502 |
+| Missing binding | Unit test | 503 (local dev always has the binding) |
+| Disabled switch | Local runtime, add form in the browser | "Unavailable right now" message; disclosure shown; tag completion and save still work |
+| Invalid payload (`note` field) | Unit test; local runtime | 400 |
+
+### Local enabled check, November 16, 2026
+
+With the switch on in `.dev.vars` only, local `wrangler pages dev` reached Workers AI
+through Wrangler's remote binding proxy. A 3-tag test library answered in 1.1–4.9 s
+(four requests). A real library sending about 100 candidate tags answered once in
+7.1 s, then hit the 10-second deadline (502). This is one account and network, and
+the proxy overhead is unknown. The November 15 direct REST evaluation measured
+0.6–1.1 s. Local dev timings are not production latency, but they make
+large-library latency a release gate.
+
+### Gates before enabling
+
+- [ ] Cloudflare Workers AI processing, retention and training terms checked in
+      official documentation, with dated links recorded here, and the privacy
+      policy wording confirmed against them.
+- [ ] Live synthetic smoke test of the chosen model:
+      `node scripts/evaluate-tag-recommendations.mjs --live`. Record relevance,
+      latency and neurons here, separately from cost assumptions. The token needs
+      Workers AI permission; the email-sending token in `.dev.vars` returns 401.
+- [ ] Production latency with a library of about 100 candidate tags stays well
+      under the 10-second deadline, or the deadline or candidate cap is revisited.
+- [ ] Production Pages bindings show `AI` and the switch still `false` after the
+      v1.51.0 deployment.
+- [ ] Workers AI usage baseline noted in the Cloudflare dashboard, and how usage
+      will be monitored (the budgets are soft, not a dollar cap).
+
+### Enable
+
+- [ ] Set `TAG_RECOMMENDATIONS_ENABLED = "true"` in `wrangler.toml` and release
+      through the normal process in [deployment.md](deployment.md).
+- [ ] On production, with a Pro account and a non-sensitive bookmark: one Suggest
+      tags request returns suggestions or an empty list; a free account gets the
+      upgrade prompt; manual tagging and saving still work.
+- [ ] Usage appears in the dashboard as expected after the first requests.
+
+### Rollback
+
+Set the switch back to `"false"` and release, or roll back to the previous Pages
+deployment. Disabled requests return 503 without spending budgets, and the form
+keeps tag completion and saving working (verified November 16, 2026 above). No
+migration or data cleanup is needed: suggestions never write bookmarks or tags.
+
+### Extension surfaces
+
+- [ ] Popup (tagstash-extension#10): unpacked-browser verification recorded
+      before its release.
+- [ ] Shared edit dialog (tagstash-extension#11): unpacked-browser verification
+      recorded before its release.
+
+After these, update the #99 checklist. Automatic tagging and the other deferred
+ideas stay outside this release.
