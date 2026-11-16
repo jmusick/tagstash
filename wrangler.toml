@@ -2,6 +2,14 @@ name = "tagstash"
 compatibility_date = "2026-03-31"
 pages_build_output_dir = "dist"
 
+[vars]
+# Keep off until the authenticated API, explicit client controls and disclosure ship.
+TAG_RECOMMENDATIONS_ENABLED = "false"
+
+[ai]
+binding = "AI"
+# AI inference is remote and consumes account usage even in local development.
+
 [[d1_databases]]
 binding = "DB"
 database_name = "tagstash-db"

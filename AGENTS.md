@@ -426,6 +426,18 @@ Use `/settings?tab=<id>` for direct links (for example `apiKeys`, `publicProfile
 
 The browser extension has its own equivalent setting (sidebar cog → "Open bookmarks in"), stored in `browser.storage.local` and **deliberately never synced with this one** — unlike `theme`, which the extension mirrors from the account. Don't "fix" that asymmetry by making the extension read `user.link_target`.
 
+## Tag recommendation preparation (issue #147)
+
+`functions/_lib/tagRecommendations.js` defines the bounded prompt, candidate
+projection, independent output validation and mockable Workers AI binding adapter.
+It has no route yet. Keep `TAG_RECOMMENDATIONS_ENABLED` false until the API (#148),
+controls (#149) and disclosure/rollout (#150) are ready. Model selection and measured
+synthetic evaluation are in `docs/tag-recommendations.md`; read its contract before
+wiring a route. The 10-second timer bounds the wait, not provider execution/billing.
+Never retry automatically or log provider messages, causes, prompts or tag lists.
+The default evaluation and all tests are mocked; `--live` explicitly sends only
+synthetic fixtures and consumes remote account usage, including in local dev.
+
 ## Dependency installs
 
 Use `npm ci` on a clean checkout. `.npmrc` sets a 7-day `min-release-age` and `strict-allow-scripts`; `package.json` `allowScripts` denies esbuild/workerd install scripts (not needed). These need npm 11.19+; Cloudflare Pages runs npm 10.9.2, which ignores them and installs from the lockfile. A new dependency with an install script fails the install until reviewed. Workflow and bypass procedure: `docs/supply-chain.md`.

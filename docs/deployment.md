@@ -158,3 +158,33 @@ and `/api/health` returned 200.
 
 References: [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/)
 and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/functions/wrangler-configuration/).
+
+## Workers AI preparation (issue #147)
+
+`wrangler.toml` now declares `[ai] binding = "AI"` and the text variable
+`TAG_RECOMMENDATIONS_ENABLED = "false"`. This is configuration for a future
+explicit Suggest tags action, not production enablement. No endpoint calls it yet.
+Keep the switch false until #148, #149 and #150 deliver authentication/budgets,
+client controls and disclosure/rollout verification. No migration is required.
+
+On the next reviewed Pages deployment, Wrangler configuration supplies the `AI`
+binding. Verify it in the Pages project's production bindings and verify the
+switch is still false. For a project managed without Wrangler configuration,
+add a Workers AI binding named `AI` in Pages Settings → Bindings and the same
+disabled text variable. Preview resources remain isolated/disabled as described
+above; don't copy production D1 or secrets to a preview to test inference.
+No dashboard setting was changed as part of this preparation.
+
+Local `wrangler pages dev` uses the same binding; `.dev.vars.example` keeps the
+switch false. There is no local model emulator: actual Workers AI inference is
+remote and consumes account usage even during local development. Build, lint,
+tests and the default evaluation use no inference. Only an intentional synthetic
+`--live` evaluation uses the account, without enabling the application. This
+behavior is documented by Cloudflare's
+[Pages AI binding instructions](https://developers.cloudflare.com/pages/functions/wrangler-configuration/#workers-ai).
+
+The selected model, bounded prompt, measured comparison, failures, cost
+assumptions and repeatable evaluation are in
+[tag-recommendations.md](tag-recommendations.md). The adapter waits at most ten
+seconds, but a timeout does not establish provider cancellation or stop billing.
+No automatic retries or production bookmark fixtures are allowed.

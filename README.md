@@ -68,6 +68,11 @@ The commercial hosted version of Tagstash is available at https://tagsta.sh/
 
 That hosted service is the official paid offering run by Stone Dragon Media LLC. This repository is source-available primarily so people can study the codebase; see [LICENSE.md](./LICENSE.md) for what else is permitted.
 
+Tag recommendation preparation is documented in
+[docs/tag-recommendations.md](docs/tag-recommendations.md). Workers AI is configured
+with recommendations disabled; there is no Suggest tags endpoint or client action
+yet. Routine tests use mocks and make no paid inference calls.
+
 ## Tech Stack
 
 ### Frontend
