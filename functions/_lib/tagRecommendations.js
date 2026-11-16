@@ -1,4 +1,4 @@
-// Inference contract v1. No route calls this until the API, controls and disclosure ship.
+// Inference contract v1. The API stays disabled until controls and disclosure ship.
 export const TAG_RECOMMENDATION_MODEL = '@cf/ibm-granite/granite-4.0-h-micro';
 export const TAG_RECOMMENDATION_LIMITS = Object.freeze({
   url: 2048, title: 512, description: 2000,

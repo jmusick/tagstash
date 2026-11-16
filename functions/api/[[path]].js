@@ -7,6 +7,7 @@ import { newUsernameError } from '../../src/utils/usernamePolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
 import { TRASH_RETENTION_DAYS } from '../../src/utils/trash.js';
+import { buildTagRecommendationInput, suggestTags, tagRecommendationsEnabled, TagRecommendationError, TAG_RECOMMENDATION_LIMITS } from '../_lib/tagRecommendations.js';
 
 const MEMBERSHIP_TIERS = {
   FREE: 'free',
@@ -1296,6 +1297,8 @@ const USER_RATE_LIMITS = {
   metadataFetchesBurst: ['metadata_fetch', 60, 10],
   metadataFetchesDaily: ['metadata_fetch', 1000, 24 * 60],
   importsPerHour: ['bookmark_import', 20, 60],
+  tagSuggestionsBurst: ['tag_suggestion', 10, 10],
+  tagSuggestionsDaily: ['tag_suggestion', 100, 24 * 60],
 };
 // Budget events are only needed for their longest window, so prune them sooner than the
 // 30-day auth log retention.
@@ -4318,7 +4321,7 @@ async function handleAuth(request, env, segments, context = {}) {
       .prepare(
         `SELECT e.id, e.event_type, e.email, e.user_id, e.ip, e.created_at, ${actorSelect}
          FROM auth_events e ${actorJoin}
-         WHERE e.event_type NOT IN ('register_attempt', 'verification_resend_requested', 'metadata_fetch', 'bookmark_import')
+         WHERE e.event_type NOT IN ('register_attempt', 'verification_resend_requested', 'metadata_fetch', 'bookmark_import', 'tag_suggestion')
          ORDER BY e.id DESC
          LIMIT 200`
       )
@@ -4735,6 +4738,69 @@ async function handleBookmarks(request, env, segments, context = {}) {
   const db = env.DB;
   const auth = await requireAuth(request, env, { allowApiKey: true });
   if (auth.error) return auth.error;
+
+  // Keep this read-only route before the library's opportunistic trash purge.
+  // Authentication still runs first; all recommendation input precedes library queries.
+  if (request.method === 'POST' && segments.length === 2 && segments[1] === 'suggest-tags') {
+    const body = await parseBody(request);
+    const { url, title = '', description = '', selectedTags = [] } = body;
+    if (Object.keys(body).some(key => !['url', 'title', 'description', 'selectedTags'].includes(key))) {
+      throw new HttpError(400, 'Only url, title, description and selectedTags are accepted');
+    }
+    for (const [name, value] of Object.entries({ url, title, description })) {
+      if (typeof value !== 'string' || value.length > INPUT_LIMITS[name]) {
+        throw new HttpError(400, `${name} must be a string of at most ${INPUT_LIMITS[name]} characters`);
+      }
+    }
+    if (!isValidHttpUrl(url) || !url.trim()) throw new HttpError(400, 'A valid HTTP(S) URL is required');
+    if (!Array.isArray(selectedTags) || selectedTags.length > INPUT_LIMITS.tagsPerBookmark
+      || selectedTags.some(name => typeof name !== 'string' || !name.length
+        || name.length > INPUT_LIMITS.tagName || /\s/.test(name))) {
+      throw new HttpError(400, 'selectedTags must contain at most 50 single-word tag strings of at most 100 characters');
+    }
+    if (!tagRecommendationsEnabled(env) || typeof env.AI?.run !== 'function') {
+      throw new TagRecommendationError(503, 'unavailable');
+    }
+    const limits = [
+      ['TAG_RECOMMENDATIONS_BURST_LIMIT', USER_RATE_LIMITS.tagSuggestionsBurst],
+      ['TAG_RECOMMENDATIONS_DAILY_LIMIT', USER_RATE_LIMITS.tagSuggestionsDaily],
+    ].map(([name, [event, fallback, minutes]]) => {
+      const raw = env[name] ?? String(fallback);
+      if (!/^[1-9]\d*$/.test(raw) || Number(raw) > 10000) throw new TagRecommendationError(503, 'unavailable');
+      return [event, Number(raw), minutes];
+    });
+    if (await isUserBudgetExhausted(db, request, auth.user.id, 'tag_suggestion', limits)) {
+      return rateLimitedResponse('Too many tag suggestions. Please wait a while and try again.');
+    }
+    const hasTrash = await bookmarksHaveTrash(db);
+    const excluded = new Set(selectedTags.map(name => name.toLowerCase()));
+    const candidates = [];
+    // Page the owner's vocabulary in usage order. Filter in JS before admitting
+    // the first 100, so Unicode whitespace/UTF-16 limits match the adapter exactly.
+    for (let offset = 0; candidates.length < TAG_RECOMMENDATION_LIMITS.candidates; offset += 100) {
+      const { results } = await db.prepare(`SELECT t.name, COUNT(*) AS uses
+        FROM tags t JOIN bookmark_tags bt ON bt.tag_id = t.id
+        JOIN bookmarks b ON b.id = bt.bookmark_id
+        WHERE b.user_id = ?${liveBookmarkClause(hasTrash, 'b')}
+        GROUP BY t.id ORDER BY uses DESC, t.name COLLATE BINARY ASC LIMIT 100 OFFSET ?`)
+        .bind(auth.user.id, offset).all();
+      for (const { name } of results) {
+        if (!name.length || name.length > INPUT_LIMITS.tagName || /\s/.test(name) || excluded.has(name.toLowerCase())) continue;
+        candidates.push(name);
+        excluded.add(name.toLowerCase());
+        if (candidates.length === TAG_RECOMMENDATION_LIMITS.candidates) break;
+      }
+      if (results.length < 100) break;
+    }
+    const bookmark = { url, title, description, selectedTags };
+    try {
+      buildTagRecommendationInput(bookmark, candidates);
+    } catch (error) {
+      if (error instanceof TypeError) throw new HttpError(400, 'Recommendation input is too large');
+      throw error;
+    }
+    return jsonResponse({ suggestions: await suggestTags(env, bookmark, candidates) });
+  }
 
   // False before migration 0019: nothing is trashed, deletes stay permanent, and no query below
   // may name deleted_at (every one builds its live condition from this).
@@ -5923,6 +5989,7 @@ async function routeRequest(context) {
     return jsonResponse({ error: 'Route not found' }, 404);
   } catch (error) {
     if (error instanceof HttpError) return jsonResponse({ error: error.message }, error.status);
+    if (error instanceof TagRecommendationError) return jsonResponse({ error: error.message }, error.status);
     if (error instanceof UpstreamError) {
       console.error(`[upstream] ${error.service} failed:`, error.status ?? '', error.message);
       return jsonResponse({ error: UPSTREAM_ERROR_MESSAGES[error.service] || 'An upstream service failed. Please try again later.' }, 502);

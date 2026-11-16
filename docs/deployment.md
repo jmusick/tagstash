@@ -159,13 +159,17 @@ and `/api/health` returned 200.
 References: [Pages Git integration](https://developers.cloudflare.com/pages/configuration/git-integration/)
 and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/functions/wrangler-configuration/).
 
-## Workers AI preparation (issue #147)
+## Workers AI API (issues #147, #148)
 
 `wrangler.toml` now declares `[ai] binding = "AI"` and the text variable
-`TAG_RECOMMENDATIONS_ENABLED = "false"`. This is configuration for a future
-explicit Suggest tags action, not production enablement. No endpoint calls it yet.
-Keep the switch false until #148, #149 and #150 deliver authentication/budgets,
-client controls and disclosure/rollout verification. No migration is required.
+`TAG_RECOMMENDATIONS_ENABLED = "false"`. The authenticated
+`POST /api/bookmarks/suggest-tags` route exists but returns 503 while disabled.
+Keep the switch false until #149 and #150 deliver client controls and
+disclosure/rollout verification. No migration is required. Burst and daily request
+budgets default to 10 per 10 minutes and 100 per day; override with text variables
+`TAG_RECOMMENDATIONS_BURST_LIMIT` and `TAG_RECOMMENDATIONS_DAILY_LIMIT` (positive
+integers up to 10000; invalid values return 503). Counters are per account across
+sessions and keys, soft and fail-open; monitor account usage independently.
 
 On the next reviewed Pages deployment, Wrangler configuration supplies the `AI`
 binding. Verify it in the Pages project's production bindings and verify the

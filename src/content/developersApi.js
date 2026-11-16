@@ -12,6 +12,8 @@ export const API_DOC_BUDGETS = {
   metadataFetchesBurst: ['metadata_fetch', 60, 10],
   metadataFetchesDaily: ['metadata_fetch', 1000, 24 * 60],
   importsPerHour: ['bookmark_import', 20, 60],
+  tagSuggestionsBurst: ['tag_suggestion', 10, 10],
+  tagSuggestionsDaily: ['tag_suggestion', 100, 24 * 60],
 }
 
 const bookmarkBody = 'title and url: required nonblank strings, on both create and update. description: optional string or null; omitted, null or empty clears it. note: optional private Markdown string or null; omitted keeps it on update, null or blank clears it, otherwise stored exactly as sent. tags: optional array of single-word strings or null; omitted keeps tags on update, null or [] clears them. See field rules below.'
@@ -26,6 +28,10 @@ const idsBody = `ids: required nonempty array of positive safe integers. Maximum
 
 // Response notation is descriptive, not literal JSON: Bookmark is defined on the page.
 export const API_DOC_ROUTES = [
+  { group: 'Tags', method: 'POST', path: '/api/bookmarks/suggest-tags', title: 'Suggest existing tags (disabled by default)',
+    request: 'url: required HTTP(S) string, at most 8192 UTF-16 units. title and description: optional strings (defaults empty), at most 1000 and 10000 units. selectedTags: optional array (defaults empty), at most 50 nonblank single-word strings of at most 100 units each; excluded case-insensitively. No other fields accepted. Sends bounded page fields and up to 100 existing live-library tag names, including private-bookmark tags, to Workers AI; never fetches the page or changes bookmarks/tags. Inference projects URL/title/description to 2048/512/2000 units. Requires an explicitly enabled deployment with an AI binding; unavailable on the default deployment.',
+    response: '{ suggestions: string[] }', fields: ['suggestions'], status: 200,
+    errors: '400 invalid/oversized fields or prompt; 413 body too large; 415 non-JSON; 429 request budget exhausted; 503 disabled, missing AI binding or invalid budget configuration; 502 provider failure, timeout or malformed output. Zero to five exact stored tag names in relevance order; an empty array is normal. Defaults: 10 requests/10 minutes and 100/day per account, configurable by the deployment. No automatic retries; the ten-second wait does not stop provider billing.' },
   { group: 'Bookmarks', method: 'GET', path: '/api/bookmarks', title: 'Read your library',
     request: 'No body or query parameters. Returns all live bookmarks, including private ones, newest created_at first. No server pagination, search or tag filters.',
     response: '{ bookmarks: Bookmark[] }', fields: ['bookmarks'], status: 200,

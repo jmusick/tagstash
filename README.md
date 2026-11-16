@@ -68,10 +68,37 @@ The commercial hosted version of Tagstash is available at https://tagsta.sh/
 
 That hosted service is the official paid offering run by Stone Dragon Media LLC. This repository is source-available primarily so people can study the codebase; see [LICENSE.md](./LICENSE.md) for what else is permitted.
 
-Tag recommendation preparation is documented in
+The tag recommendation API is documented in
 [docs/tag-recommendations.md](docs/tag-recommendations.md). Workers AI is configured
-with recommendations disabled; there is no Suggest tags endpoint or client action
-yet. Routine tests use mocks and make no paid inference calls.
+with recommendations disabled until client controls and disclosure are ready.
+`POST /api/bookmarks/suggest-tags` accepts cookie sessions (the web client header
+and trusted origin are required), extension bearer sessions and personal API keys.
+Send JSON `{ "url": "https://example.com/", "title": "Example", "selectedTags": [] }`;
+the response is `{ "suggestions": ["existing-tag"] }`, with zero to five names.
+`url` is required HTTP(S), at most 8192 UTF-16 units; optional `title` (1000) and
+`description` (10000) default to empty strings. Optional `selectedTags` defaults to
+`[]`, accepts at most 50 nonblank single-word strings of at most 100 units each,
+and excludes those names case-insensitively. Other fields are rejected. The JSON
+body cap is 256 KiB. Nothing is saved or fetched from the supplied URL.
+
+When explicitly enabled, the route sends bounded URL/title/description fields
+and up to 100 of the owner's existing live-library tag names (including private
+bookmark tags) to Cloudflare Workers AI. It sends no bookmark notes or account
+identifiers. Candidates follow usage count descending, then stored name ascending;
+less-used tags outside that pool cannot be suggested. Inference uses the first
+2048/512/2000 units of URL/title/description and at most 12000 bytes of candidates.
+See the contract for serialized prompt and output bounds.
+
+Self-hosted configuration requires an `AI` binding and the exact string
+`TAG_RECOMMENDATIONS_ENABLED=true`. Default budgets are 10 attempts per 10 minutes
+and 100 per day, configurable through `TAG_RECOMMENDATIONS_BURST_LIMIT` and
+`TAG_RECOMMENDATIONS_DAILY_LIMIT` (integers 1–10000). Disabled, missing-binding or
+invalid-config requests return 503; invalid input returns 400/413/415, exhausted
+budgets 429, and provider failures/timeouts/malformed output 502. These are soft,
+fail-open per-account counters, shared across credentials, rather than a guaranteed
+billing ceiling. Clients must prevent simultaneous submissions. The ten-second
+response deadline does not stop provider execution or billing; there are no
+automatic retries. Routine tests use mocks and make no paid inference calls.
 
 ## Tech Stack
 

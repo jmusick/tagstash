@@ -430,10 +430,17 @@ The browser extension has its own equivalent setting (sidebar cog → "Open book
 
 `functions/_lib/tagRecommendations.js` defines the bounded prompt, candidate
 projection, independent output validation and mockable Workers AI binding adapter.
-It has no route yet. Keep `TAG_RECOMMENDATIONS_ENABLED` false until the API (#148),
-controls (#149) and disclosure/rollout (#150) are ready. Model selection and measured
+`POST /api/bookmarks/suggest-tags` (#148) validates the complete JSON payload before
+library queries and runs before opportunistic trash cleanup, so it never changes
+bookmarks or tags. Keep `TAG_RECOMMENDATIONS_ENABLED` false until controls (#149)
+and disclosure/rollout (#150) are ready. Candidates come only from the owner's live
+bookmarks (including private), read in pages of 100 ordered by usage then binary
+stored name; filter invalid/selected/duplicate names before admitting 100. Suggestion
+budgets use `tag_suggestion` events, hidden from the admin log and pruned after a day;
+defaults are 10/10 minutes and 100/day, overridable by the two documented limit vars.
+Tests: `tests/tag-suggestions-api.test.mjs` (mock AI only). Model selection and measured
 synthetic evaluation are in `docs/tag-recommendations.md`; read its contract before
-wiring a route. The 10-second timer bounds the wait, not provider execution/billing.
+changing the route or adapter. The 10-second timer bounds the wait, not provider execution/billing.
 Never retry automatically or log provider messages, causes, prompts or tag lists.
 The default evaluation and all tests are mocked; `--live` explicitly sends only
 synthetic fixtures and consumes remote account usage, including in local dev.

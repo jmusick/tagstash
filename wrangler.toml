@@ -5,6 +5,8 @@ pages_build_output_dir = "dist"
 [vars]
 # Keep off until the authenticated API, explicit client controls and disclosure ship.
 TAG_RECOMMENDATIONS_ENABLED = "false"
+TAG_RECOMMENDATIONS_BURST_LIMIT = "10"
+TAG_RECOMMENDATIONS_DAILY_LIMIT = "100"
 
 [ai]
 binding = "AI"

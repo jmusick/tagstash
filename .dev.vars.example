@@ -33,6 +33,8 @@ STRIPE_ANNUAL_PRICE_ID=
 # Cloudflare Turnstile — required for the support form's CAPTCHA to validate.
 TURNSTILE_SECRET_KEY=
 
-# Tag recommendations (preparation only; no endpoint yet). Keep disabled.
+# Tag recommendation API. Keep disabled until client controls and disclosure ship.
 # Actual AI binding inference is remote/billable even with wrangler pages dev.
 TAG_RECOMMENDATIONS_ENABLED=false
+TAG_RECOMMENDATIONS_BURST_LIMIT=10
+TAG_RECOMMENDATIONS_DAILY_LIMIT=100

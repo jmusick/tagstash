@@ -1,9 +1,9 @@
 # Tag recommendation inference contract (issue #147)
 
-Status: preparation only, evaluated November 15, 2026. No website or extension
-request reaches inference yet. `TAG_RECOMMENDATIONS_ENABLED` defaults to the
+Status: authenticated API implemented, model evaluated November 15, 2026.
+`TAG_RECOMMENDATIONS_ENABLED` defaults to the
 string `false`; only the exact string `true` enables the adapter. Keep it disabled
-until #148 (authentication, validation and budgets), #149 (explicit controls) and
+until #149 (explicit controls) and
 #150 (disclosure and controlled rollout) are ready. This change does not enable
 production, change D1, classify real bookmarks or create tags.
 
@@ -66,7 +66,7 @@ realistic synthetic vocabularies, languages, long names and repeated runs should
 be evaluated before rollout. Temperature zero does not guarantee reproducibility.
 No credentials or raw production bookmarks are fixtures or evaluation output.
 
-## Bounded contract for #148
+## Bounded API contract (#148)
 
 `functions/_lib/tagRecommendations.js` is the executable contract, with prompt v1
 in `TAG_RECOMMENDATION_PROMPT`. It asks for relevant existing candidate names only,
@@ -75,11 +75,18 @@ data. The user message is serialized JSON, separate from the system instructions
 An empty result is valid. There are no tools, article fetching, embeddings,
 Vectorize, new-tag generation, mutations or automatic application.
 
-The next endpoint is `POST /api/bookmarks/suggest-tags`, body
+The endpoint is `POST /api/bookmarks/suggest-tags`, body
 `{ url, title?, description?, selectedTags? }`, result `{ suggestions: string[] }`.
 Require a URL string; omitted title/description mean empty strings, and omitted
 selectedTags means an empty array. Validate types, HTTP(S) URL and the complete raw
-payload against `INPUT_LIMITS` before querying or calling the adapter. Do not pass
+payload against `INPUT_LIMITS` before library queries or calling the adapter.
+Nulls are invalid; unknown fields are rejected, including `note`. Raw string
+lengths are checked before projection. `selectedTags` accepts at most 50 entries
+before de-duplication, each a nonblank single-word string of at most 100 UTF-16
+units, preserving legacy casing. Cookie sessions require the web header and
+trusted origin; extension bearer sessions and personal API keys also work.
+Authentication and the API no-store/security headers use the existing dispatcher.
+Do not pass
 notes, cookies, authorization headers, user identifiers or other fields to AI.
 
 | Inference bound | Contract |
@@ -95,23 +102,27 @@ notes, cookies, authorization headers, user identifiers or other fields to AI.
 | Response wait | 10 seconds, no automatic retries |
 
 Raw bookmark fields are validated first, then projected to these smaller
-inference fields. Oversized serialized messages throw `TypeError`: #148 must map
-this input failure to 400 before inference. This independent byte check matters
+inference fields. Oversized serialized messages throw `TypeError`, mapped by the
+route to 400 before inference. This independent byte check matters
 for control characters and heavy JSON escaping. Very long candidate names can
 exhaust the output-token cap; invalid/truncated JSON becomes 502, not a partial
 answer or a retry.
 
-For #148, select candidates only through the owner's live bookmarks joined to
+The route selects candidates only through the owner's live bookmarks joined to
 `bookmark_tags` and `tags`, including private bookmarks. Never read the entire
 global `tags` vocabulary. Exclude selected names case-insensitively and invalid
-legacy names before the SQL limit, then order by the owner's live bookmark usage
-count descending and stored tag name ascending (SQLite binary comparison) and
-take at most 100. Pass that stable order to the builder, which also excludes and
+legacy names before admitting the first 100. Queries read pages of 100 names,
+ordered by the owner's live bookmark usage count descending and stored tag name
+ascending (SQLite binary comparison). JavaScript filters each page so Unicode
+whitespace and UTF-16 length rules match the adapter rather than SQLite's different
+string semantics. Invalid, selected and case-duplicate names do not consume an
+admission slot; more pages are read as needed, with at most 100 admitted names
+retained. The builder also excludes and
 deduplicates names case-insensitively and admits them within the byte budget.
 Preserve the first stored spelling. Less frequently used tags outside this pool
 cannot be suggested; do not claim whole-library semantic retrieval. Tests here
-exercise the projection, not database ownership: the endpoint's two-account
-isolation tests belong to #148.
+exercise the projection; `tests/tag-suggestions-api.test.mjs` exercises database
+ownership, including shared global tag rows, private and trashed bookmarks.
 
 The provider schema requests exactly `{ suggestions: string[] }`. The independent
 parser accepts a JSON string or object under `response`, or a chat completion's
@@ -136,15 +147,23 @@ an enabled user with no eligible candidates makes no inference call.
 | Malformed output | 502 | invalid_output |
 
 No provider message or cause is retained or logged: provider errors can include
-user data. #148 should map these to the dispatcher's JSON responses and retain its
-security headers/no-store convention. The adapter is not an authentication or
-rate-limit boundary and is deliberately not wired into a route yet.
+user data. The dispatcher maps these to JSON responses with security headers and
+no-store. Disabled or missing-binding requests return 503 even without candidates.
+The adapter itself is not an authentication or rate-limit boundary.
 
 The binding deadline bounds the application's wait using a timer race. It **does
 not cancel or prove cancellation of a billable inference**. A late rejection is
 handled, the timer is cleared, and there is no automatic retry. Before enabling,
-#148 must add burst/daily soft per-user budgets and #149 must prevent simultaneous
-client submissions. Existing count-then-write/fail-open budgets are not a hard
+#149 must prevent simultaneous client submissions. The API uses `tag_suggestion`
+events in `auth_events`, hidden from the admin log and pruned after 24 hours.
+Default budgets in `USER_RATE_LIMITS` are 10 requests per 10 minutes and 100 per
+24 hours, shared across the account's sessions and keys. Text variables
+`TAG_RECOMMENDATIONS_BURST_LIMIT` and `TAG_RECOMMENDATIONS_DAILY_LIMIT` override
+the counts (integers 1–10000); invalid configuration is a 503. Valid enabled
+attempts spend a use, including no-candidate results and provider failures;
+invalid raw payloads and disabled requests do not. Exhaustion returns 429.
+The route runs before automatic trash purging and never writes library rows.
+Existing count-then-write/fail-open budgets are not a hard
 account-wide billing ceiling. Monitor account usage separately.
 
 Cost estimates use the checked

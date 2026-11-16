@@ -32,6 +32,8 @@ const key = `tsk_${'a1'.repeat(24)}`;
 const headers = { Authorization: `Bearer ${key}` };
 async function setup() {
   const env = await createAuthEnv();
+  env.TAG_RECOMMENDATIONS_ENABLED = 'true';
+  env.AI = { run: async () => ({ response: { suggestions: ['reference'] } }) };
   env.sqlite.prepare(`INSERT INTO api_keys (user_id, name, key_hash, key_prefix, key_last4)
     VALUES (1, 'Docs contract', ?, 'tsk_a1a1', 'a1a1')`).run(createHash('sha256').update(key).digest('hex'));
   env.sqlite.exec(`
@@ -47,6 +49,7 @@ async function setup() {
 
 const bookmarkBody = { title: 'New reference', url: 'https://new.example/', description: 'Description', note: '**Private** note', tags: ['reference'] };
 const bodies = {
+  'POST /api/bookmarks/suggest-tags': { url: 'https://example.com/' },
   'POST /api/bookmarks': bookmarkBody,
   'PUT /api/bookmarks/:id': bookmarkBody,
   'PUT /api/bookmarks/tags/:tagId': { name: 'renamed' },
