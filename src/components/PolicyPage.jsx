@@ -86,7 +86,9 @@ function PolicyPage({ logoSrc, theme, onSelectTheme, signedIn = false, onBack })
               portions of the current bookmark URL, title and description, plus candidate
               tag names from your library, including tags used on private bookmarks.
               Notes and account identifiers are excluded. Suggestions do not save changes
-              or make private bookmarks public; you choose which tags to add.
+              or make private bookmarks public; you choose which tags to add. Cloudflare
+              states that it does not use this content to train AI models or keep it after
+              returning the suggestions.
             </li>
             <li>
               <strong>Stripe</strong> processes payments and manages subscriptions for Pro

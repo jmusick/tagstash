@@ -432,8 +432,8 @@ The browser extension has its own equivalent setting (sidebar cog → "Open book
 projection, independent output validation and mockable Workers AI binding adapter.
 `POST /api/bookmarks/suggest-tags` (#148) validates the complete JSON payload before
 library queries and runs before opportunistic trash cleanup, so it never changes
-bookmarks or tags. Keep `TAG_RECOMMENDATIONS_ENABLED` false until controls (#149)
-and disclosure/rollout (#150) are ready. Candidates come only from the owner's live
+bookmarks or tags. `TAG_RECOMMENDATIONS_ENABLED` is `"true"` in `wrangler.toml`
+since the #150 rollout; set it `"false"` and release to roll back. Candidates come only from the owner's live
 bookmarks (including private), read in pages of 100 ordered by usage then binary
 stored name; filter invalid/selected/duplicate names before admitting 100. Suggestion
 budgets use `tag_suggestion` events, hidden from the admin log and pruned after a day;

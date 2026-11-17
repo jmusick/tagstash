@@ -1,4 +1,4 @@
-// Inference contract v1. The API stays disabled until controls and disclosure ship.
+// Inference contract v1. TAG_RECOMMENDATIONS_ENABLED is the feature switch.
 export const TAG_RECOMMENDATION_MODEL = '@cf/ibm-granite/granite-4.0-h-micro';
 export const TAG_RECOMMENDATION_LIMITS = Object.freeze({
   url: 2048, title: 512, description: 2000,

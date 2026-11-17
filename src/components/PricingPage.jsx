@@ -23,7 +23,7 @@ export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSel
         </nav>
         <section className="features-intro pricing-intro" aria-labelledby="pricing-title">
           <h1 id="pricing-title">Tagstash pricing</h1>
-          <p>Start free with 50 bookmarks and no time limit. Pro removes the bookmark limit and includes optional AI tag suggestions when enabled.</p>
+          <p>Start free with 50 bookmarks and no time limit. Pro removes the bookmark limit and includes optional AI tag suggestions.</p>
         </section>
 
         <section className="pricing-grid pricing-page-plans" aria-label="Plans">
@@ -37,7 +37,7 @@ export function PricingView({ logoSrc = '/logo-dark.png', theme = 'slate', onSel
             <h2 className="pricing-plan-name">Pro</h2>
             <p className="pricing-amount">$3<span className="pricing-period">/month</span></p>
             <p className="pricing-description">Unlimited bookmarks. Pay monthly and cancel any time, or pay $36 once a year. Same rate either way.</p>
-            <p>Pro-only AI tag suggestions help you choose from your existing tags. Request suggestions, review them and add the ones you want. Currently awaiting rollout; manual tagging is always available.</p>
+            <p>Pro-only AI tag suggestions help you choose from your existing tags. Request suggestions, review them and add the ones you want. Manual tagging is always available.</p>
             <a className="features-button" href={signedIn ? '/settings?tab=billing' : startHref}>
               {isPro ? 'Manage billing in Settings' : signedIn ? 'Upgrade in Settings' : 'Start free, upgrade from Settings'}
             </a>

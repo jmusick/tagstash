@@ -162,16 +162,14 @@ and [Wrangler configuration for Pages](https://developers.cloudflare.com/pages/f
 ## Workers AI API (issues #147, #148)
 
 `wrangler.toml` now declares `[ai] binding = "AI"` and the text variable
-`TAG_RECOMMENDATIONS_ENABLED = "false"`. The authenticated
+`TAG_RECOMMENDATIONS_ENABLED = "true"` (enabled November 16, 2026, #150). The authenticated
 `POST /api/bookmarks/suggest-tags` requires an active Pro (`paid`) account for
 cookie sessions, bearer sessions and personal API keys. Free accounts receive
 403 with `upgradeRequired: true` before candidate queries, budget events or inference;
 Pro accounts receive 503 while disabled. The website add/edit controls and processing
-disclosure are implemented (#149). Keep the switch false until #150 completes
-rollout verification, including the current Cloudflare processing terms; the
-gates, enable steps and rollback are in the staged release checklist in
+disclosure are implemented (#149). Rollout gates, the enable record and rollback are in the staged release checklist in
 [tag-recommendations.md](tag-recommendations.md#staged-release-checklist-150). Pricing
-describes the Pro entitlement and pending rollout; no billing configuration changes
+describes the Pro entitlement; no billing configuration changes
 are required. No migration is required. Burst and daily request
 budgets default to 10 per 10 minutes and 100 per day; override with text variables
 `TAG_RECOMMENDATIONS_BURST_LIMIT` and `TAG_RECOMMENDATIONS_DAILY_LIMIT` (positive

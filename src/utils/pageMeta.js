@@ -15,7 +15,7 @@ export const SUPPORT_META = {
 
 export const PRICING_META = {
   title: 'Pricing: Free and Pro Plans | Tagstash',
-  description: 'Free for up to 50 bookmarks. Pro offers unlimited bookmarks for $3/month or $36/year, plus optional AI tag suggestions when enabled. Compare the plans.',
+  description: 'Free for up to 50 bookmarks. Pro offers unlimited bookmarks for $3/month or $36/year, plus optional AI tag suggestions. Compare the plans.',
   path: '/pricing',
 }
 

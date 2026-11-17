@@ -1,13 +1,11 @@
 # Tag recommendation inference contract (issue #147)
 
 Status: authenticated API (#148) and website controls (#149) released in v1.51.0
-with the switch off; model evaluated November 15, 2026. Rollout gates are in the
-[staged release checklist](#staged-release-checklist-150).
-`TAG_RECOMMENDATIONS_ENABLED` defaults to the
-string `false`; only the exact string `true` enables the adapter. Keep it disabled
-until #149 (explicit controls) and
-#150 (disclosure and controlled rollout) are ready. This change does not enable
-production, change D1, classify real bookmarks or create tags.
+with the switch off; model evaluated November 15, 2026. The pre-enable gates passed
+on November 16, 2026, and `wrangler.toml` now sets `TAG_RECOMMENDATIONS_ENABLED`
+to `"true"`, live from the release that carries it. See the
+[staged release checklist](#staged-release-checklist-150). Only the exact string
+`true` enables the adapter; the local `.dev.vars.example` keeps it `false`.
 
 ## Model decision and measured evaluation
 
@@ -225,8 +223,8 @@ surface has its own gate.
 
 | Item | State |
 | --- | --- |
-| Website | v1.51.0 (`462388d`), Cloudflare Pages check succeeded |
-| Production switch | `TAG_RECOMMENDATIONS_ENABLED = "false"` in `wrangler.toml`; anonymous production request returns 401 |
+| Website | Controls since v1.51.0 (`462388d`); production on v1.52.5, deployment succeeded |
+| Production switch | Production Pages config: binding `AI`, `TAG_RECOMMENDATIONS_ENABLED=false` on v1.52.5 (Pages API, November 16); `"true"` committed for the next release |
 | Model | `@cf/ibm-granite/granite-4.0-h-micro`, binding `AI` |
 | Budgets | 10 per 10 minutes, 100 per day (`wrangler.toml` defaults) |
 | Entitlement | Active Pro (`paid`) only, owner decision recorded in #149 |
@@ -271,24 +269,52 @@ large-library latency a release gate.
 
 ### Gates before enabling
 
-- [ ] Cloudflare Workers AI processing, retention and training terms checked in
+- [x] Cloudflare Workers AI processing, retention and training terms checked in
       official documentation, with dated links recorded here, and the privacy
-      policy wording confirmed against them.
-- [ ] Live synthetic smoke test of the chosen model:
+      policy wording confirmed against them. (November 16, 2026.)
+      [Workers AI data usage](https://developers.cloudflare.com/workers-ai/platform/data-usage/)
+      (updated October 16, 2026): Customer Content is not used to train models, and
+      standard inference inputs and outputs are not kept after the response;
+      operational metadata (model, timestamps, sizes, token and neuron counts) may
+      be. The [developer platform service terms](https://www.cloudflare.com/service-specific-terms-developer-platform/)
+      (updated September 28, 2026) give the same training commitment. Neither page
+      states a processing region or names IBM, so the policy promises neither.
+      The policy now adds Cloudflare's training and retention statement.
+- [x] Live synthetic smoke test of the chosen model:
       `node scripts/evaluate-tag-recommendations.mjs --live`. Record relevance,
       latency and neurons here, separately from cost assumptions. The token needs
       Workers AI permission; the email-sending token in `.dev.vars` returns 401.
-- [ ] Production latency with a library of about 100 candidate tags stays well
+      (November 16, 2026, using the Wrangler OAuth token for the session.)
+      Measured: Granite returned no extra tags on any fixture, resisted both
+      injection fixtures and kept legacy casing; it missed one secondary tag on
+      related-terms (`gardening`), empty-description (`baking`) and page-injection
+      (`cooking`). Latency 1.7–3.2 s, 155–561 prompt tokens, 6–11 output tokens.
+      Llama (retiring November 20) was faster, 0.2–0.9 s, but added unrelated tags
+      on ambiguous and selected-legacy, so Granite stays.
+- [x] Production latency with a library of about 100 candidate tags stays well
       under the 10-second deadline, or the deadline or candidate cap is revisited.
-- [ ] Production Pages bindings show `AI` and the switch still `false` after the
-      v1.51.0 deployment.
-- [ ] Workers AI usage baseline noted in the Cloudflare dashboard, and how usage
-      will be monitored (the budgets are soft, not a dollar cap).
+      (November 16, 2026.) Five direct REST calls with 100 synthetic candidates
+      (405 prompt tokens, 13 output) took 0.7–3.0 s at 0.76 neurons each. The
+      earlier 10-second timeout came from the local `wrangler pages dev` proxy,
+      not the model, so the deadline and cap stay. Confirm in production with the
+      enable step below.
+- [x] Production Pages bindings show `AI` and the switch still `false` after the
+      v1.51.0 deployment. (November 16, 2026, Pages project API: `ai_bindings`
+      has `AI`, `TAG_RECOMMENDATIONS_ENABLED=false`, budgets 10/100, on v1.52.5.)
+- [x] Workers AI usage baseline noted in the Cloudflare dashboard, and how usage
+      will be monitored (the budgets are soft, not a dollar cap). (November 16,
+      2026, GraphQL `aiInferenceAdaptiveGroups`, November 9–17: only these tests,
+      24 requests and about 20 neurons against the 10,000 free daily neurons.) At
+      0.76 neurons per 100-candidate request, the free allocation covers about
+      13,000 requests a day. Monitor the Workers AI page in the dashboard, or that
+      query, after release and weekly; flip the switch off if usage outgrows
+      Pro volume.
 
 ### Enable
 
-- [ ] Set `TAG_RECOMMENDATIONS_ENABLED = "true"` in `wrangler.toml` and release
-      through the normal process in [deployment.md](deployment.md).
+- [x] Set `TAG_RECOMMENDATIONS_ENABLED = "true"` in `wrangler.toml` and release
+      through the normal process in [deployment.md](deployment.md). (Committed
+      November 16, 2026; live from the next release.)
 - [ ] On production, with a Pro account and a non-sensitive bookmark: one Suggest
       tags request returns suggestions or an empty list; a free account gets the
       upgrade prompt; manual tagging and saving still work.

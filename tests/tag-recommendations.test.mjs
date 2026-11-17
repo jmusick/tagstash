@@ -145,10 +145,10 @@ test('all synthetic fixtures run with a mock and evaluation defaults to no paid 
   assert.ok(records.slice(1).every(row => !row.error && !row.missing.length && !row.extra.length));
 });
 
-test('Pages configuration and local example keep recommendations disabled', async () => {
+test('Pages configuration enables recommendations; local example keeps them off', async () => {
   const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
   const example = await readFile(new URL('../.dev.vars.example', import.meta.url), 'utf8');
-  assert.match(config, /TAG_RECOMMENDATIONS_ENABLED = "false"/);
+  assert.match(config, /TAG_RECOMMENDATIONS_ENABLED = "true"/);
   assert.match(config, /\[ai\]\s+binding = "AI"/);
   assert.match(example, /TAG_RECOMMENDATIONS_ENABLED=false/);
 });

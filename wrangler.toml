@@ -3,8 +3,8 @@ compatibility_date = "2026-03-31"
 pages_build_output_dir = "dist"
 
 [vars]
-# Keep off until the authenticated API, explicit client controls and disclosure ship.
-TAG_RECOMMENDATIONS_ENABLED = "false"
+# Enabled November 16, 2026 (#150). Set "false" and release to roll back.
+TAG_RECOMMENDATIONS_ENABLED = "true"
 TAG_RECOMMENDATIONS_BURST_LIMIT = "10"
 TAG_RECOMMENDATIONS_DAILY_LIMIT = "100"
 
