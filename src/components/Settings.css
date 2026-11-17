@@ -321,14 +321,20 @@
   .preference-options .toggle-row { min-height: 36px; }
 }
 
+/* One shared button width so every URL field ends at the same edge. */
 .public-profile-link {
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10.5rem;
+  align-items: stretch;
   gap: 0.5rem;
 }
 
+@media (max-width: 600px) {
+  .public-profile-link { grid-template-columns: minmax(0, 1fr); }
+}
+
 .public-profile-link input {
-  flex: 1;
+  min-width: 0;
   padding: 0.75rem;
   border: 1px solid var(--color-border-field);
   border-radius: 8px;
@@ -341,8 +347,9 @@
 .public-profile-link button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.4rem;
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .settings-form .btn-primary {
@@ -651,6 +658,11 @@
   gap: 0.75rem;
 }
 
+@media (max-width: 600px) {
+  .admin-user-row { flex-direction: column; align-items: stretch; }
+  .admin-user-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .admin-user-meta {
   min-width: 160px;
 }
@@ -675,7 +687,7 @@
 
 .admin-user-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(110px, 1fr));
+  grid-template-columns: repeat(2, minmax(8.5rem, 1fr));
   gap: 0.55rem;
   align-items: end;
 }
@@ -696,15 +708,19 @@
   padding: 0.45rem 0.5rem;
 }
 
+/* Buttons join the Tier/Role grid as cells, so every row shares the same column edges. */
 .admin-user-actions {
-  grid-column: span 2;
-  display: flex;
-  gap: 0.55rem;
+  display: contents;
+}
+
+.admin-user-actions button {
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .admin-user-actions .btn-primary,
 .admin-user-actions .btn-danger {
-  flex: 1;
   padding: 0.45rem 0.7rem;
   font-size: var(--text-meta);
 }
@@ -712,7 +728,7 @@
 .admin-user-actions .btn-danger {
   background-color: var(--color-danger-solid);
   color: #fff;
-  border: none;
+  border: 1px solid transparent;
 }
 
 .admin-user-actions .btn-danger:hover:not(:disabled) {
@@ -743,7 +759,6 @@
 }
 
 .admin-user-actions .btn-secondary {
-  flex: 1;
   padding: 0.45rem 0.7rem;
   font-size: var(--text-meta);
 }
