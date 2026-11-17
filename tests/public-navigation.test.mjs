@@ -28,6 +28,9 @@ test('public header offers login and signup, or the signed-in library, with curr
   const signedIn = renderToStaticMarkup(createElement(Header, { signedIn: true }))
   assert.deepEqual(links(signedIn), [...anonymousLinks.slice(0, 3), ['/', 'Your bookmarks']])
   assert.doesNotMatch(navigation(signedIn), /Log in|Start free|Settings/)
+  const pending = renderToStaticMarkup(createElement(Header, { signedIn: null }))
+  assert.deepEqual(links(pending), anonymousLinks.slice(0, 3), 'no auth actions while the session check is pending')
+  assert.doesNotMatch(navigation(pending), /public-header-action/)
   assert.deepEqual(links(renderPublicHeader()), links(html), 'Worker snapshots offer the same anonymous destinations')
 })
 
@@ -57,6 +60,48 @@ test('homepage and profile Worker snapshots include the anonymous public header'
     assert.deepEqual(links(snapshot), anonymousLinks)
     assert.match(snapshot, /href="\/\?signup=1#account">Create free account<\/a>/)
     assert.deepEqual(links(renderProfileBookmarks('Reader', [], 0)), anonymousLinks)
+  } finally {
+    globalThis.HTMLRewriter = original
+  }
+})
+
+test('homepage skips the signed-out snapshot when a session cookie is sent, and never revalidates across variants', async () => {
+  const original = globalThis.HTMLRewriter
+  let snapshot
+  globalThis.HTMLRewriter = class {
+    on(selector, handler) {
+      if (selector === '#root') handler.element({ setInnerContent: html => { snapshot = html } })
+      return this
+    }
+    transform(response) { return response }
+  }
+  const shell = '<div id="root"></div>'
+  let forwarded
+  const next = async (input) => {
+    forwarded = input
+    return new Response(shell, { headers: { 'Content-Type': 'text/html', ETag: '"shell"', 'Last-Modified': 'Mon, 16 Nov 2026 00:00:00 GMT' } })
+  }
+  const request = (url, cookie) => new Request(url, { headers: { 'If-None-Match': '"shell"', ...(cookie ? { Cookie: cookie } : {}) } })
+  try {
+    for (const [url, cookie] of [['https://tagsta.sh/', '_ga=1; __Host-tagstash-session=abc'], ['http://localhost:5000/', 'tagstash-session=abc']]) {
+      snapshot = undefined
+      const response = await homePage({ request: request(url, cookie), next })
+      assert.equal(snapshot, undefined, url)
+      assert.equal(await response.text(), shell)
+      assert.equal(response.headers.get('ETag'), null)
+      assert.equal(response.headers.get('Last-Modified'), null)
+      assert.match(response.headers.get('Vary'), /Cookie/)
+      assert.equal(forwarded.headers.get('If-None-Match'), null, 'the shell is fetched unconditionally')
+    }
+
+    // The local cookie name doesn't count on the production host, and vice versa.
+    for (const [url, cookie] of [['https://tagsta.sh/', 'tagstash-session=abc'], ['https://tagsta.sh/', undefined]]) {
+      snapshot = undefined
+      const response = await homePage({ request: request(url, cookie), next })
+      assert.match(snapshot, /Create free account/, url)
+      assert.equal(response.headers.get('ETag'), null)
+      assert.match(response.headers.get('Vary'), /Cookie/)
+    }
   } finally {
     globalThis.HTMLRewriter = original
   }

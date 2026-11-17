@@ -10,7 +10,7 @@ export default function PublicHeader({ logoSrc = '/logo-dark.png', theme = 'slat
       </a>
       <nav className="public-header-nav" aria-label="Main">
         {publicNavigationLinks(signedIn).map((link, index, links) => (
-          <a key={link.href} href={link.href} className={index === links.length - 1 ? 'public-header-action' : undefined} aria-current={link.href === currentPath ? 'page' : undefined}>
+          <a key={link.href} href={link.href} className={signedIn !== null && index === links.length - 1 ? 'public-header-action' : undefined} aria-current={link.href === currentPath ? 'page' : undefined}>
             {link.label}
           </a>
         ))}

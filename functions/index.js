@@ -5,10 +5,16 @@
 // render() replaces it on mount (see src/main.jsx), so this is a flash-then-hydrate
 // snapshot of the *same* copy that ships in src/components/Home.jsx, not bot-only
 // content. Keep the two in sync if either changes.
+//
+// A visitor who sends a session cookie gets the bare shell instead: the snapshot is the
+// signed-out homepage, and painting it before the app loads flashed it at signed-in users.
+// The cookie only says a session probably exists; the app still checks it, and shows the
+// homepage if it was expired or revoked.
 
 import { renderPublicHeader } from './_lib/publicHeader.js';
 import { HOME_FAQS as FAQS, HOME_FEATURES as FEATURES } from '../src/content/homeMarketing.js';
 import { getHomeStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js';
+import { getSessionCookie } from './_lib/sessionCookie.js';
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (c) => ({
@@ -19,12 +25,31 @@ const escapeHtml = (value) =>
     "'": '&#39;',
   }[c]));
 
+// The two variants share a URL, so a browser must never revalidate one into the other. Drop
+// the validators both ways: the shell's ETag doesn't describe either body anyway.
+const withoutRevalidation = (response) => {
+  const result = new Response(response.body, response);
+  result.headers.delete('ETag');
+  result.headers.delete('Last-Modified');
+  result.headers.append('Vary', 'Cookie');
+  return result;
+};
+
 export async function onRequestGet({ request, next }) {
-  const response = await next();
+  // Without conditional headers the asset server always answers 200 with the shell, never a
+  // 304 that would let the browser show whichever variant it cached last.
+  const headers = new Headers(request.headers);
+  headers.delete('If-None-Match');
+  headers.delete('If-Modified-Since');
+  const response = await next(new Request(request, { headers }));
 
   const contentType = response.headers.get('Content-Type') || '';
   if (response.status !== 200 || !contentType.includes('text/html')) {
     return response;
+  }
+
+  if (getSessionCookie(request)) {
+    return withoutRevalidation(response);
   }
 
   const origin = new URL(request.url).origin;
@@ -79,5 +104,5 @@ export async function onRequestGet({ request, next }) {
       },
     });
 
-  return rewriter.transform(response);
+  return withoutRevalidation(rewriter.transform(response));
 }

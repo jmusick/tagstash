@@ -7,6 +7,7 @@ import { newUsernameError } from '../../src/utils/usernamePolicy.js';
 import { ACCOUNT_DELETION_CONFIRMATION, isAccountDeletionConfirmation } from '../../src/utils/accountDeletion.js';
 import { ACCOUNT_RESET_CONFIRMATION, isAccountResetConfirmation } from '../../src/utils/accountReset.js';
 import { TRASH_RETENTION_DAYS } from '../../src/utils/trash.js';
+import { getSessionCookie, isLocalRequest, sessionCookieName } from '../_lib/sessionCookie.js';
 import { buildTagRecommendationInput, suggestTags, tagRecommendationsEnabled, TagRecommendationError, TAG_RECOMMENDATION_LIMITS } from '../_lib/tagRecommendations.js';
 
 const MEMBERSHIP_TIERS = {
@@ -54,16 +55,6 @@ const isAllowedOrigin = (origin, env) => {
 
 const WEB_SESSION_SECONDS = 7 * 24 * 60 * 60;
 const isWebClient = (request) => request.headers.get('X-Tagstash-Client') === 'web';
-const isLocalRequest = (request) => {
-  const url = new URL(request.url);
-  return url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
-};
-const sessionCookieName = (request) => isLocalRequest(request) ? 'tagstash-session' : '__Host-tagstash-session';
-const getSessionCookie = (request) => {
-  const name = `${sessionCookieName(request)}=`;
-  return (request.headers.get('Cookie') || '').split(';').map((part) => part.trim())
-    .find((part) => part.startsWith(name))?.slice(name.length) || null;
-};
 const sessionCookie = (request, token, maxAge = WEB_SESSION_SECONDS) =>
   `${sessionCookieName(request)}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${isLocalRequest(request) ? '' : '; Secure'}`;
 

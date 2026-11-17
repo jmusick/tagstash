@@ -1079,8 +1079,9 @@ function App() {
   }
 
   if (authLoading) {
+    // signedIn={null}: the header shows no auth actions until the session check settles.
     return (
-      <RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />
+      <RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={null} />
     )
   }
 
