@@ -451,7 +451,11 @@ cookies, bearer sessions and API keys before any library query or inference. Fre
 accounts get 403 `upgradeRequired: true`. The owner chose this entitlement; manual
 tagging remains on both plans. Pricing describes suggestions as awaiting rollout.
 Keep the feature switch disabled until #150 is complete. Form results live only
-in component state, reset on input changes, and are keyed by account/route/bookmark.
+in component state, keyed by account/route/bookmark. Any input change drops a pending
+or failed request; a finished result is dropped only when URL, title, description or
+plan changes, so accepting one suggestion keeps the rest (already-selected tags are
+filtered out) without another inference. The processing disclosure sits behind the
+info button beside Suggest tags and stays linked to it via `aria-describedby`.
 `node scripts/check-tag-recommendations.mjs` uses fixtures to check races, tag
 acceptance, failures and plan controls in all themes after building. The paused
 accessibility suite also includes mocked recommendation states; do not resume it

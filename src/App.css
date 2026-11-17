@@ -1482,20 +1482,113 @@ a.btn-field-action,
   font-weight: 700;
 }
 
+/* Suggest tags: the action, its privacy note toggle, then the result on one line. */
 .tag-recommendations {
-  margin-top: 0.75rem;
+  margin-top: 0.6rem;
   color: var(--color-text-muted);
   font-size: var(--text-sm);
 }
 
-.tag-recommendations small {
-  display: block;
-  margin-top: 0.4rem;
+.tag-recommendations-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
 }
 
-.tag-recommendations p { margin: 0.4rem 0; }
-.tag-recommendations [aria-disabled='true'] { cursor: default; }
-.tag-recommendation-list { display: flex; flex-wrap: wrap; gap: 0.6rem; }
+.tag-suggest-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+/* Same height as the suggestion tags beside it, so the row sits on one line. */
+.tag-suggest-button {
+  min-height: 1.9rem;
+  padding: 0.25rem 0.7rem 0.25rem 0.6rem;
+  gap: 0.4rem;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  transition: border-color 0.15s, color 0.15s, background-color 0.15s;
+}
+
+.tag-suggest-button:not([aria-disabled='true']):hover {
+  background: var(--color-tag-bg);
+}
+
+.tag-suggest-button[aria-disabled='true'] {
+  cursor: default;
+  color: var(--color-text-muted);
+}
+
+.tag-suggest-button[aria-disabled='true']:hover {
+  border-color: var(--color-border-strong);
+}
+
+.tag-suggest-spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+.tag-recommendations-about {
+  display: inline-grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.tag-recommendations-about:hover,
+.tag-recommendations-about[aria-expanded='true'] {
+  color: var(--color-primary-strong);
+}
+
+.tag-recommendations p { margin: 0; }
+.tag-recommendations-status { flex: 1 1 auto; min-width: 0; }
+
+.tag-recommendation-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.55rem;
+}
+
+/* Not added yet: a paler tag, with the plus where the eyelet would be punched.
+   Mixed with the surface color (not alpha) so the point and body don't seam. */
+.tag-suggestion {
+  --tag-bg: color-mix(in srgb, var(--color-tag-bg) 50%, var(--tag-eyelet));
+  gap: 0.25em;
+  padding-left: 0.3em;
+  background: var(--tag-bg);
+  filter: none;
+}
+
+.tag-suggestion svg {
+  flex-shrink: 0;
+  color: var(--tag-ink-muted);
+}
+
+.tag-suggestion:hover {
+  --tag-bg: var(--color-tag-bg-hover);
+  filter: drop-shadow(0 1px 0 var(--color-tag-edge));
+}
+
+.tag-suggestion:hover svg {
+  color: var(--tag-ink-color);
+}
+
+.tag-recommendations-about-text {
+  display: block;
+  max-width: 62ch;
+  margin-top: 0.5rem;
+  line-height: 1.45;
+}
+
+.tag-recommendations-about-text[hidden] { display: none; }
 
 .form-actions {
   display: flex;

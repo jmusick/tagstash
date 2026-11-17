@@ -88,9 +88,24 @@ try {
     await react.focus()
     await page.keyboard.press('Enter')
     await add.getByRole('button', { name: 'Remove tag react', exact: true }).waitFor()
-    assert.equal(await suggest.evaluate(el => el === document.activeElement), true)
+    // Accepting one keeps the rest without another inference; focus moves to the next.
+    const performance = control.getByRole('button', { name: 'Add suggested tag performance', exact: true })
+    assert.equal(await control.locator('.tag-stock').count(), 1)
+    assert.equal(await performance.evaluate(el => el === document.activeElement), true)
+    await suggest.dispatchEvent('click')
+    await waitCount(1)
     assert.equal(saves.length, 0)
+    // Removing an accepted tag brings its suggestion back.
     await add.getByRole('button', { name: 'Remove tag react', exact: true }).click()
+    await react.waitFor()
+    await performance.click()
+    await react.click()
+    await add.getByRole('button', { name: 'Remove tag performance', exact: true }).waitFor()
+    assert.equal(await suggest.evaluate(el => el === document.activeElement), true)
+    await status.filter({ hasText: 'All suggestions added' }).waitFor()
+    await waitCount(1)
+    for (const name of ['react', 'performance']) await add.getByRole('button', { name: `Remove tag ${name}`, exact: true }).click()
+    await page.locator('#title').fill('React hooks')
 
     // Each input change invalidates a pending request, even if changed back.
     for (const selector of ['#url', '#title', '#description', '#tags']) {
@@ -140,6 +155,8 @@ try {
       await page.locator('#title').fill('Late result')
       await suggest.click()
       await status.filter({ hasText: 'Finding' }).waitFor()
+      // Let the request reach the interception before closing or reloading cancels it.
+      for (let i = 0; i < 100 && !pending.length; i++) await page.waitForTimeout(10)
       if (mode === 'close') {
         await page.getByRole('button', { name: 'Cancel', exact: true }).first().click()
       } else if (mode === 'route') {
