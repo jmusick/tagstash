@@ -1,0 +1,19 @@
+.import-guides-intro { padding-bottom: 2rem; }
+.import-guide-section { padding: 2.5rem 0; border-top: 1px solid var(--color-border); }
+.import-guide-section h2 { color: var(--color-text); font-size: var(--text-headline); line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+.import-guide-section ul, .import-guide-section ol { margin: 0 0 1.5rem; padding-left: 1.25rem; line-height: 1.75; max-width: 68ch; }
+.import-guide-section li + li { margin-top: 0.5rem; }
+.import-guide-section a:not(.features-button) { color: var(--color-link); }
+.import-guide-list { list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.75rem 3rem; max-width: none; padding-left: 0; }
+.import-guide-list li + li { margin-top: 0; }
+.import-guide-list a { font-size: var(--text-title); font-weight: 600; }
+.import-guide-list p { margin: 0.35rem 0 0; max-width: 52ch; }
+.import-guide-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2rem 3rem; }
+.import-guide-columns h2 { font-size: var(--text-title); }
+.import-guide-columns ul { margin-bottom: 0; }
+.import-guide-back { padding: 1rem 0 2rem; }
+.import-guide-back a { color: var(--color-link); }
+@media (max-width: 760px) {
+  .import-guide-list, .import-guide-columns { grid-template-columns: 1fr; }
+  .import-guide-section { padding: 2rem 0; }
+}

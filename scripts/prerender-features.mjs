@@ -1,9 +1,11 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { FEATURES_META } from '../src/utils/featuresMeta.js'
-import { getFeaturesStructuredData, getPricingStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
+import { getFeaturesStructuredData, getImportGuideStructuredData, getImportHubStructuredData, getPricingStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
+import { IMPORT_GUIDES, IMPORT_HUB_META, importGuideMeta } from '../src/content/importGuides.js'
 import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META, PRICING_META } from '../src/utils/pageMeta.js'
 import { applyPageHead } from './page-head.mjs'
 
@@ -20,7 +22,7 @@ try {
 
   // Full-body pages: the view's markup, its head and its own CSS. Styles are
   // collected per page so one page's CSS never becomes a prerequisite for another.
-  async function prerenderPage({ module, view, meta, structuredData }) {
+  async function prerenderPage({ module, view, meta, structuredData, props = {} }) {
     const styles = new Set()
     const visited = new Set()
     function collectStyles(key) {
@@ -39,10 +41,12 @@ try {
     const links = [...styles].filter(css => !html.includes(`href="/${css}"`)).map(css => `<link rel="stylesheet" href="/${css}" />`)
     if (structuredData) links.push(`<script type="application/ld+json" data-page-schema="true">${serializeStructuredData(structuredData)}</script>`)
     html = html
-      .replace('<div id="root"></div>', () => `<div id="root">${renderToStaticMarkup(createElement(View))}</div>`)
+      .replace('<div id="root"></div>', () => `<div id="root">${renderToStaticMarkup(createElement(View, props))}</div>`)
       .replace('</head>', () => `${links.join('\n')}\n</head>`)
     // Pages serves dist/<name>.html at /<name> and redirects /<name>/ to the canonical
     // extensionless URL. A directory index would instead redirect to /<name>/.
+    // Nested paths (/import/chrome) need their folder; /import.html and /import/ sit side by side.
+    await mkdir(dirname(`dist${meta.path}.html`), { recursive: true })
     await writeFile(`dist${meta.path}.html`, html)
     console.log(`Prerendered ${meta.path} from ${view}`)
   }
@@ -50,6 +54,10 @@ try {
   await prerenderPage({ module: '/src/components/FeaturesPage.jsx', view: 'FeaturesView', meta: FEATURES_META, structuredData: getFeaturesStructuredData('https://tagsta.sh') })
   await prerenderPage({ module: '/src/components/PricingPage.jsx', view: 'PricingView', meta: PRICING_META, structuredData: getPricingStructuredData('https://tagsta.sh') })
   await prerenderPage({ module: '/src/components/DevelopersPage.jsx', view: 'DevelopersView', meta: DEVELOPERS_META })
+  await prerenderPage({ module: '/src/components/ImportGuidesPage.jsx', view: 'ImportHubView', meta: IMPORT_HUB_META, structuredData: getImportHubStructuredData('https://tagsta.sh') })
+  for (const guide of IMPORT_GUIDES) {
+    await prerenderPage({ module: '/src/components/ImportGuidesPage.jsx', view: 'ImportGuideView', meta: importGuideMeta(guide), props: { slug: guide.slug }, structuredData: getImportGuideStructuredData('https://tagsta.sh', guide.slug) })
+  }
 
   // /privacy and /support are interactive (router callbacks, Turnstile), so only their
   // head is prerendered; React still renders the body client-side. Without this they

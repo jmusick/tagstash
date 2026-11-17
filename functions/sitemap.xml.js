@@ -2,6 +2,7 @@
 import { getProfileSchema, isProfileIndexable, publicBookmarkCondition, visibleProfileCondition } from './_lib/profileVisibility.js';
 import { FEATURES_UPDATED } from '../src/content/featuresFaqs.js';
 import { PRICING_UPDATED } from '../src/content/pricing.js';
+import { IMPORT_GUIDES_UPDATED, IMPORT_GUIDE_PATHS } from '../src/content/importGuides.js';
 
 const STATIC_PATHS = [
   // Content-change dates; update these when editing a page's substantive content.
@@ -12,6 +13,7 @@ const STATIC_PATHS = [
   { path: '/developers', lastmod: '2026-11-15' },
   { path: '/privacy', lastmod: '2026-11-15' },
   { path: '/support', lastmod: '2026-08-17' },
+  ...IMPORT_GUIDE_PATHS.map((path) => ({ path, lastmod: IMPORT_GUIDES_UPDATED })),
 ];
 
 // D1 stores UTC as 'YYYY-MM-DD HH:MM:SS' (or ISO); take the date part directly so the

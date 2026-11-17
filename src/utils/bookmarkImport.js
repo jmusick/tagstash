@@ -327,6 +327,7 @@ const SKIP_FOLDERS = new Set([
   'menu',
   'favorites',
   'favorites bar',
+  'other favorites',
   'reading list',
 ])
 

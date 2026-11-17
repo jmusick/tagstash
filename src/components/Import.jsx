@@ -9,6 +9,7 @@ import {
   parsePinboardJSON,
   parseInstapaperCSV,
 } from '../utils/bookmarkImport';
+import { IMPORT_GUIDE_SLUGS } from '../content/importGuides';
 import './Import.css';
 
 const HTML_ERROR = 'This does not look like a bookmarks HTML export file. Please export bookmarks as HTML and try again.';
@@ -209,7 +210,20 @@ function Import({ onImportComplete }) {
 
       {stage === 'idle' && (
         <>
-          <p className="import-hint">{config.hint}</p>
+          <p className="import-hint">
+            {config.hint}
+            {IMPORT_GUIDE_SLUGS.includes(source) && (
+              <>
+                {' '}
+                <a href={`/import/${source}`} target="_blank" rel="noopener">Step-by-step guide</a>
+                {source === 'chrome' && (
+                  <>
+                    {' '}(<a href="/import/edge" target="_blank" rel="noopener">Microsoft Edge guide</a>)
+                  </>
+                )}
+              </>
+            )}
+          </p>
           <button
             type="button"
             className={`drop-zone${dragging ? ' drop-zone--active' : ''}`}
