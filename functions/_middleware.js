@@ -1,7 +1,8 @@
 import { IMPORT_GUIDE_PATHS } from '../src/content/importGuides.js';
+import { EXTENSION_META } from '../src/content/browserExtension.js';
 
 // Pages otherwise serves the SPA shell with status 200 for unknown addresses.
-const PAGE_PATHS = new Set(['/', '/features', '/pricing', '/developers', '/privacy', '/support', '/settings', '/tags', '/trash', '/duplicates', '/share', '/verify-email', '/reset-password', ...IMPORT_GUIDE_PATHS]);
+const PAGE_PATHS = new Set(['/', '/features', '/pricing', '/developers', EXTENSION_META.path, '/privacy', '/support', '/settings', '/tags', '/trash', '/duplicates', '/share', '/verify-email', '/reset-password', ...IMPORT_GUIDE_PATHS]);
 
 export async function onRequest({ request, next }) {
   const response = await next();

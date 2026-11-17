@@ -115,10 +115,10 @@ automatic retries. Routine tests use mocks and make no paid inference calls.
 - Context API
 - lucide-react
 
-The public `/features`, `/pricing` and `/developers` pages are prerendered during
+The public `/features`, `/pricing`, `/developers` and `/extension` pages are prerendered during
 `npm run build` from the same React components used in the app.
 `scripts/prerender-features.mjs` writes complete HTML and page metadata to
-`dist/features.html`, `dist/pricing.html` and `dist/developers.html`, including the
+`dist/features.html`, `dist/pricing.html`, `dist/developers.html` and `dist/extension.html`, including the
 styles needed before JavaScript loads. Feature copy lives in
 `src/components/FeaturesPage.jsx`; plan, price and billing copy lives in
 `src/content/pricing.js`. Cloudflare Pages serves each file at its extensionless

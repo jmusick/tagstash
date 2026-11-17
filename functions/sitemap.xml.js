@@ -3,6 +3,7 @@ import { getProfileSchema, isProfileIndexable, publicBookmarkCondition, visibleP
 import { FEATURES_UPDATED } from '../src/content/featuresFaqs.js';
 import { PRICING_UPDATED } from '../src/content/pricing.js';
 import { IMPORT_GUIDES_UPDATED, IMPORT_GUIDE_PATHS } from '../src/content/importGuides.js';
+import { EXTENSION_META, EXTENSION_UPDATED } from '../src/content/browserExtension.js';
 
 const STATIC_PATHS = [
   // Content-change dates; update these when editing a page's substantive content.
@@ -11,6 +12,7 @@ const STATIC_PATHS = [
   { path: '/features', lastmod: FEATURES_UPDATED },
   { path: '/pricing', lastmod: PRICING_UPDATED },
   { path: '/developers', lastmod: '2026-11-15' },
+  { path: EXTENSION_META.path, lastmod: EXTENSION_UPDATED },
   { path: '/privacy', lastmod: '2026-11-15' },
   { path: '/support', lastmod: '2026-08-17' },
   ...IMPORT_GUIDE_PATHS.map((path) => ({ path, lastmod: IMPORT_GUIDES_UPDATED })),

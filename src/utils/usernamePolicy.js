@@ -17,7 +17,7 @@ const USERNAME_SHAPE = /^[A-Za-z0-9](?:[._-]?[A-Za-z0-9])*$/;
 // Staff-sounding names, plus top-level app routes, so a profile can't pose as the site itself.
 export const RESERVED_USERNAMES = new Set([
   'about', 'account', 'admin', 'administrator', 'api', 'app', 'assets', 'billing', 'blog', 'changelog',
-  'contact', 'developers', 'docs', 'duplicates', 'features', 'help', 'import', 'login', 'logout', 'mail', 'me',
+  'contact', 'developers', 'docs', 'duplicates', 'extension', 'extensions', 'features', 'help', 'import', 'login', 'logout', 'mail', 'me',
   'moderator', 'null', 'official', 'pricing', 'privacy', 'register', 'reset-password', 'root', 'security',
   'settings', 'signin', 'signup', 'sitemap', 'staff', 'static', 'status', 'support', 'system', 'tags',
   'tagstash', 'team', 'terms', 'trash', 'u', 'undefined', 'user', 'users', 'verify-email', 'www',

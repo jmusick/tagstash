@@ -1,0 +1,19 @@
+.extension-intro { padding-bottom: 2.5rem; }
+.extension-stores { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+.extension-store { display: flex; align-items: flex-start; gap: 1rem; padding: 1.25rem; border: 1px solid var(--color-border); border-radius: 12px; background: var(--color-surface-soft); }
+.extension-store img { flex-shrink: 0; }
+.extension-store .extension-store-name { color: var(--color-text); font-size: var(--text-title); font-weight: 700; margin: 0 0 0.35rem; }
+.extension-store p { margin: 0 0 1rem; }
+.extension-section { padding: 2.5rem 0; border-top: 1px solid var(--color-border); }
+.extension-section h2 { color: var(--color-text); font-size: var(--text-headline); line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+.extension-section > p { max-width: 68ch; line-height: 1.75; }
+.extension-section a:not(.features-button) { color: var(--color-link); }
+.extension-features { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.75rem 3rem; }
+.extension-features h3 { color: var(--color-text); font-size: var(--text-title); margin: 0 0 0.35rem; }
+.extension-features p { margin: 0; max-width: 52ch; }
+.extension-steps, .extension-facts { margin: 0 0 1.5rem; padding-left: 1.25rem; line-height: 1.75; max-width: 68ch; }
+.extension-steps li + li, .extension-facts li + li { margin-top: 0.5rem; }
+@media (max-width: 760px) {
+  .extension-stores, .extension-features { grid-template-columns: 1fr; }
+  .extension-section { padding: 2rem 0; }
+}

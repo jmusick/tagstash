@@ -419,7 +419,7 @@ async function anonymous(browser, theme) {
     await bare.close()
   }
 
-  for (const path of ['/features', '/pricing', '/developers', '/privacy', '/support', `/u/${OWNER.username}`]) {
+  for (const path of ['/features', '/pricing', '/developers', '/extension', '/privacy', '/support', `/u/${OWNER.username}`]) {
     await go(page, path)
     await page.locator('main').first().waitFor()
     if (path.startsWith('/u/')) await page.locator('.bookmark-card').first().waitFor()

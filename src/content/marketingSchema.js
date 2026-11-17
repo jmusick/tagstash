@@ -3,6 +3,7 @@ import { FEATURES_FAQS, FEATURES_UPDATED } from './featuresFaqs.js'
 import { FEATURES_META } from '../utils/featuresMeta.js'
 import { PRICING_META } from '../utils/pageMeta.js'
 import { PRICING_FAQS, PRICING_OFFERS, PRICING_UPDATED } from './pricing.js'
+import { EXTENSION_INSTALL_STEPS, EXTENSION_META, EXTENSION_UPDATED } from './browserExtension.js'
 import { IMPORT_GUIDES, IMPORT_GUIDES_UPDATED, IMPORT_HUB_META, findImportGuide, importGuideMeta, tagstashImportSteps } from './importGuides.js'
 
 // One definition of the app entity, so every page that declares it agrees.
@@ -106,6 +107,19 @@ export function getImportGuideStructuredData(origin, slug) {
       {
         '@type': 'HowTo', name: meta.title, description: meta.description,
         step: steps.map((text, index) => ({ '@type': 'HowToStep', position: index + 1, text })),
+      },
+    ],
+  }
+}
+
+export function getExtensionStructuredData(origin) {
+  return {
+    '@context': 'https://schema.org',
+    '@graph': [
+      ...webPageGraph(origin, EXTENSION_META, EXTENSION_UPDATED, [['Home', '/'], ['Browser extension', EXTENSION_META.path]]),
+      {
+        '@type': 'HowTo', name: 'Install the Tagstash browser extension', description: 'Add the Tagstash extension to Chrome or Firefox, sign in, and save your first page.',
+        step: EXTENSION_INSTALL_STEPS.map((text, index) => ({ '@type': 'HowToStep', position: index + 1, text })),
       },
     ],
   }

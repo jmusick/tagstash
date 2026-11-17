@@ -31,6 +31,7 @@ const SupportPage = lazy(() => import('./components/SupportPage'))
 const FeaturesPage = lazy(() => import('./components/FeaturesPage'))
 const DevelopersPage = lazy(() => import('./components/DevelopersPage'))
 const ImportGuidesPage = lazy(() => import('./components/ImportGuidesPage'))
+const ExtensionPage = lazy(() => import('./components/ExtensionPage'))
 const PricingPage = lazy(() => import('./components/PricingPage'))
 const VerifyEmail = lazy(() => import('./components/VerifyEmail'))
 const ResetPassword = lazy(() => import('./components/ResetPassword'))
@@ -1147,6 +1148,7 @@ function App() {
         <Route path="/features" element={<FeaturesPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />} />
         <Route path="/pricing" element={<PricingPage logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} isPro={isPaidMember} />} />
         <Route path="/developers" element={<DevelopersPage signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
+        <Route path="/extension" element={<ExtensionPage signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
         <Route path="/import" element={<ImportGuidesPage signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
         <Route path="/import/:source" element={<ImportGuidesPage signedIn={!!user} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} />} />
         <Route

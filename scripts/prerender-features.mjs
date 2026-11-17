@@ -4,7 +4,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { createServer } from 'vite'
 import { FEATURES_META } from '../src/utils/featuresMeta.js'
-import { getFeaturesStructuredData, getImportGuideStructuredData, getImportHubStructuredData, getPricingStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
+import { getExtensionStructuredData, getFeaturesStructuredData, getImportGuideStructuredData, getImportHubStructuredData, getPricingStructuredData, serializeStructuredData } from '../src/content/marketingSchema.js'
+import { EXTENSION_META } from '../src/content/browserExtension.js'
 import { IMPORT_GUIDES, IMPORT_HUB_META, importGuideMeta } from '../src/content/importGuides.js'
 import { PRIVACY_META, SUPPORT_META, DEVELOPERS_META, PRICING_META } from '../src/utils/pageMeta.js'
 import { applyPageHead } from './page-head.mjs'
@@ -54,6 +55,7 @@ try {
   await prerenderPage({ module: '/src/components/FeaturesPage.jsx', view: 'FeaturesView', meta: FEATURES_META, structuredData: getFeaturesStructuredData('https://tagsta.sh') })
   await prerenderPage({ module: '/src/components/PricingPage.jsx', view: 'PricingView', meta: PRICING_META, structuredData: getPricingStructuredData('https://tagsta.sh') })
   await prerenderPage({ module: '/src/components/DevelopersPage.jsx', view: 'DevelopersView', meta: DEVELOPERS_META })
+  await prerenderPage({ module: '/src/components/ExtensionPage.jsx', view: 'ExtensionView', meta: EXTENSION_META, structuredData: getExtensionStructuredData('https://tagsta.sh') })
   await prerenderPage({ module: '/src/components/ImportGuidesPage.jsx', view: 'ImportHubView', meta: IMPORT_HUB_META, structuredData: getImportHubStructuredData('https://tagsta.sh') })
   for (const guide of IMPORT_GUIDES) {
     await prerenderPage({ module: '/src/components/ImportGuidesPage.jsx', view: 'ImportGuideView', meta: importGuideMeta(guide), props: { slug: guide.slug }, structuredData: getImportGuideStructuredData('https://tagsta.sh', guide.slug) })

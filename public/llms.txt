@@ -23,6 +23,7 @@
 - [Homepage](https://tagsta.sh/): product overview, features, pricing, FAQ.
 - [Features](https://tagsta.sh/features): tagging, search, browser extensions, privacy, public sharing, and import/export details.
 - [Pricing](https://tagsta.sh/pricing): Free and Pro plans, what both include, the free-plan limit, upgrading, cancelling and what happens to bookmarks after cancelling.
+- [Browser extension](https://tagsta.sh/extension): the Chrome and Firefox extensions, what they do, how to install them and their store listings.
 - [Import guides](https://tagsta.sh/import): step-by-step guides for moving bookmarks in from Chrome, Firefox, Safari, Edge, Raindrop.io, Pocket, Pinboard and Instapaper, and what comes across from each.
 - [Developers](https://tagsta.sh/developers): REST API reference for personal-key library access and the keyless public profile API, including requests, responses, limits, errors and curl examples.
 - [Support](https://tagsta.sh/support): contact form.
