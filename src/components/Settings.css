@@ -100,11 +100,23 @@
   color: var(--color-text);
 }
 
+.settings-section-link { gap: 0.6rem; }
+
+.settings-section-icon {
+  flex-shrink: 0;
+  color: var(--color-text-muted);
+}
+
+.settings-section-link:hover .settings-section-icon { color: currentColor; }
+
 .settings-section-link[aria-current='page'] {
   background: var(--color-primary-soft);
   color: var(--color-link);
   font-weight: 600;
 }
+
+.settings-section-link[aria-current='page'] .settings-section-icon { color: var(--color-primary-strong); }
+.settings-nav-danger .settings-section-icon { color: currentColor; }
 
 @media (pointer: fine) {
   .settings-section-link { min-height: 36px; padding-block: 0.4rem; }

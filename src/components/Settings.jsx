@@ -2,7 +2,25 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, billingAPI } from '../api/api';
-import { X, KeyRound, Copy, Ban, EyeOff, Trash2, CreditCard, Zap, CheckCircle } from 'lucide-react';
+import { X, KeyRound, Copy, Ban, EyeOff, Trash2, CreditCard, Zap, CheckCircle,
+  SlidersHorizontal, ArrowDownUp, AtSign, Mail, LockKeyhole, MonitorSmartphone, Globe, Puzzle,
+  ShieldCheck, RotateCcw, UserX } from 'lucide-react';
+
+const SECTION_ICONS = {
+  preferences: SlidersHorizontal,
+  import: ArrowDownUp,
+  username: AtSign,
+  email: Mail,
+  password: LockKeyhole,
+  signOut: MonitorSmartphone,
+  publicProfile: Globe,
+  apiKeys: KeyRound,
+  extensions: Puzzle,
+  billing: CreditCard,
+  admin: ShieldCheck,
+  resetLibrary: RotateCcw,
+  deleteAccount: UserX,
+};
 import Import from './Import';
 import Export from './Export';
 import { DEFAULT_LINK_TARGET, LINK_TARGET_ORDER, LINK_TARGET_LABELS } from '../utils/linkTarget';
@@ -714,7 +732,9 @@ function SettingsContent({
               <section key={group.id} className={`settings-nav-group${group.id === 'danger' ? ' settings-nav-danger' : ''}`}
                 aria-labelledby={`settings-group-${group.id}`}>
                 <h2 id={`settings-group-${group.id}`}>{group.label}</h2>
-                {group.sections.map((item) => (
+                {group.sections.map((item) => {
+                  const Icon = SECTION_ICONS[item.id];
+                  return (
                   <Link key={item.id} to={sectionUrl(item.id)}
                     aria-current={activeTab === item.id ? 'page' : undefined}
                     className="settings-section-link"
@@ -724,9 +744,11 @@ function SettingsContent({
                       if (activeTab === item.id) sectionHeadingRef.current?.focus();
                       else focusSectionRef.current = true;
                     }}>
-                    {item.label}
+                    {Icon && <Icon size={16} className="settings-section-icon" aria-hidden="true" />}
+                    <span>{item.label}</span>
                   </Link>
-                ))}
+                  );
+                })}
               </section>
             ))}
           </nav>
