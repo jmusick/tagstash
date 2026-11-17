@@ -474,27 +474,46 @@ function BookmarkBrowser({
           </div>
           <details className="search-tips" id="search-tips" ref={searchTipsRef}>
             <summary>Search tips</summary>
-            <ul>
-              <li>Several words find bookmarks that contain all of them.</li>
-              <li><code>&quot;exact phrase&quot;</code> finds those words together, in that order.</li>
-              <li><code>-word</code> or <code>-&quot;a phrase&quot;</code> leaves out bookmarks that contain it.</li>
-              <li><code>#tag</code> needs that tag; <code>-#tag</code> leaves it out.</li>
-              <li>
-                <code>title:</code>, <code>link:</code>{showNoteFilter && <>, <code>note:</code></>} search one field,
-                as in <code>title:&quot;two words&quot;</code>.
-              </li>
-              <li>
-                <code>created:2026-10</code>, <code>created:&gt;=2026-01-01</code> or <code>created:2026-01..2026-03</code> match
-                the date saved, in your time zone.
-              </li>
-              <li><code>match:OR</code> finds bookmarks with any of the terms instead of all.</li>
-            </ul>
+            <div className="search-tips-panel">
+              <dl className="search-tips-grid">
+                <div>
+                  <dt><code>two words</code></dt>
+                  <dd>Finds bookmarks that contain all of them.</dd>
+                </div>
+                <div>
+                  <dt><code>&quot;exact phrase&quot;</code></dt>
+                  <dd>Finds those words together, in that order.</dd>
+                </div>
+                <div>
+                  <dt><code>-word</code> <code>-&quot;a phrase&quot;</code></dt>
+                  <dd>Leaves out bookmarks that contain it.</dd>
+                </div>
+                <div>
+                  <dt><code>#tag</code> <code>-#tag</code></dt>
+                  <dd>Needs that tag, or leaves it out.</dd>
+                </div>
+                <div>
+                  <dt><code>title:</code> <code>link:</code>{showNoteFilter && <> <code>note:</code></>}</dt>
+                  <dd>Searches one field, as in <code>title:&quot;two words&quot;</code>.</dd>
+                </div>
+                <div>
+                  <dt><code>created:2026-10</code> <code>created:&gt;=2026-01-01</code> <code>created:2026-01..2026-03</code></dt>
+                  <dd>Matches the date saved, in your time zone.</dd>
+                </div>
+                <div>
+                  <dt><code>match:OR</code></dt>
+                  <dd>Finds bookmarks with any of the terms instead of all.</dd>
+                </div>
+              </dl>
+            </div>
           </details>
           {keyboardShortcuts && (
             <details className="search-tips" ref={shortcutsHelpRef}>
               <summary>Keyboard shortcuts{!keyboardShortcuts.enabled && ' (disabled)'}</summary>
-              <KeyboardShortcutList />
-              <p>Available in your library when you are not typing or using a control. <Link to="/settings?tab=preferences">Enable or disable shortcuts in Preferences</Link>.</p>
+              <div className="search-tips-panel">
+                <KeyboardShortcutList />
+                <p className="search-tips-note">Available in your library when you are not typing or using a control. <Link to="/settings?tab=preferences">Enable or disable shortcuts in Preferences</Link>.</p>
+              </div>
             </details>
           )}
         </div>
