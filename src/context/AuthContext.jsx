@@ -1,5 +1,6 @@
 import { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { authAPI } from '../api/api';
+import { rememberSignedIn } from '../utils/sessionHint';
 
 const AuthContext = createContext(null);
 
@@ -40,6 +41,11 @@ export const AuthProvider = ({ children }) => {
     };
     restoreSession().catch(() => {}).finally(() => setLoading(false));
   }, [refreshCurrentUser]);
+
+  // Remember the outcome so the next page load can show the right loading screen.
+  useEffect(() => {
+    if (!loading) rememberSignedIn(!!user);
+  }, [user, loading]);
 
   const describeAuthError = (err, fallback) => {
     if (err.response?.data?.error) return err.response.data.error;

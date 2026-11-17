@@ -9,7 +9,8 @@ import { readShortcutsEnabled, saveShortcutsEnabled } from './utils/keyboardShor
 import AppHeader from './components/AppHeader'
 import AppFooter from './components/AppFooter'
 import RouteAnnouncer from './components/RouteAnnouncer'
-import RouteLoading from './components/RouteLoading'
+import RouteLoading, { SessionLoading } from './components/RouteLoading'
+import { SIGNED_IN_PATHS, expectSignedIn } from './utils/sessionHint'
 import { useDocumentMeta } from './utils/useDocumentMeta'
 import { authAPI, bookmarksAPI } from './api/api'
 
@@ -1079,6 +1080,7 @@ function App() {
   }
 
   if (authLoading) {
+    if (SIGNED_IN_PATHS.has(pathname) && expectSignedIn()) return <SessionLoading />
     // signedIn={null}: the header shows no auth actions until the session check settles.
     return (
       <RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={null} />
@@ -1134,7 +1136,7 @@ function App() {
         <Link to="/settings?tab=password">Choose a new password</Link> to protect the whole password.
       </div>
     )}
-    <Suspense fallback={<RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />}>
+    <Suspense fallback={user && SIGNED_IN_PATHS.has(pathname) ? <SessionLoading /> : <RouteLoading path={pathname} logoSrc={logoSrc} theme={theme} onSelectTheme={selectTheme} signedIn={!!user} />}>
       <Routes>
         <Route
           path={SHARE_TARGET_PATH}

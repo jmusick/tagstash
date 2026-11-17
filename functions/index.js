@@ -9,7 +9,8 @@
 // A visitor who sends a session cookie gets the bare shell instead: the snapshot is the
 // signed-out homepage, and painting it before the app loads flashed it at signed-in users.
 // The cookie only says a session probably exists; the app still checks it, and shows the
-// homepage if it was expired or revoked.
+// homepage if it was expired or revoked. Either way <html data-session> tells the app which
+// variant it got, so its own loading screen matches (src/utils/sessionHint.js).
 
 import { renderPublicHeader } from './_lib/publicHeader.js';
 import { HOME_FAQS as FAQS, HOME_FEATURES as FEATURES } from '../src/content/homeMarketing.js';
@@ -49,7 +50,12 @@ export async function onRequestGet({ request, next }) {
   }
 
   if (getSessionCookie(request)) {
-    return withoutRevalidation(response);
+    const shell = new HTMLRewriter().on('html', {
+      element(el) {
+        el.setAttribute('data-session', 'present');
+      },
+    });
+    return withoutRevalidation(shell.transform(response));
   }
 
   const origin = new URL(request.url).origin;
@@ -93,6 +99,11 @@ export async function onRequestGet({ request, next }) {
 `;
 
   const rewriter = new HTMLRewriter()
+    .on('html', {
+      element(el) {
+        el.setAttribute('data-session', 'absent');
+      },
+    })
     .on('head', {
       element(el) {
         el.append(headHtml, { html: true });

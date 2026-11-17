@@ -67,10 +67,11 @@ test('homepage and profile Worker snapshots include the anonymous public header'
 
 test('homepage skips the signed-out snapshot when a session cookie is sent, and never revalidates across variants', async () => {
   const original = globalThis.HTMLRewriter
-  let snapshot
+  let snapshot, session
   globalThis.HTMLRewriter = class {
     on(selector, handler) {
       if (selector === '#root') handler.element({ setInnerContent: html => { snapshot = html } })
+      if (selector === 'html') handler.element({ setAttribute: (name, value) => { if (name === 'data-session') session = value } })
       return this
     }
     transform(response) { return response }
@@ -84,9 +85,10 @@ test('homepage skips the signed-out snapshot when a session cookie is sent, and 
   const request = (url, cookie) => new Request(url, { headers: { 'If-None-Match': '"shell"', ...(cookie ? { Cookie: cookie } : {}) } })
   try {
     for (const [url, cookie] of [['https://tagsta.sh/', '_ga=1; __Host-tagstash-session=abc'], ['http://localhost:5000/', 'tagstash-session=abc']]) {
-      snapshot = undefined
+      snapshot = session = undefined
       const response = await homePage({ request: request(url, cookie), next })
       assert.equal(snapshot, undefined, url)
+      assert.equal(session, 'present', 'the app is told to expect a session')
       assert.equal(await response.text(), shell)
       assert.equal(response.headers.get('ETag'), null)
       assert.equal(response.headers.get('Last-Modified'), null)
@@ -96,9 +98,10 @@ test('homepage skips the signed-out snapshot when a session cookie is sent, and 
 
     // The local cookie name doesn't count on the production host, and vice versa.
     for (const [url, cookie] of [['https://tagsta.sh/', 'tagstash-session=abc'], ['https://tagsta.sh/', undefined]]) {
-      snapshot = undefined
+      snapshot = session = undefined
       const response = await homePage({ request: request(url, cookie), next })
       assert.match(snapshot, /Create free account/, url)
+      assert.equal(session, 'absent')
       assert.equal(response.headers.get('ETag'), null)
       assert.match(response.headers.get('Vary'), /Cookie/)
     }
