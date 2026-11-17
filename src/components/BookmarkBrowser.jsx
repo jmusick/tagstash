@@ -316,12 +316,24 @@ function BookmarkBrowser({
 
   const handleClearDomainFilter = () => setDomainFilter(null)
 
-  // Scroll the focused bookmark into view once it's rendered as the sole card.
+  // Once the focused bookmark renders as the sole card, bring its top into view
+  // only if it isn't already visible, and only once per focus (later list
+  // updates while editing must not yank the page around). Align to the top,
+  // not the center: centering a short editor scrolls the page down past it.
+  const scrolledFocusIdRef = useRef(null)
   useEffect(() => {
-    if (!focusBookmarkId) return
+    if (!focusBookmarkId) {
+      scrolledFocusIdRef.current = null
+      return
+    }
+    if (scrolledFocusIdRef.current === focusBookmarkId) return
     if (!paginatedBookmarks.some((bookmark) => bookmark.id === focusBookmarkId)) return
+    scrolledFocusIdRef.current = focusBookmarkId
     const el = document.getElementById(`bookmark-${focusBookmarkId}`)
-    el?.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' })
+    if (!el) return
+    const { top } = el.getBoundingClientRect()
+    if (top >= 0 && top < window.innerHeight * 0.5) return
+    el.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
   }, [focusBookmarkId, paginatedBookmarks])
 
   const handleTagSelect = (tagName) => {

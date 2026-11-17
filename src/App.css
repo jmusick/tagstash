@@ -1566,6 +1566,7 @@ a.btn-field-action,
 .bookmark-card {
   --row-indent: calc(18px + 0.7rem);
   position: relative;
+  scroll-margin-top: 1.5rem;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
@@ -2489,8 +2490,13 @@ a.btn-field-action,
 .app-main > .bookmark-browser-content {
   display: contents;
 }
+/* The sidebar spans all three rows. With auto rows, a sidebar taller than the
+   results (e.g. one Random card) spreads its extra height over the toolbar and
+   filter rows, pushing the results far down the page. A flexible last row
+   takes all of it instead. */
 .app-main:has(> .bookmark-browser-content) {
   row-gap: 0;
+  grid-template-rows: auto auto 1fr;
 }
 .main-content > .toolbar { grid-column: 1; grid-row: 1; }
 .main-content > .browser-content { grid-column: 1; grid-row: 2; min-width: 0; }
@@ -2516,6 +2522,7 @@ a.btn-field-action,
 }
 
 @media (max-width: 1024px) {
+  .app-main:has(> .bookmark-browser-content) { grid-template-rows: none; }
   .main-content > .browser-filters { grid-column: 1; grid-row: 2; margin-bottom: 0.75rem; }
   .main-content > .browser-content { grid-row: 3; }
   .main-content > .bookmarks-section { grid-row: 4; }
