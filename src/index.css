@@ -272,6 +272,14 @@ select {
   font: inherit;
 }
 
+/* Windows Chrome/Edge draw an open <select> list on white when the select's own background is
+   translucent (like --color-surface-soft), so its light theme text vanishes. Give options an
+   opaque theme background in every theme. */
+option {
+  background-color: var(--color-panel);
+  color: var(--color-text);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--color-placeholder);
