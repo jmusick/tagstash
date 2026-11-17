@@ -1,6 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Info, LoaderCircle, Plus, Sparkles } from 'lucide-react'
+import { LoaderCircle, Plus, Sparkles } from 'lucide-react'
+import ActionInfo from './ActionInfo'
 import { bookmarksAPI } from '../api/api'
 import { INPUT_LIMITS } from '../utils/inputLimits'
 
@@ -12,7 +13,6 @@ export default function TagRecommendations({ input, draftKey, validationError, p
   const focusAfterAccept = useRef(null)
   const active = useRef(null)
   const [result, setResult] = useState(null)
-  const [aboutOpen, setAboutOpen] = useState(false)
   const signature = JSON.stringify([input, draftKey, paid])
   // Any change drops a pending or failed request. A finished result survives tag edits
   // (accepting a suggestion is one), so the rest stay without another call; it is
@@ -97,20 +97,15 @@ export default function TagRecommendations({ input, draftKey, validationError, p
   return (
     <div className="tag-recommendations">
       <div className="tag-recommendations-row">
-        <span className="tag-suggest-group">
-          {paid ? <button ref={actionRef} type="button" className="btn-field-action tag-suggest-button"
-            aria-describedby={disclosureId} aria-disabled={unavailable} onClick={request}>
-            {current?.pending
-              ? <LoaderCircle size={14} className="tag-suggest-spinner" aria-hidden="true" />
-              : <Sparkles size={14} aria-hidden="true" />}
-            <span>Suggest tags</span>
-          </button>
-            : <p className="tag-recommendations-upsell">AI tag suggestions are a Pro feature. <Link to="/settings?tab=billing">Upgrade to Pro</Link></p>}
-          <button type="button" className="tag-recommendations-about" aria-label="About AI tag suggestions"
-            aria-expanded={aboutOpen} aria-controls={disclosureId} onClick={() => setAboutOpen(open => !open)}>
-            <Info size={15} aria-hidden="true" />
-          </button>
-        </span>
+        {paid ? <button ref={actionRef} type="button" className="btn-field-action tag-suggest-button"
+          aria-describedby={disclosureId} aria-disabled={unavailable} onClick={request}>
+          {current?.pending
+            ? <LoaderCircle size={14} className="tag-suggest-spinner" aria-hidden="true" />
+            : <Sparkles size={14} aria-hidden="true" />}
+          <span>Suggest tags</span>
+          <ActionInfo id={disclosureId} align="start" text="When you click Suggest tags, bookmark URL, title, description and candidate tags from your library (including private bookmarks) are processed by Cloudflare AI. Notes are excluded. Nothing is made public." />
+        </button>
+          : <p>AI tag suggestions are a Pro feature. <Link to="/settings?tab=billing">Upgrade to Pro</Link></p>}
         <p role="status" className={visible.length ? 'sr-only' : 'tag-recommendations-status'}>{message}</p>
         {!!visible.length && <div ref={listRef} className="tag-recommendation-list" role="group" aria-label="Suggested tags">
           {visible.map((name, index) => <button key={name} type="button" data-tag={name}
@@ -120,7 +115,6 @@ export default function TagRecommendations({ input, draftKey, validationError, p
           </button>)}
         </div>}
       </div>
-      <small id={disclosureId} className="tag-recommendations-about-text" hidden={!aboutOpen}>When you click Suggest tags, bookmark URL, title, description and candidate tags from your library (including private bookmarks) are processed by Cloudflare AI. Notes are excluded. Nothing is made public.</small>
     </div>
   )
 }

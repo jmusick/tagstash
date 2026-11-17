@@ -454,8 +454,9 @@ Keep the feature switch disabled until #150 is complete. Form results live only
 in component state, keyed by account/route/bookmark. Any input change drops a pending
 or failed request; a finished result is dropped only when URL, title, description or
 plan changes, so accepting one suggestion keeps the rest (already-selected tags are
-filtered out) without another inference. The processing disclosure sits behind the
-info button beside Suggest tags and stays linked to it via `aria-describedby`.
+filtered out) without another inference. The processing disclosure is the hover hint
+inside the Suggest tags button (the shared `ActionInfo`, like the other field actions)
+and stays linked to it via `aria-describedby`.
 `node scripts/check-tag-recommendations.mjs` uses fixtures to check races, tag
 acceptance, failures and plan controls in all themes after building. The paused
 accessibility suite also includes mocked recommendation states; do not resume it

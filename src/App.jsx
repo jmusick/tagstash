@@ -48,10 +48,11 @@ import { BookmarkTagList } from './components/BookmarkParts'
 import BookmarkNote from './components/BookmarkNote'
 import LibraryPlanMeter from './components/LibraryPlanMeter'
 import TagRecommendations from './components/TagRecommendations'
+import ActionInfo from './components/ActionInfo'
 import { displayUrl, formatSavedDate } from './utils/bookmarkDisplay'
 import { isSnapshotPath, removeProfileSnapshot } from './utils/profileSnapshot'
 import { SHARE_TARGET_PATH, peekSharedLink, clearSharedLink } from './utils/shareTarget'
-import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Info, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
+import { Settings as SettingsIcon, Bookmark as BookmarkIcon, Plus, Pencil, Trash2, Star, X, RefreshCw, Globe, Scissors, FileText, Eye, EyeOff, Tags, Shuffle, Link2, ExternalLink } from 'lucide-react'
 
 const FREE_BOOKMARK_LIMIT = 50
 // Help text under both note fields (add and edit).
@@ -84,13 +85,6 @@ const normalizeBookmarkUrl = (value) => {
 
   return normalized
 }
-
-const ActionInfo = ({ text }) => (
-  <span className="action-info-inline" aria-hidden="true">
-    <Info size={11} />
-    <span className="action-info-tooltip" role="tooltip">{text}</span>
-  </span>
-)
 
 const getInitialTheme = () => {
   if (typeof window === 'undefined') {

@@ -1398,12 +1398,24 @@ a.btn-field-action,
   background: var(--color-panel);
   color: var(--color-text);
   font-size: var(--text-xs);
+  font-weight: 400;
   line-height: 1.35;
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.16);
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
   z-index: 10;
+}
+
+.action-info-inline--start {
+  position: static;
+}
+
+/* For a button at the left edge of the form: open the hint from the button's left
+   edge so it doesn't run off a narrow screen. */
+.action-info-inline--start .action-info-tooltip {
+  left: 0;
+  right: auto;
 }
 
 .action-info-inline:hover .action-info-tooltip {
@@ -1482,7 +1494,7 @@ a.btn-field-action,
   font-weight: 700;
 }
 
-/* Suggest tags: the action, its privacy note toggle, then the result on one line. */
+/* Suggest tags: the action, then its result on the same line. */
 .tag-recommendations {
   margin-top: 0.6rem;
   color: var(--color-text-muted);
@@ -1494,12 +1506,6 @@ a.btn-field-action,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem 0.65rem;
-}
-
-.tag-suggest-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.1rem;
 }
 
 /* Same height as the suggestion tags beside it, so the row sits on one line. */
@@ -1527,24 +1533,6 @@ a.btn-field-action,
 
 .tag-suggest-spinner {
   animation: spin 0.8s linear infinite;
-}
-
-.tag-recommendations-about {
-  display: inline-grid;
-  place-items: center;
-  width: 1.9rem;
-  height: 1.9rem;
-  padding: 0;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-}
-
-.tag-recommendations-about:hover,
-.tag-recommendations-about[aria-expanded='true'] {
-  color: var(--color-primary-strong);
 }
 
 .tag-recommendations p { margin: 0; }
@@ -1580,15 +1568,6 @@ a.btn-field-action,
 .tag-suggestion:hover svg {
   color: var(--tag-ink-color);
 }
-
-.tag-recommendations-about-text {
-  display: block;
-  max-width: 62ch;
-  margin-top: 0.5rem;
-  line-height: 1.45;
-}
-
-.tag-recommendations-about-text[hidden] { display: none; }
 
 .form-actions {
   display: flex;
