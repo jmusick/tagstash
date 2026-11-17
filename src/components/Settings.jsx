@@ -978,38 +978,44 @@ function SettingsContent({
         )}
 
         {activeTab === 'preferences' && (
-          <div className="settings-form">
-            <div>
-              <strong>Open bookmark links in</strong>
-              <p>
+          <div className="settings-preferences">
+            <fieldset className="preference-group" aria-describedby="link-target-help">
+              <legend>Open bookmark links in</legend>
+              <p id="link-target-help" className="preference-help">
                 Where a bookmark opens when you click its link on this site. Saved to your account,
                 so it follows you to any browser you sign in from. The browser extension has its own
                 separate setting for its sidebar list.
               </p>
-            </div>
-            <div className="preference-options" role="radiogroup" aria-label="Open bookmark links in">
-              {LINK_TARGET_ORDER.map((option) => (
-                <label key={option} className="toggle-row">
-                  <input
-                    type="radio"
-                    name="link-target"
-                    value={option}
-                    checked={linkTarget === option}
-                    onChange={() => onSelectLinkTarget?.(option)}
-                  />
-                  <span>{LINK_TARGET_LABELS[option]}</span>
+              <div className="preference-options">
+                {LINK_TARGET_ORDER.map((option) => (
+                  <label key={option} className="toggle-row">
+                    <input
+                      type="radio"
+                      name="link-target"
+                      value={option}
+                      checked={linkTarget === option}
+                      onChange={() => onSelectLinkTarget?.(option)}
+                    />
+                    <span>{LINK_TARGET_LABELS[option]}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset className="preference-group" aria-describedby="shortcuts-help">
+              <legend>Keyboard shortcuts</legend>
+              <p id="shortcuts-help" className="preference-help">
+                Available in your library when you are not typing or using a control. This preference is saved in this browser.
+              </p>
+              <div className="preference-options">
+                <label className="toggle-row">
+                  <input type="checkbox" checked={shortcutsEnabled} onChange={(event) => onSelectShortcutsEnabled?.(event.target.checked)} />
+                  <span>Enable keyboard shortcuts</span>
                 </label>
-              ))}
-            </div>
-            <div>
-              <strong>Keyboard shortcuts</strong>
-              <p>Available in your library when you are not typing or using a control. This preference is saved in this browser.</p>
-              <label className="toggle-row">
-                <input type="checkbox" checked={shortcutsEnabled} onChange={(event) => onSelectShortcutsEnabled?.(event.target.checked)} />
-                <span>Enable keyboard shortcuts</span>
-              </label>
-              <KeyboardShortcutList />
-            </div>
+              </div>
+              <div className={`preference-shortcuts${shortcutsEnabled ? '' : ' is-off'}`}>
+                <KeyboardShortcutList />
+              </div>
+            </fieldset>
           </div>
         )}
 

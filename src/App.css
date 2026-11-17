@@ -747,9 +747,32 @@
   overflow-wrap: anywhere;
 }
 
+.keyboard-shortcut-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.keyboard-shortcut-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .keyboard-shortcut-list kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-width: 1.75rem;
+  height: 1.6rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--color-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--color-panel);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
+  line-height: 1;
   color: var(--color-text);
 }
 
