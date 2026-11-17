@@ -2120,25 +2120,36 @@ a.btn-field-action,
   box-shadow: var(--shadow-sm);
 }
 
+/* Count on the left, Done on the right. */
+.bulk-bar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
 .bulk-count {
-  margin: 0 0 0.55rem;
+  margin: 0;
   font-size: var(--text-ui);
   color: var(--color-text);
   font-variant-numeric: tabular-nums;
 }
 
+/* Buttons sit in groups (selection, actions) that wrap as whole units, so a narrow bar
+   breaks between groups instead of stranding one button on its own line. */
 .bulk-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0.5rem 1.25rem;
 }
 
-.bulk-toolbar-divider {
-  width: 1px;
-  align-self: stretch;
-  background: var(--color-border-strong);
-  margin: 0.1rem 0.2rem;
+.bulk-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .bulk-btn {
@@ -2158,8 +2169,8 @@ a.btn-field-action,
 
 .bulk-done {
   height: auto;
-  padding: 0.45rem 0.8rem;
-  margin-left: auto;
+  padding: 0.35rem 0.8rem;
+  flex-shrink: 0;
 }
 
 .bulk-result {
@@ -2375,10 +2386,6 @@ a.btn-field-action,
 
   .bookmark-card .bookmark-select {
     grid-area: sel;
-  }
-
-  .bulk-done {
-    margin-left: 0;
   }
 }
 

@@ -217,9 +217,14 @@ export default function BulkBar({
 
   return (
     <div className="bulk-bar">
-      <p className="bulk-count" role="status" aria-live="polite" aria-atomic="true">
-        <strong>{count}</strong> selected{note ? `. ${note}` : ''}
-      </p>
+      <div className="bulk-bar-head">
+        <p className="bulk-count" role="status" aria-live="polite" aria-atomic="true">
+          <strong>{count}</strong> selected{note ? `. ${note}` : ''}
+        </p>
+        <button type="button" className="btn-ghost bulk-done" onClick={onDone} disabled={busy}>
+          Done
+        </button>
+      </div>
 
       <div
         className="bulk-toolbar"
@@ -228,62 +233,61 @@ export default function BulkBar({
         ref={toolbarRef}
         onKeyDown={handleToolbarKeyDown}
       >
-        <button type="button" className="btn-secondary bulk-btn" onClick={onSelectPage} disabled={busy || pageCount === 0}>
-          Select this page ({pageCount})
-        </button>
-        {matchingCount > pageCount && (
-          <button type="button" className="btn-secondary bulk-btn" onClick={onSelectAll} disabled={busy}>
-            Select all {matchingCount} results
+        <div className="bulk-group">
+          <button type="button" className="btn-secondary bulk-btn" onClick={onSelectPage} disabled={busy || pageCount === 0}>
+            Select this page ({pageCount})
           </button>
-        )}
-        <button type="button" className="btn-secondary bulk-btn" onClick={onClear} disabled={busy || count === 0}>
-          Clear selection
-        </button>
-        <span className="bulk-toolbar-divider" aria-hidden="true" />
-        <button
-          type="button"
-          className="btn-secondary bulk-btn"
-          data-bulk-action="tags"
-          aria-expanded={panel === 'tags'}
-          onClick={() => openPanel('tags')}
-          disabled={busy || count === 0}
-        >
-          <Tags size={15} aria-hidden="true" /> Tags
-        </button>
-        <button
-          type="button"
-          className="btn-secondary bulk-btn"
-          data-bulk-action="open"
-          aria-expanded={panel === 'open-confirm' || panel === 'open-limit' || panel === 'blocked'}
-          onClick={handleOpen}
-          disabled={busy || count === 0}
-        >
-          <ExternalLink size={15} aria-hidden="true" /> Open in tabs
-        </button>
-        <button
-          type="button"
-          className="btn-secondary bulk-btn"
-          data-bulk-action="export"
-          aria-expanded={panel === 'export'}
-          onClick={() => openPanel('export')}
-          disabled={busy || count === 0}
-        >
-          <Download size={15} aria-hidden="true" /> Export
-        </button>
-        <button
-          type="button"
-          className="btn-secondary bulk-btn bulk-btn--danger"
-          data-bulk-action="delete"
-          aria-expanded={panel === 'delete'}
-          onClick={() => openPanel('delete')}
-          disabled={busy || count === 0}
-        >
-          <Trash2 size={15} aria-hidden="true" /> Delete
-        </button>
-        <span className="bulk-toolbar-divider" aria-hidden="true" />
-        <button type="button" className="btn-ghost bulk-done" onClick={onDone} disabled={busy}>
-          Done
-        </button>
+          {matchingCount > pageCount && (
+            <button type="button" className="btn-secondary bulk-btn" onClick={onSelectAll} disabled={busy}>
+              Select all {matchingCount} results
+            </button>
+          )}
+          <button type="button" className="btn-secondary bulk-btn" onClick={onClear} disabled={busy || count === 0}>
+            Clear selection
+          </button>
+        </div>
+        <div className="bulk-group">
+          <button
+            type="button"
+            className="btn-secondary bulk-btn"
+            data-bulk-action="tags"
+            aria-expanded={panel === 'tags'}
+            onClick={() => openPanel('tags')}
+            disabled={busy || count === 0}
+          >
+            <Tags size={15} aria-hidden="true" /> Tags
+          </button>
+          <button
+            type="button"
+            className="btn-secondary bulk-btn"
+            data-bulk-action="open"
+            aria-expanded={panel === 'open-confirm' || panel === 'open-limit' || panel === 'blocked'}
+            onClick={handleOpen}
+            disabled={busy || count === 0}
+          >
+            <ExternalLink size={15} aria-hidden="true" /> Open in tabs
+          </button>
+          <button
+            type="button"
+            className="btn-secondary bulk-btn"
+            data-bulk-action="export"
+            aria-expanded={panel === 'export'}
+            onClick={() => openPanel('export')}
+            disabled={busy || count === 0}
+          >
+            <Download size={15} aria-hidden="true" /> Export
+          </button>
+          <button
+            type="button"
+            className="btn-secondary bulk-btn bulk-btn--danger"
+            data-bulk-action="delete"
+            aria-expanded={panel === 'delete'}
+            onClick={() => openPanel('delete')}
+            disabled={busy || count === 0}
+          >
+            <Trash2 size={15} aria-hidden="true" /> Delete
+          </button>
+        </div>
       </div>
 
       <div className="bulk-result-row">

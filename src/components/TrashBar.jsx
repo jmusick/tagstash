@@ -70,48 +70,52 @@ export default function TrashBar({
         ref={toolbarRef}
         onKeyDown={(event) => handleToolbarArrowKeys(event, toolbarRef.current)}
       >
-        <button type="button" className="btn-secondary bulk-btn" onClick={onSelectPage} disabled={busy || pageCount === 0}>
-          Select shown ({pageCount})
-        </button>
-        {matchingCount > pageCount && (
-          <button type="button" className="btn-secondary bulk-btn" onClick={onSelectAll} disabled={busy}>
-            Select all {matchingCount}
+        <div className="bulk-group">
+          <button type="button" className="btn-secondary bulk-btn" onClick={onSelectPage} disabled={busy || pageCount === 0}>
+            Select shown ({pageCount})
           </button>
-        )}
-        <button type="button" className="btn-secondary bulk-btn" onClick={onClear} disabled={busy || selectedCount === 0}>
-          Clear selection
-        </button>
-        <span className="bulk-toolbar-divider" aria-hidden="true" />
-        <button
-          type="button"
-          className="btn-secondary bulk-btn"
-          data-trash-action="restore"
-          onClick={onRestore}
-          disabled={busy || selectedCount === 0}
-        >
-          <RotateCcw size={15} aria-hidden="true" /> Restore
-        </button>
-        <button
-          type="button"
-          className="btn-secondary bulk-btn bulk-btn--danger"
-          data-trash-action="purge"
-          aria-expanded={panel === 'purge'}
-          onClick={() => setPanel(panel === 'purge' ? null : 'purge')}
-          disabled={busy || selectedCount === 0}
-        >
-          <Trash2 size={15} aria-hidden="true" /> Delete forever
-        </button>
-        <span className="bulk-toolbar-divider" aria-hidden="true" />
-        <button
-          type="button"
-          className="btn-secondary bulk-btn bulk-btn--danger"
-          data-trash-action="empty"
-          aria-expanded={panel === 'empty'}
-          onClick={() => setPanel(panel === 'empty' ? null : 'empty')}
-          disabled={busy || total === 0}
-        >
-          Empty trash
-        </button>
+          {matchingCount > pageCount && (
+            <button type="button" className="btn-secondary bulk-btn" onClick={onSelectAll} disabled={busy}>
+              Select all {matchingCount}
+            </button>
+          )}
+          <button type="button" className="btn-secondary bulk-btn" onClick={onClear} disabled={busy || selectedCount === 0}>
+            Clear selection
+          </button>
+        </div>
+        <div className="bulk-group">
+          <button
+            type="button"
+            className="btn-secondary bulk-btn"
+            data-trash-action="restore"
+            onClick={onRestore}
+            disabled={busy || selectedCount === 0}
+          >
+            <RotateCcw size={15} aria-hidden="true" /> Restore
+          </button>
+          <button
+            type="button"
+            className="btn-secondary bulk-btn bulk-btn--danger"
+            data-trash-action="purge"
+            aria-expanded={panel === 'purge'}
+            onClick={() => setPanel(panel === 'purge' ? null : 'purge')}
+            disabled={busy || selectedCount === 0}
+          >
+            <Trash2 size={15} aria-hidden="true" /> Delete forever
+          </button>
+        </div>
+        <div className="bulk-group">
+          <button
+            type="button"
+            className="btn-secondary bulk-btn bulk-btn--danger"
+            data-trash-action="empty"
+            aria-expanded={panel === 'empty'}
+            onClick={() => setPanel(panel === 'empty' ? null : 'empty')}
+            disabled={busy || total === 0}
+          >
+            Empty trash
+          </button>
+        </div>
       </div>
 
       {panel === 'purge' && (
