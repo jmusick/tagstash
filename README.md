@@ -133,7 +133,8 @@ React and Pages Functions in `src/content/` to keep crawler and browser content 
 Feature demonstrations continuously capture the local interface during real
 interactions, exported as silent looping MP4s in `public/feature-demos/`.
 All 13 clips and their posters were recaptured with Public Sans on November 15,
-2026; `public/og-image.jpg` was also refreshed with the same typeface.
+2026, and `public/og-image.jpg` was refreshed with the same typeface; the site
+switched to Ubuntu Sans on November 16, 2026, so they need recapturing again.
 An animated pointer and click highlight follow the recorded control coordinates.
 Each section loads its selected clip when visible;
 visitors can pause playback, switch clips, open a larger view, or read the text
@@ -251,7 +252,7 @@ Production setup includes:
 - D1 migrations applied locally and remotely
 - Cloudflare Pages secrets for Stripe and email
 - Stripe webhook endpoint wired to `/api/billing/webhook`
-- Security headers come from `public/_headers`; its Content Security Policy allowlists Google Analytics/Tag Manager, Google favicons, and Cloudflare Turnstile (the Public Sans font is self-hosted from `src/assets/fonts/`, so no font origin is allowlisted), so a new third-party origin must be added there
+- Security headers come from `public/_headers`; its Content Security Policy allowlists Google Analytics/Tag Manager, Google favicons, and Cloudflare Turnstile (Ubuntu Sans, plus Public Sans for Vietnamese, is self-hosted from `src/assets/fonts/`, so no font origin is allowlisted), so a new third-party origin must be added there
 
 ### Stripe-related secrets
 

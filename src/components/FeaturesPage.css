@@ -8,7 +8,7 @@
 .features-questions dd { margin: 0; line-height: 1.75; max-width: 62ch; }
 .features-updated { color: var(--color-text-muted); font-size: var(--text-sm); margin-top: 2rem; }
 .features-intro { padding: 4.5rem 0 3rem; max-width: 860px; }
-.features-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; color: var(--color-text); margin: 0 0 1.5rem; }
+.features-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; color: var(--color-text); margin: 0 0 1.5rem; }
 .features-intro > p { max-width: 58ch; font-size: var(--text-lede); margin: 0 0 2rem; }
 .features-button { display: inline-flex; align-items: center; justify-content: center; background: var(--color-primary); color: #fff; border-radius: 8px; padding: 0.85rem 1.25rem; font-weight: 600; text-decoration: none; text-align: center; }
 .features-button:hover { background: var(--color-primary-hover); color: #fff; }

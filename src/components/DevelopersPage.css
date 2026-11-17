@@ -1,7 +1,7 @@
 .developers-main a, .developers-page .app-footer a { color: var(--color-link); }
 .developers-main { padding-bottom: 3rem; line-height: 1.6; }
 .developers-intro { padding-block: 2.5rem; max-width: 70ch; }
-.developers-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 1.25rem; }
+.developers-intro h1 { font-size: var(--text-display); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
 .developers-intro > p:first-of-type { font-size: var(--text-lede); }
 .developers-layout { display: grid; grid-template-columns: 205px minmax(0, 1fr); gap: 3rem; align-items: start; }
 .developers-contents { position: sticky; top: 1rem; display: flex; flex-direction: column; padding-block: 0.5rem; }

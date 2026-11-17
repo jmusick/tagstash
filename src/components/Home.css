@@ -46,13 +46,13 @@
 }
 
 .hero-headline {
-  max-width: 18ch;
+  max-width: 19ch;
   margin: 0;
   color: var(--color-text);
   font-size: var(--text-display);
   font-weight: 800;
   line-height: 1.05;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 
@@ -416,7 +416,7 @@
   font-size: 2.75rem;
   font-weight: 800;
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
 .pricing-period {
