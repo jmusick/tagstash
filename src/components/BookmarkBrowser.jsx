@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react'
-import { Star, Search, X, ChevronLeft, ChevronRight, ListChecks } from 'lucide-react'
+import { Star, Search, X, ChevronLeft, ChevronRight, ChevronDown, ListChecks, SlidersHorizontal } from 'lucide-react'
 import TagCloud from './TagCloud'
 import BulkBar from './BulkBar'
 import { decodeHtmlEntities } from '../utils/decodeHtmlEntities'
@@ -97,6 +97,8 @@ function BookmarkBrowser({
   const [sortBy, setSortBy] = useState('date')
   const [sortDirection, setSortDirection] = useState('desc')
   const [itemsPerPage, setItemsPerPage] = useState(20)
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
+  const viewToggleRef = useRef(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [domainFilter, setDomainFilter] = useState(null)
   const [monthFilter, setMonthFilter] = useState('')
@@ -666,49 +668,78 @@ function BookmarkBrowser({
                   : `${filteredBookmarks.length} of ${bookmarks.length} bookmarks`}
               </p>
               <div className="results-controls">
-                <details className="display-options">
-                  <summary>View: {sortLabel} · {directionLabel} · {itemsPerPage} per page</summary>
-                  <div className="display-options-fields">
-                    <div className="sort-control">
-                      <label htmlFor="sortBy">Sort</label>
-                      <select
-                        id="sortBy"
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value)}
-                      >
-                        <option value="date">Date saved</option>
-                        <option value="lastUpdated">Last updated</option>
-                        <option value="alpha">Title</option>
-                        <option value="url">URL</option>
-                      </select>
-                      <select
-                        id="sortDirection"
-                        aria-label="Sort direction"
-                        value={sortDirection}
-                        onChange={(e) => setSortDirection(e.target.value)}
-                      >
-                        <option value="desc">{sortBy === 'alpha' || sortBy === 'url' ? 'Z to A' : 'Newest first'}</option>
-                        <option value="asc">{sortBy === 'alpha' || sortBy === 'url' ? 'A to Z' : 'Oldest first'}</option>
-                      </select>
-                    </div>
-                    <div className="pagination-page-size">
-                      <label htmlFor="itemsPerPage">Per page</label>
-                      <select
-                        id="itemsPerPage"
-                        value={itemsPerPage}
-                        onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                      >
-                        <option value={10}>10</option>
-                        <option value={20}>20</option>
-                        <option value={40}>40</option>
-                        <option value={80}>80</option>
-                      </select>
-                    </div>
-                  </div>
-                </details>
+                <button
+                  type="button"
+                  ref={viewToggleRef}
+                  className="view-toggle"
+                  aria-expanded={viewOptionsOpen}
+                  aria-controls="view-options"
+                  onClick={() => setViewOptionsOpen((open) => !open)}
+                >
+                  <SlidersHorizontal size={16} aria-hidden="true" />
+                  <span className="view-toggle-label">
+                    <span className="sr-only">View options: </span>
+                    {sortLabel}, {directionLabel.toLowerCase()}
+                    <span className="view-toggle-meta">{itemsPerPage} per page</span>
+                  </span>
+                  <ChevronDown size={16} aria-hidden="true" className="view-toggle-chevron" />
+                </button>
                 {totalPages > 1 && (
                   <Pager currentPage={currentPage} totalPages={totalPages} onChange={handlePageChange} />
                 )}
+              </div>
+            </div>
+          )}
+          {filteredBookmarks.length > 0 && viewOptionsOpen && (
+            <div
+              id="view-options"
+              className="view-options"
+              role="group"
+              aria-label="View options"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.stopPropagation()
+                  setViewOptionsOpen(false)
+                  viewToggleRef.current?.focus()
+                }
+              }}
+            >
+              <div className="view-field">
+                <label htmlFor="sortBy">Sort by</label>
+                <select
+                  id="sortBy"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                >
+                  <option value="date">Date saved</option>
+                  <option value="lastUpdated">Last updated</option>
+                  <option value="alpha">Title</option>
+                  <option value="url">URL</option>
+                </select>
+              </div>
+              <div className="view-field">
+                <label htmlFor="sortDirection">Order</label>
+                <select
+                  id="sortDirection"
+                  value={sortDirection}
+                  onChange={(e) => setSortDirection(e.target.value)}
+                >
+                  <option value="desc">{sortBy === 'alpha' || sortBy === 'url' ? 'Z to A' : 'Newest first'}</option>
+                  <option value="asc">{sortBy === 'alpha' || sortBy === 'url' ? 'A to Z' : 'Oldest first'}</option>
+                </select>
+              </div>
+              <div className="view-field view-field--narrow">
+                <label htmlFor="itemsPerPage">Per page</label>
+                <select
+                  id="itemsPerPage"
+                  value={itemsPerPage}
+                  onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={40}>40</option>
+                  <option value={80}>80</option>
+                </select>
               </div>
             </div>
           )}

@@ -2531,21 +2531,93 @@ a.btn-field-action,
 .main-content > .browser-filters { grid-column: 2; grid-row: 1 / span 3; }
 .browser-filters-content { display: flex; flex-direction: column; gap: 0.85rem; }
 .browser-filters-toggle { display: none; }
-.display-options { min-width: 0; max-width: 100%; }
-.display-options summary {
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--color-border-field);
+/* View toggle sits in the results bar; its fields open as their own row below
+   so the bar never grows taller and the count and pager stay put. */
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  height: 2.1rem;
+  padding: 0 0.6rem;
+  border: 1px solid transparent;
   border-radius: 7px;
-  background: var(--color-panel);
+  background: transparent;
   color: var(--color-text-soft);
+  font: inherit;
   font-size: var(--text-sm);
   cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
-.display-options-fields {
+.view-toggle:hover,
+.view-toggle[aria-expanded='true'] {
+  background: var(--color-surface-soft-hover);
+  color: var(--color-text);
+}
+.view-toggle-label {
+  display: block;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.view-toggle-meta {
+  margin-left: 0.6rem;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.view-toggle-chevron { flex-shrink: 0; transition: transform 0.15s ease; }
+.view-toggle[aria-expanded='true'] .view-toggle-chevron { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) {
+  .view-toggle-chevron { transition: none; }
+}
+
+.view-options {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  padding: 0.75rem 0;
+  justify-content: flex-end;
+  gap: 0.75rem 1rem;
+  width: fit-content;
+  max-width: 100%;
+  margin: -0.25rem 0 0.75rem auto;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-panel);
+}
+.view-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 9.5rem;
+}
+.view-field--narrow { min-width: 5.5rem; }
+.view-field label {
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+.view-field select {
+  appearance: none;
+  height: 2.4rem;
+  padding: 0 2rem 0 0.65rem;
+  border: 1px solid var(--color-border-field);
+  border-radius: 7px;
+  background-color: var(--color-surface);
+  background-image:
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: right calc(0.75rem + 4px) center, right 0.75rem center;
+  background-size: 4px 4px;
+  background-repeat: no-repeat;
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+.view-field select:focus {
+  border-color: var(--color-primary-strong);
+  box-shadow: 0 0 0 3px rgba(var(--color-accent-rgb), 0.18);
+}
+@media (forced-colors: active) {
+  .view-field select { appearance: auto; background-image: none; padding-right: 0.5rem; }
 }
 
 @media (max-width: 1024px) {
@@ -2560,9 +2632,12 @@ a.btn-field-action,
 }
 
 @media (max-width: 640px) {
-  .display-options { width: 100%; }
-  .display-options-fields { flex-direction: column; }
-  .display-options select { min-height: 44px; }
+  .view-toggle { height: 44px; padding: 0 0.5rem; }
+  .view-toggle-meta { display: none; }
+  .results-controls { flex-wrap: nowrap; gap: 0.5rem; }
+  .view-options { width: auto; justify-content: stretch; }
+  .view-field { flex: 1 1 8rem; min-width: 0; }
+  .view-field select { height: 44px; }
   .bookmark-card {
     grid-template-areas:
       'fav title title'
