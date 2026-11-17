@@ -332,6 +332,10 @@
   max-width: 960px;
 }
 
+.settings-page-content--full {
+  max-width: none;
+}
+
 .tags-page {
   display: flex;
   flex-direction: column;

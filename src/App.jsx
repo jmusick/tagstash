@@ -1165,7 +1165,7 @@ function App() {
                 </AppHeader>
 
                 <main id="main" tabIndex={-1} className="app-main settings-page-main">
-                  <div className="main-content settings-page-content">
+                  <div className="main-content settings-page-content settings-page-content--full">
                     <Settings
                       pageMode
                       onImportComplete={fetchBookmarks}

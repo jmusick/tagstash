@@ -73,15 +73,18 @@
 }
 
 .settings-detail { min-width: 0; }
+/* The page panel is full width; forms and copy stay at a readable measure. Admin's tables use the room. */
+.settings-panel-page .settings-detail { max-width: 46rem; }
+.settings-panel-page .settings-detail:has(.admin-users-panel) { max-width: none; }
 .settings-navigation-toggle { display: none; }
 
 .settings-nav-group { margin: 0 0 1.5rem; }
 .settings-nav-group h2 {
-  margin: 0 0 0.2rem;
+  margin: 0 0 0.3rem;
   padding: 0 0.7rem;
-  color: var(--color-text-muted);
-  font-size: var(--text-meta);
-  font-weight: 600;
+  color: var(--color-text);
+  font-size: var(--text-body);
+  font-weight: 700;
 }
 
 .settings-section-link {
